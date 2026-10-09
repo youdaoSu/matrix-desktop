@@ -201,6 +201,7 @@ function createMainWindow() {
     minWidth: 1100,
     minHeight: 700,
     title: '矩效 Matrix',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -343,6 +344,54 @@ async function openDataFolder() {
   return error ? { error } : { path: folder };
 }
 
+async function restoreDatabaseBackup() {
+  if (!app.isPackaged || !databaseControl) return { error: '仅正式安装版支持恢复数据库备份' };
+  const selected = await dialog.showOpenDialog(mainWindow, {
+    title: '选择矩效数据库备份',
+    properties: ['openFile'],
+    filters: [{ name: '矩效数据库备份', extensions: ['backup'] }],
+  });
+  if (selected.canceled || !selected.filePaths[0]) return { cancelled: true };
+  const backupPath = selected.filePaths[0];
+  const pgRestore = path.join(databaseControl.bin, 'pg_restore.exe');
+  if (!fs.existsSync(pgRestore)) return { error: '安装文件不完整：缺少数据库恢复组件' };
+  try {
+    await runProcess(pgRestore, ['--list', backupPath]);
+  } catch {
+    return { error: '所选文件不是有效的矩效数据库备份' };
+  }
+  const confirmation = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: '确认恢复数据库',
+    message: '恢复会覆盖当前矩效数据',
+    detail: '软件将自动关闭并重启。建议先为当前数据创建一份备份。',
+    buttons: ['取消', '确认覆盖并恢复'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (confirmation.response !== 1) return { cancelled: true };
+  try {
+    if (serverProcess && !serverProcess.killed) {
+      const stopped = new Promise((resolve) => serverProcess.once('exit', resolve));
+      serverProcess.kill();
+      await Promise.race([stopped, new Promise((resolve) => setTimeout(resolve, 5000))]);
+      serverProcess = null;
+    }
+    await runProcess(pgRestore, [
+      '-h', '127.0.0.1', '-p', String(databaseControl.port), '-U', 'matrix',
+      '-d', 'matrix_db', '--clean', '--if-exists', '--no-owner', '--exit-on-error', backupPath,
+    ]);
+    app.relaunch();
+    app.quit();
+    return { restored: true };
+  } catch (error) {
+    app.relaunch();
+    app.quit();
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function openPlatformWindow(platform, existingSessionId) {
   const config = PLATFORM[platform];
   if (!config) throw new Error('不支持的平台');
@@ -472,6 +521,7 @@ ipcMain.handle('matrix:complete-platform-login', (_event, input) => completeEmbe
 ipcMain.handle('matrix:check-platform-session', (_event, input) => checkPlatformSession(input));
 ipcMain.handle('matrix:create-database-backup', () => createDatabaseBackup());
 ipcMain.handle('matrix:open-data-folder', () => openDataFolder());
+ipcMain.handle('matrix:restore-database-backup', () => restoreDatabaseBackup());
 
 app.whenReady().then(async () => {
   try {

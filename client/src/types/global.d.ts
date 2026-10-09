@@ -89,6 +89,7 @@ interface Window {
     }>;
     createDatabaseBackup(): Promise<{ path?: string; cancelled?: boolean; error?: string }>;
     openDataFolder(): Promise<{ path?: string; error?: string }>;
+    restoreDatabaseBackup(): Promise<{ restored?: boolean; cancelled?: boolean; error?: string }>;
   };
 }
 

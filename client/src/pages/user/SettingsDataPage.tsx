@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Archive, Database, FolderOpen, HardDrive, ShieldCheck } from 'lucide-react';
+import { Archive, Database, FolderOpen, HardDrive, RotateCcw, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@client/src/components/ui/alert';
 import { Button } from '@client/src/components/ui/button';
@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@clie
 
 export default function SettingsDataPage() {
   const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const createBackup = async () => {
     if (!window.matrixDesktop?.isDesktop) {
@@ -34,6 +35,23 @@ export default function SettingsDataPage() {
     if (result.error) toast.error(result.error);
   };
 
+  const restoreBackup = async () => {
+    if (!window.matrixDesktop?.isDesktop) {
+      toast.error('请在矩效桌面版中恢复数据库备份');
+      return;
+    }
+    setRestoring(true);
+    try {
+      const result = await window.matrixDesktop.restoreDatabaseBackup();
+      if (result.error) toast.error(result.error);
+      else if (result.restored) toast.success('恢复完成，矩效正在重新启动');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '恢复失败');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -46,7 +64,7 @@ export default function SettingsDataPage() {
         <AlertDescription>备份文件由您自行保存，平台登录 Cookie 不会写入数据库备份。</AlertDescription>
       </Alert>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2"><Archive className="w-4 h-4" />创建数据库备份</CardTitle>
@@ -55,6 +73,18 @@ export default function SettingsDataPage() {
           <CardContent>
             <Button onClick={createBackup} disabled={backingUp}>
               <HardDrive className="w-4 h-4 mr-2" />{backingUp ? '正在备份…' : '选择位置并创建备份'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2"><RotateCcw className="w-4 h-4" />恢复数据库备份</CardTitle>
+            <CardDescription>验证备份文件后覆盖当前数据库，完成后软件会自动重启。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="destructive" onClick={restoreBackup} disabled={restoring}>
+              <RotateCcw className="w-4 h-4 mr-2" />{restoring ? '正在恢复…' : '选择备份并恢复'}
             </Button>
           </CardContent>
         </Card>

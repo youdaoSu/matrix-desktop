@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
     ipcRenderer.invoke('matrix:check-platform-session', { platform, sessionId }),
   createDatabaseBackup: () => ipcRenderer.invoke('matrix:create-database-backup'),
   openDataFolder: () => ipcRenderer.invoke('matrix:open-data-folder'),
+  restoreDatabaseBackup: () => ipcRenderer.invoke('matrix:restore-database-backup'),
 }));
