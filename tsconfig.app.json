@@ -8,6 +8,7 @@
       "@/*": ["./client/src/*"],
       "@lark-apaas/client-toolkit/tools/*": ["node_modules/@lark-apaas/client-toolkit/lib/apis/tools/*"]
     },
+    "types": ["vite/client", "react", "react-dom", "node"],
     "incremental": true,
   },
   "include": [

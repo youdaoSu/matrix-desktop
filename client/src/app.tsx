@@ -1,4 +1,3 @@
-import React from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -19,41 +18,10 @@ import FollowersPage from './pages/user/FollowersPage';
 import CommentsPage from './pages/user/CommentsPage';
 import MessagesPage from './pages/user/MessagesPage';
 
-import PublishCreatePage from './pages/publish/PublishCreatePage';
-import PublishBatchVideoPage from './pages/publish/PublishBatchVideoPage';
-import PublishBatchImagePage from './pages/publish/PublishBatchImagePage';
-import PublishDraftsPage from './pages/publish/PublishDraftsPage';
-import PublishTasksPage from './pages/publish/PublishTasksPage';
-import PublishStatsPage from './pages/publish/PublishStatsPage';
 import ContentRecordsPage from './pages/publish/ContentRecordsPage';
 import ContentCreateRealPage from './pages/publish/ContentCreateRealPage';
 
-import EngageCommentsPage from './pages/engage/EngageCommentsPage';
-import EngageCommentsAggPage from './pages/engage/EngageCommentsAggPage';
-import EngageAutoCommentPage from './pages/engage/EngageAutoCommentPage';
-import EngageBatchTasksPage from './pages/engage/EngageBatchTasksPage';
-import EngageMessagesPage from './pages/engage/EngageMessagesPage';
-import EngageMessagesAggPage from './pages/engage/EngageMessagesAggPage';
-import EngageAutoMessagePage from './pages/engage/EngageAutoMessagePage';
-import EngageFollowersPage from './pages/engage/EngageFollowersPage';
-import EngageFollowerMonitorPage from './pages/engage/EngageFollowerMonitorPage';
-
-import AutomationKeywordsPage from './pages/automation/AutomationKeywordsPage';
-import AutomationWelcomePage from './pages/automation/AutomationWelcomePage';
-import AutomationOfflinePage from './pages/automation/AutomationOfflinePage';
-import AutomationActiveMessagesPage from './pages/automation/AutomationActiveMessagesPage';
-import AutomationMonitorPage from './pages/automation/AutomationMonitorPage';
-import AutomationTemplatesPage from './pages/automation/AutomationTemplatesPage';
-import AutomationLogsPage from './pages/automation/AutomationLogsPage';
-
-import AnalyticsMonitorPage from './pages/analytics/AnalyticsMonitorPage';
 import AnalyticsPage from './pages/user/AnalyticsPage';
-import AnalyticsFlowPage from './pages/analytics/AnalyticsFlowPage';
-import AnalyticsAccountMonitorPage from './pages/analytics/AnalyticsAccountMonitorPage';
-import AnalyticsNotifyMonitorPage from './pages/analytics/AnalyticsNotifyMonitorPage';
-import AnalyticsViolationPage from './pages/analytics/AnalyticsViolationPage';
-import AnalyticsDraftsPage from './pages/analytics/AnalyticsDraftsPage';
-import AnalyticsDataScreenPage from './pages/analytics/DataScreenPage';
 
 import SettingsProfilePage from './pages/user/SettingsProfilePage';
 import SettingsPasswordPage from './pages/user/SettingsPasswordPage';
@@ -64,12 +32,7 @@ import SettingsThemePage from './pages/user/SettingsThemePage';
 import SettingsDataPage from './pages/user/SettingsDataPage';
 
 import AdminLoginPage from './pages/admin/LoginPage';
-import AdminDashboardPage from './pages/admin/DashboardPage';
-import AdminUsersPage from './pages/admin/UsersPage';
 import AdminCodesPage from './pages/admin/CodesPage';
-import AdminPlansPage from './pages/admin/PlansPage';
-import AdminLogsPage from './pages/admin/LogsPage';
-import AdminSettingsPage from './pages/admin/SettingsPage';
 import AdminRealDashboardPage from './pages/admin/RealDashboardPage';
 import AdminRealLogsPage from './pages/admin/RealLogsPage';
 import AdminRealUsersPage from './pages/admin/RealUsersPage';
