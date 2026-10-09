@@ -1,0 +1,10 @@
+import { useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import type { VipPlan } from '@shared/api.interface';
+import { adminAxios } from '@/api';
+import { Badge } from '@client/src/components/ui/badge';
+import { Button } from '@client/src/components/ui/button';
+import { Card, CardContent } from '@client/src/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@client/src/components/ui/table';
+import { toast } from 'sonner';
+export default function RealPlansPage() { const [items, setItems] = useState<VipPlan[]>([]); const [loading, setLoading] = useState(true); const load = async () => { setLoading(true); try { const response = await adminAxios.get('/api/admin/plans'); setItems(response.data?.data || []); } catch (error: any) { toast.error(error?.response?.data?.error?.message || '加载套餐失败'); } finally { setLoading(false); } }; useEffect(() => { void load(); }, []); return <div className="space-y-5"><div className="flex items-center justify-between"><div><h1 className="text-xl font-semibold">套餐管理</h1><p className="mt-1 text-sm text-muted-foreground">数据库中已配置的真实套餐。新增和修改可通过授权码管理流程完成。</p></div><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div><Card><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>套餐</TableHead><TableHead>代码</TableHead><TableHead>有效期</TableHead><TableHead>账号数</TableHead><TableHead>价格</TableHead><TableHead>状态</TableHead><TableHead>说明</TableHead></TableRow></TableHeader><TableBody>{items.map((item) => <TableRow key={item.id}><TableCell className="font-medium">{item.name}</TableCell><TableCell>{item.code}</TableCell><TableCell>{item.durationDays} 天</TableCell><TableCell>{item.maxAccounts}</TableCell><TableCell>¥{item.price}</TableCell><TableCell><Badge variant={item.status === 'active' ? 'default' : 'outline'}>{item.status}</Badge></TableCell><TableCell>{item.description || '—'}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card></div>; }

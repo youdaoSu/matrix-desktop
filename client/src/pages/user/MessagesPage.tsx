@@ -1,0 +1,60 @@
+import { useEffect, useState } from 'react';
+import { Inbox, RefreshCw, Search } from 'lucide-react';
+import type { MessageItem, MessageSession, PlatformType } from '@shared/api.interface';
+import { axiosForBackend } from '@/api';
+import { Alert, AlertDescription } from '@client/src/components/ui/alert';
+import { Avatar, AvatarFallback, AvatarImage } from '@client/src/components/ui/avatar';
+import { Badge } from '@client/src/components/ui/badge';
+import { Button } from '@client/src/components/ui/button';
+import { Card } from '@client/src/components/ui/card';
+import { Input } from '@client/src/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
+import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+
+const platformLabels: Record<PlatformType, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
+function errorMessage(error: any, fallback: string) { return error?.response?.data?.error?.message || error?.response?.data?.message || error?.message || fallback; }
+
+export default function MessagesPage() {
+  const [sessions, setSessions] = useState<MessageSession[]>([]);
+  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [search, setSearch] = useState('');
+  const [platform, setPlatform] = useState('all');
+  const [loading, setLoading] = useState(true);
+
+  const loadSessions = async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, string | number> = { page: 1, pageSize: 100 };
+      if (search.trim()) params.keyword = search.trim();
+      if (platform !== 'all') params.platform = platform;
+      const response = await axiosForBackend.get('/api/messages/sessions', { params });
+      const next = (response.data?.data?.items || []) as MessageSession[];
+      setSessions(next);
+      setSelectedId((current) => next.some((session) => session.id === current) ? current : (next[0]?.id || ''));
+    } catch (error: any) { toast.error(errorMessage(error, '加载私信会话失败')); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { void loadSessions(); }, [platform]);
+  useEffect(() => {
+    if (!selectedId) { setMessages([]); return; }
+    axiosForBackend.get(`/api/messages/sessions/${selectedId}/messages`, { params: { page: 1, pageSize: 100 } })
+      .then((response) => setMessages([...(response.data?.data?.items || [])].reverse()))
+      .catch((error) => toast.error(errorMessage(error, '加载会话消息失败')));
+  }, [selectedId]);
+  const selected = sessions.find((session) => session.id === selectedId);
+
+  return <div className="space-y-5">
+    <Alert className="border-primary/20 bg-primary/5"><Inbox className="h-4 w-4 text-primary" /><AlertDescription>仅显示平台接口已同步的真实私信。发送能力未获批时保持只读，不会把本地记录伪装成平台发送成功。</AlertDescription></Alert>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">私信管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {sessions.length} 个真实会话</p></div><Button variant="outline" disabled={loading} onClick={() => void loadSessions()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div>
+    <Card className="flex h-[650px] overflow-hidden">
+      <div className="flex w-80 shrink-0 flex-col border-r"><div className="space-y-2 border-b p-3"><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void loadSessions()} placeholder="搜索会话" /></div><Select value={platform} onValueChange={setPlatform}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部平台</SelectItem>{Object.entries(platformLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="flex-1 overflow-auto">
+        {sessions.map((session) => <button key={session.id} onClick={() => setSelectedId(session.id)} className={cn('flex w-full gap-3 border-b p-3 text-left hover:bg-muted/50', selectedId === session.id && 'bg-primary/5')}><Avatar className="h-10 w-10"><AvatarImage src={session.userAvatarUrl} /><AvatarFallback>{(session.userNickname || '用').slice(0, 1)}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{session.userNickname || '匿名用户'}</span>{session.unreadCount > 0 && <Badge>{session.unreadCount}</Badge>}</div><div className="mt-1 truncate text-xs text-muted-foreground">{session.lastMessage || '暂无消息'}</div><div className="mt-1 text-[11px] text-muted-foreground">{platformLabels[session.platform]}</div></div></button>)}
+        {!loading && sessions.length === 0 && <div className="p-8 text-center text-sm text-muted-foreground">暂无真实私信会话</div>}
+      </div></div>
+      <div className="flex min-w-0 flex-1 flex-col">{selected ? <><div className="flex items-center gap-3 border-b p-4"><Avatar className="h-9 w-9"><AvatarImage src={selected.userAvatarUrl} /><AvatarFallback>{(selected.userNickname || '用').slice(0, 1)}</AvatarFallback></Avatar><div><div className="font-medium">{selected.userNickname || '匿名用户'}</div><div className="text-xs text-muted-foreground">{platformLabels[selected.platform]} · 只读同步会话</div></div></div><div className="flex-1 space-y-3 overflow-auto bg-muted/20 p-5">{messages.map((message) => <div key={message.id} className={cn('flex', message.direction === 'outbound' ? 'justify-end' : 'justify-start')}><div className={cn('max-w-[72%] rounded-lg px-3 py-2 text-sm', message.direction === 'outbound' ? 'bg-primary text-primary-foreground' : 'border bg-card')}><div>{message.content || (message.mediaUrl ? '[媒体消息]' : '空消息')}</div><div className={cn('mt-1 text-[10px]', message.direction === 'outbound' ? 'text-primary-foreground/70' : 'text-muted-foreground')}>{message.sentAt ? new Date(message.sentAt).toLocaleString('zh-CN') : ''}</div></div></div>)}{messages.length === 0 && <div className="flex h-full items-center justify-center text-sm text-muted-foreground">该会话暂无消息记录</div>}</div><div className="border-t p-3 text-center text-xs text-muted-foreground">平台发送接口尚未获批，当前为安全只读模式</div></> : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">选择一个会话查看真实消息</div>}</div>
+    </Card>
+  </div>;
+}
