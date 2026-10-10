@@ -171,3 +171,15 @@ button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .dark .matrix-draft-helper textarea { background: #20232b; color: #e8eaf0; }
 .matrix-zoom-controls { display: flex; align-items: center; gap: 2px; border-left: 1px solid var(--border); padding-left: 6px; }
 .matrix-zoom-controls button { min-width: 24px; font-size: 11px; padding: 5px; }
+.matrix-binding-banner > div:first-child { min-width: 0; }
+.matrix-binding-banner strong { display: block; font-size: 13px; font-weight: 600; }
+.matrix-binding-banner small { display: block; font-size: 11px; color: var(--muted-foreground); margin-top: 5px; }
+.matrix-binding-banner > div:last-child { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.matrix-binding-banner.is-ready { background: #edf9f0; }
+.dark .matrix-binding-banner.is-ready { background: #1e3428; }
+.matrix-cancel-binding { font-size: 11px; color: var(--muted-foreground); padding: 8px; }
+.matrix-browser-body { position: relative; }
+.matrix-login-loading { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: var(--card); color: var(--muted-foreground); }
+.matrix-login-loading > svg { color: var(--primary); }
+.matrix-login-loading strong { color: var(--foreground); font-size: 14px; }
+.matrix-login-loading p { font-size: 12px; }

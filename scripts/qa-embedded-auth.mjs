@@ -60,11 +60,14 @@ const platforms = [
 const results = [];
 for (const platform of platforms) {
   await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find((item) => item.innerText.trim() === '绑定账号'); button.click(); return true; })()`);
-  await waitFor("document.body.innerText.includes('在矩效中打开官方授权')", `${platform.label}绑定弹窗未打开`);
+  await waitFor("!!document.querySelector('[role=dialog]')", `${platform.label}平台选择弹窗未打开`);
   await evaluate(`(() => { const button = [...document.querySelector("[role=dialog]").querySelectorAll('button')].find((item) => item.innerText.trim() === ${JSON.stringify(platform.label)}); if (!button) return false; button.click(); return true; })()`);
-  await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find((item) => item.innerText.includes('在矩效中打开官方授权')); button.click(); return true; })()`);
   await waitFor("!!document.querySelector('webview')", `${platform.label}内嵌官方授权 webview 未创建`);
   await waitFor("document.querySelector('.matrix-official-deck')?.hidden === false && document.body.innerText.includes('我已登录，完成绑定')", `${platform.label}内嵌工作区未显示`);
+  const loginReady = platform.key === 'xiaohongshu'
+    ? "document.body.innerText.includes('短信登录') && document.querySelectorAll('input').length >= 2"
+    : "document.querySelectorAll('[class*=qr i],[id*=qr i],img[alt*=二维码],img[alt*=扫码]').length > 0";
+  await waitFor(`(async()=>{try{return await document.querySelector('webview').executeJavaScript(${JSON.stringify(loginReady)});}catch{return false;}})()`, `${platform.label}官方登录入口未加载`, 450);
 
   let guest;
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -101,5 +104,5 @@ for (const platform of platforms) {
   await waitFor("!document.querySelector('webview')", `${platform.label}内嵌窗口未正确关闭`);
   await evaluate("document.querySelector('.matrix-workspace-tabs > button').click(); true");
 }
-console.log(JSON.stringify({ passed: platforms.length * 6, results }, null, 2));
+console.log(JSON.stringify({ passed: platforms.length * 7, results }, null, 2));
 socket.close();

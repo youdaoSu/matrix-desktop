@@ -1,6 +1,6 @@
 {
   "name": "fullstack-nestjs-template",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "main": "desktop/main.cjs",
   "private": true,
   "flags": {

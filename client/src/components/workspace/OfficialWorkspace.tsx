@@ -137,7 +137,7 @@ export function OfficialWorkspaceDeck() {
       <div className="matrix-add-platforms"><span>添加个人账号</span><div>{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><Plus size={12} />{platformLabels[platform]}</button>)}</div></div>
     </aside>
     <div className="matrix-browser-area">
-      {!workspace.activeId && <div className="matrix-workspace-welcome"><span className="matrix-welcome-icon"><Globe2 size={32} /></span><span className="matrix-eyebrow">OFFICIAL WORKSPACE</span><h1>账号与操作，都在一个工作区</h1><p>选择左侧账号，打开官方后台。发布内容、回复评论和发送私信，直接在官方页面中完成。</p><div className="matrix-welcome-features"><span><Users size={17} />账号分组切换</span><span><Send size={17} />官方页面发布</span><span><MessageCircle size={17} />评论与私信</span></div><div className="matrix-platform-cards">{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><PlatformMark platform={platform} /><strong>{platformLabels[platform]}</strong><small>扫码登录并绑定</small><Plus size={15} /></button>)}</div><small>登录会话保存在本机，各账号独立。平台页面中提交的操作以官方结果为准。</small></div>}
+      {!workspace.activeId && <div className="matrix-workspace-welcome"><span className="matrix-welcome-icon"><Globe2 size={32} /></span><span className="matrix-eyebrow">OFFICIAL WORKSPACE</span><h1>账号与操作，都在一个工作区</h1><p>选择左侧账号，打开官方后台。发布内容、回复评论和发送私信，直接在官方页面中完成。</p><div className="matrix-welcome-features"><span><Users size={17} />账号分组切换</span><span><Send size={17} />官方页面发布</span><span><MessageCircle size={17} />评论与私信</span></div><div className="matrix-platform-cards">{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><PlatformMark platform={platform} /><strong>{platformLabels[platform]}</strong><small>{platform === "xiaohongshu" ? "官方短信登录" : "官方扫码登录"}</small><Plus size={15} /></button>)}</div><small>登录会话保存在本机，各账号独立。平台页面中提交的操作以官方结果为准。</small></div>}
       {workspace.tabs.map(tab => <OfficialBrowser key={tab.id} tab={tab} active={tab.id === workspace.activeId} />)}
     </div>
   </section>;
@@ -162,10 +162,34 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const [helperOpen, setHelperOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [zoom, setZoom] = useState(100);
+  const [detectedAccount, setDetectedAccount] = useState('');
+  const [slowLoad, setSlowLoad] = useState(false);
+  useEffect(() => {
+    if (!loading) { setSlowLoad(false); return; }
+    const timer = window.setTimeout(() => setSlowLoad(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+  useEffect(() => {
+    if (!active || !tab.binding || loading || error || !window.matrixDesktop) return;
+    let cancelled = false;
+    let checking = false;
+    const check = async () => {
+      if (checking || cancelled) return;
+      checking = true;
+      try {
+        const result = await window.matrixDesktop!.completePlatformLogin({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId() });
+        if (!cancelled) setDetectedAccount('error' in result ? '' : result.nickname);
+      } catch { if (!cancelled) setDetectedAccount(''); }
+      finally { checking = false; }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [active, tab.binding, tab.platform, tab.sessionId, loading, error]);
   useEffect(() => {
     const element = view.current;
     if (!element) return;
-    const start = () => { setLoading(true); setError(''); };
+    const start = () => { setLoading(true); setDetectedAccount(''); setError(''); };
     const stop = () => {
       setLoading(false);
       try { setUrl(element.getURL()); setBack(element.canGoBack()); setForward(element.canGoForward()); } catch { /* Guest may be closing. */ }
@@ -211,9 +235,10 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   return <div className="matrix-official-browser" hidden={!active}>
     <div className="matrix-browser-toolbar"><button title="后退" aria-label="后退" disabled={!back} onClick={() => operate(() => view.current.goBack())}><ArrowLeft size={16} /></button><button title="前进" aria-label="前进" disabled={!forward} onClick={() => operate(() => view.current.goForward())}><ArrowRight size={16} /></button><button title="刷新官方页面" aria-label="刷新官方页面" onClick={() => operate(() => view.current.reload())}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button><button title="平台首页" aria-label="平台首页" onClick={() => operate(() => view.current.loadURL(tab.url))}><Home size={16} /></button><div className="matrix-address"><Globe2 size={14} /><span>{url}</span></div><div className="matrix-zoom-controls"><button aria-label="缩小官方页面" onClick={() => changeZoom(zoom - 10)}>−</button><button aria-label="重置页面缩放" onClick={() => changeZoom(100)}>{zoom}%</button><button aria-label="放大官方页面" onClick={() => changeZoom(zoom + 10)}>+</button></div><button className={helperOpen ? 'is-active' : ''} onClick={() => setHelperOpen(!helperOpen)}><Copy size={15} />文案辅助</button></div>
     <div className="matrix-intent-bar"><div>{(Object.keys(intentInfo) as Intent[]).map(intent => <button key={intent} className={tab.intent === intent ? 'is-active' : ''} onClick={() => workspace.update(tab.id, { intent })}>{intentInfo[intent].label}</button>)}</div><span>{tab.binding ? '请先完成官方登录' : `${platformLabels[tab.platform]} · ${tab.nickname}`}</span></div>
-    {tab.binding ? <div className="matrix-binding-banner"><span>在下方官方页面扫码或验证登录，完成后绑定当前账号。</span><Button size="sm" disabled={loading || busy} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? '正在绑定' : '我已登录，完成绑定'}</Button></div> : <div className="matrix-browser-hint">{intentInfo[tab.intent].instruction}</div>}
+    {tab.binding ? <div className={"matrix-binding-banner " + (detectedAccount ? "is-ready" : "")}><div><strong>{detectedAccount ? `已检测到登录：${detectedAccount}` : tab.platform === "xiaohongshu" ? "小红书官方短信登录" : `用${tab.platform === "wechat" ? "微信" : platformLabels[tab.platform]} APP 扫描下方官方二维码`}</strong><small>{detectedAccount ? "核对当前账号后点击确认绑定，登录会话仅保存于本机。" : tab.platform === "xiaohongshu" ? "当前官方创作后台提供短信登录，请在下方官方页面输入手机号并完成验证；验证码不经过矩效后台。" : "手机确认登录后自动检测账号；二维码过期请刷新。此处是官方网页登录，不是开放平台 API 授权。"}</small></div><div><Button variant="outline" size="sm" disabled={busy} onClick={() => operate(() => view.current.reload())}><RefreshCw size={14} />刷新登录页</Button><Button size="sm" disabled={loading || busy} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? "正在绑定" : detectedAccount ? "确认绑定该账号" : "我已登录，完成绑定"}</Button><button className="matrix-cancel-binding" onClick={() => workspace.close(tab.id)}>取消绑定</button></div></div> : <div className="matrix-browser-hint">{intentInfo[tab.intent].instruction}</div>}
     {error && <div role="alert" className="matrix-browser-error">{error}<button onClick={() => operate(() => view.current.reload())}>重试</button></div>}
     <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.url, partition: tab.partition, className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
+      {loading && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" onClick={() => operate(() => view.current.reload())}>重新加载</Button>}</div>}
       {helperOpen && <aside className="matrix-draft-helper"><div><strong>文案辅助</strong><button aria-label="关闭文案辅助" onClick={() => setHelperOpen(false)}><X size={16} /></button></div><p>整理标题、正文或回复文案，复制后粘贴到官方页面。</p><textarea aria-label="文案辅助内容" placeholder="输入要发布的文案或回复…" value={draft} onChange={event => setDraft(event.target.value)} /><Button disabled={!draft.trim()} onClick={() => void navigator.clipboard.writeText(draft).then(() => toast.success('文案已复制')).catch(() => toast.error('复制失败，请手动选择文案复制'))}><Copy size={14} />复制文案</Button><small>文案仅保留在当前标签内，关闭标签后清除。</small></aside>}
     </div>
     <div className="matrix-browser-status"><span><i />{loading ? '正在加载官方页面…' : '官方页面'} · {platformLabels[tab.platform]}</span><span>本机独立会话 · 操作由你确认</span></div>

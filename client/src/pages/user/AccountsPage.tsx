@@ -29,7 +29,6 @@ import {
   ThumbsUp,
   Play,
   Eye,
-  QrCode,
   Settings2,
   Trash2,
   ArrowUpDown,
@@ -1477,7 +1476,7 @@ const AccountsPage = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>绑定账号</DialogTitle>
-            <DialogDescription>选择要绑定的平台，扫码授权即可添加账号</DialogDescription>
+            <DialogDescription>点击平台即可打开官方登录页，扫码或短信登录后确认绑定</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
@@ -1490,7 +1489,8 @@ const AccountsPage = () => {
                   return (
                     <button
                       key={p}
-                      onClick={() => setBindPlatform(p)}
+                      disabled={startingOAuth}
+                      onClick={() => { setBindPlatform(p); if (window.matrixDesktop?.isDesktop) void startOAuth(p); }}
                       className={cn(
                         'flex flex-col items-center gap-1.5 p-3 rounded-lg border transition-colors',
                         active
@@ -1510,20 +1510,17 @@ const AccountsPage = () => {
                 })}
               </div>
             </div>
-            <div className="flex flex-col items-center justify-center py-6 border border-dashed border-border rounded-lg bg-muted/20">
-              <div className="w-32 h-32 bg-card border border-border rounded-lg flex items-center justify-center">
-                <QrCode className="w-20 h-20 text-muted-foreground/30" />
-              </div>
-              <p className="text-sm text-muted-foreground mt-3">使用 {platformMeta[bindPlatform].label} APP 扫码授权</p>
-              <Badge variant="outline" className="mt-2 text-[hsl(26_90%_49%)] border-[hsl(26_90%_49%)]/30">
-                {platformAvailable(bindPlatform) ? <Check className="w-3 h-3 mr-1" /> : <AlertTriangle className="w-3 h-3 mr-1" />}
-                {platformAuthMessage(bindPlatform)}
-              </Badge>
+            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground leading-6">
+              <p>1. 点击上方平台，直接在矩效内显示官方登录页。</p>
+              <p>2. 按官方页面扫码登录；小红书创作后台当前使用手机号短信登录。</p>
+              <p>3. 登录成功后，确认账号信息并完成绑定。</p>
+              <p className="mt-2 text-xs">二维码由官方实时提供；失效后可刷新登录页。矩效不会生成仿制二维码，也不会获取手机验证码。</p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBindDialogOpen(false)}>取消</Button>
             <Button
+              className={window.matrixDesktop?.isDesktop ? "hidden" : undefined}
               disabled={startingOAuth || !platformAvailable(bindPlatform)}
               onClick={() => void startOAuth(bindPlatform)}
             >
@@ -1542,14 +1539,9 @@ const AccountsPage = () => {
               为「{reAuthAccount?.nickname}」重新授权 {reAuthAccount ? platformMeta[reAuthAccount.platform].label : ''}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center justify-center py-6 border border-dashed border-border rounded-lg bg-muted/20">
-            <div className="w-32 h-32 bg-card border border-border rounded-lg flex items-center justify-center">
-              <QrCode className="w-20 h-20 text-muted-foreground/30" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-3">扫码重新授权</p>
-            <Badge variant="outline" className="mt-2 text-[hsl(26_90%_49%)] border-[hsl(26_90%_49%)]/30">
-              {reAuthAccount ? platformAuthMessage(reAuthAccount.platform) : '正在检查平台配置'}
-            </Badge>
+          <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground leading-6">
+            <p>打开该账号的独立官方登录页，扫描官方二维码或按平台提示重新登录，再确认绑定。</p>
+            <p className="mt-2 text-xs">{reAuthAccount ? platformAuthMessage(reAuthAccount.platform) : "正在检查平台配置"}</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setReAuthOpen(false); setReAuthAccount(null); }}>取消</Button>
