@@ -102,7 +102,7 @@ for (const platform of platforms) {
   results.push({ platform: platform.label, embedded: true, guestUrl: guest.url, ...state });
   await evaluate("document.querySelector('.matrix-account-tab.is-active .matrix-tab-close')?.click(); true");
   await waitFor("!document.querySelector('webview')", `${platform.label}内嵌窗口未正确关闭`);
-  await evaluate("document.querySelector('.matrix-workspace-tabs > button').click(); true");
+  await evaluate("document.querySelector('.matrix-workspace-tabs > button')?.click(); true");
 }
 console.log(JSON.stringify({ passed: platforms.length * 7, results }, null, 2));
 socket.close();

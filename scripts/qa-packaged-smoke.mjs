@@ -71,9 +71,11 @@ try {
   await run('scripts/qa-embedded-auth.mjs', base);
   await call('Page.navigate', { url: `${base}/app/#/dashboard` });
   await wait(() => evaluate("!!document.querySelector('.matrix-shell')"), 'Packaged dashboard did not render');
-  await evaluate("document.querySelectorAll('.matrix-workspace-tabs > button')[1].click(); true");
-  await wait(() => evaluate("!!document.querySelector('.matrix-add-platforms button')"), 'Packaged official workspace missing');
-  await evaluate("document.querySelector('.matrix-add-platforms button').click(); true");
+  await call('Page.navigate', { url: `${base}/app/#/accounts` });
+  await wait(() => evaluate("!![...document.querySelectorAll('button')].find(button => button.innerText === '绑定账号')"), 'Packaged account module missing');
+  await evaluate("[...document.querySelectorAll('button')].find(button=>button.innerText==='绑定账号').click(); true");
+  await wait(() => evaluate("!!document.querySelector('[role=dialog]')"), 'Platform picker missing');
+  await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(button=>button.innerText==='抖音').click(); true");
   await wait(() => evaluate("(async()=>{try{return await document.querySelector('webview')?.executeJavaScript(\"document.body.innerText.trim().length > 60\");}catch{return false;}})()"), 'Packaged official guest did not render content');
   // Guest DOM becomes ready before Chromium submits its first visible surface.
   await new Promise(resolve => setTimeout(resolve, 2000));

@@ -136,13 +136,16 @@ try {
   await waitUntil(() => evaluate("!!document.querySelector('.matrix-shell')"), 'Desktop shell did not render');
   await waitUntil(() => evaluate("document.querySelectorAll('.matrix-home-platforms button').length === 4 && !document.querySelector('.matrix-dashboard')?.innerText.includes('加载中')"), 'Dashboard data did not finish loading');
   await screenshot('qa-workspace-dashboard.png');
-  await click('.matrix-workspace-tabs > button', '官方工作区');
+  await click('.matrix-topbar nav a', '账号管理');
+  await waitUntil(() => evaluate("document.body.innerText.includes('绑定账号')"), 'Account module did not render');
+  await click('button', '绑定账号');
+  await click('[role=dialog] button', '抖音');
   await waitUntil(() => evaluate("document.querySelectorAll('.matrix-rail-account').length === 4"), 'Account rail did not load fixtures');
   ensure(await evaluate("document.querySelector('.matrix-official-deck').getBoundingClientRect().height > 500"), 'Workspace uses the full content area');
   await screenshot('qa-workspace-empty.png');
   const platforms = [ ['douyin', '抖音'], ['xiaohongshu', '小红书'], ['wechat', '视频号'], ['bilibili', 'B站'] ];
   for (const [platform, label] of platforms) {
-    await click('.matrix-add-platforms button', label);
+    if (report.officialPages.length !== 0) await click('.matrix-add-platforms button', label);
     await waitUntil(() => evaluate(`document.querySelectorAll('webview').length === ${report.officialPages.length + 1}`), `${label} guest not created`);
     await waitUntil(() => evaluate(`(() => { try { return !![...document.querySelectorAll('.matrix-official-browser')].find(item => !item.hidden)?.querySelector('webview')?.getWebContentsId(); } catch { return false; } })()`), `${label} guest not attached`);
     const state = await evaluate(`(() => { const browser = [...document.querySelectorAll('.matrix-official-browser')].find(item => !item.hidden); const view=browser.querySelector('webview'); return {src:view.getAttribute('src'),partition:view.getAttribute('partition'),guestId:view.getWebContentsId(),height:view.getBoundingClientRect().height,width:view.getBoundingClientRect().width}; })()`);
@@ -163,7 +166,7 @@ try {
     report.officialPages[index].loaded = loaded;
     ensure(loaded.characters > 60 && loaded.url.startsWith('https://'), `${label} official page renders real content inside the guest`);
   }
-  await click('.matrix-workspace-tabs > button', '矩效工作台');
+  await click('.matrix-workspace-tabs > button', '收起账号页面');
   await click('.matrix-topbar nav a', '一键发布');
   await waitUntil(() => evaluate("location.hash === '#/publish/create' && document.body.innerText.includes('进入官方发布页')"), 'Publishing page missing');
   await click('button', '进入官方发布页');
@@ -174,12 +177,23 @@ try {
   ensure(await evaluate("(() => { const browser=[...document.querySelectorAll('.matrix-official-browser')].find(item=>!item.hidden); browser.querySelector('[aria-label=\"重置页面缩放\"]').click(); return Math.abs(browser.querySelector('webview').getZoomFactor()-1)<0.01; })()"), 'Official page zoom can reset to the default');
   ensure(await evaluate("!![...document.querySelectorAll('.matrix-official-browser')].find(item=>!item.hidden).querySelector('.matrix-draft-helper')"), 'Publishing helper opens beside the official page');
   await screenshot('qa-workspace-embedded.png');
-  await click('.matrix-workspace-tabs > button', '矩效工作台');
+  ensure(await evaluate("!document.body.innerText.includes('官方工作区') && !document.body.innerText.includes('矩效工作台')"), 'Unified interface does not expose two separate workspaces');
+  ensure(await evaluate("document.querySelector('.matrix-page-content').getClientRects().length > 0 && document.querySelector('.matrix-official-deck').getClientRects().length > 0"), 'Publishing form stays visible alongside the account panel');
+  await evaluate("(() => { [...document.querySelectorAll('.matrix-page-content [role=checkbox]')].slice(0,2).forEach(item=>item.click()); const title=document.querySelector('.matrix-page-content input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(title,'QA multi-account draft'); title.dispatchEvent(new Event('input',{bubbles:true})); return true; })()");
+  await click('button', '为所选账号准备发布');
+  await waitUntil(() => evaluate("document.querySelectorAll('webview').length === 6"), 'Two selected accounts did not receive separate draft tabs');
+  ensure(await evaluate("[...document.querySelectorAll('.matrix-draft-helper textarea')].filter(item=>item.value==='QA multi-account draft').length === 2"), 'Draft text is handed off to each selected account independently');
+  const uploadGuard = await evaluate("(() => { const view=[...document.querySelectorAll('.matrix-official-browser')].find(item=>!item.hidden).querySelector('webview'); const partition=view.getAttribute('partition'); const platform=partition.split('-')[1]; return window.matrixDesktop.uploadMedia({platform,sessionId:partition.slice(('persist:matrix-'+platform+'-').length),webContentsId:view.getWebContentsId(),mediaType:'video'}); })()");
+  ensure(Boolean(uploadGuard.error) && !uploadGuard.uploadStarted, 'Unprepared official pages cannot upload files or report success');
+  await waitUntil(() => evaluate("(async()=>{try{return await [...document.querySelectorAll('.matrix-official-browser')].find(item=>!item.hidden).querySelector('webview').executeJavaScript(\"document.body.innerText.trim().length>60\");}catch{return false;}})()"), 'Prepared account login page did not load', 45000);
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  await screenshot('qa-personal-publish.png');
+  await click('.matrix-workspace-tabs > button', '收起账号页面');
   await click('.matrix-topbar nav a', '粉丝互动');
   await waitUntil(() => evaluate("location.hash === '#/engage/comments'"), 'Comments route did not open');
   await click('button', '官方页面回复');
   ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar button.is-active')].some(button=>button.innerText==='评论回复')"), 'Comments open the official reply workflow');
-  await click('.matrix-workspace-tabs > button', '矩效工作台');
+  await click('.matrix-workspace-tabs > button', '收起账号页面');
   await click('.matrix-module-sidebar a', '私信管理');
   await waitUntil(() => evaluate("location.hash === '#/engage/messages'"), 'Messages route did not open');
   await click('button', '官方页面发私信');

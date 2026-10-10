@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const net = require('node:net');
+const { registerPersonalAssist } = require('./personal-assist.cjs');
 
 let appUrl = process.env.MATRIX_APP_URL || 'http://localhost:8080';
 let serverProcess = null;
@@ -531,6 +532,7 @@ ipcMain.handle('matrix:check-platform-session', (_event, input) => checkPlatform
 ipcMain.handle('matrix:create-database-backup', () => createDatabaseBackup());
 ipcMain.handle('matrix:open-data-folder', () => openDataFolder());
 ipcMain.handle('matrix:restore-database-backup', () => restoreDatabaseBackup());
+registerPersonalAssist({ ipcMain, dialog, webContents, session, getWindow: () => mainWindow, platforms: PLATFORM, inspectPlatformSession });
 
 app.whenReady().then(async () => {
   try {

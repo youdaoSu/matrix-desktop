@@ -48,7 +48,7 @@ export default function MessagesPage() {
   const selected = sessions.find((session) => session.id === selectedId);
 
   return <div className="space-y-5">
-    <Alert className="border-primary/20 bg-primary/5"><Inbox className="h-4 w-4 text-primary" /><AlertDescription>通过官方工作区查看和发送私信。下方展示已同步的会话记录。</AlertDescription></Alert>
+    <Alert className="border-primary/20 bg-primary/5"><Inbox className="h-4 w-4 text-primary" /><AlertDescription>通过账号操作面板查看和发送私信。下方展示已同步的会话记录。</AlertDescription></Alert>
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">私信管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {sessions.length} 个真实会话</p></div><div className="flex gap-2"><OfficialActionButton intent="messages">官方页面发私信</OfficialActionButton><Button variant="outline" disabled={loading} onClick={() => void loadSessions()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div></div>
     <Card className="flex h-[650px] overflow-hidden">
       <div className="flex w-80 shrink-0 flex-col border-r"><div className="space-y-2 border-b p-3"><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void loadSessions()} placeholder="搜索会话" /></div><Select value={platform} onValueChange={setPlatform}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部平台</SelectItem>{Object.entries(platformLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="flex-1 overflow-auto">

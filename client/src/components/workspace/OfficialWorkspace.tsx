@@ -7,8 +7,14 @@ import { Button } from '@/components/ui/button';
 
 export const platformLabels: Record<PlatformType, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
 const platformColors: Record<PlatformType, string> = { douyin: '#24242b', xiaohongshu: '#f04462', wechat: '#38a46a', bilibili: '#3ea9e4' };
+const publishEntrances: Record<PlatformType, string> = {
+  douyin: 'https://creator.douyin.com/creator-micro/content/upload',
+  xiaohongshu: 'https://creator.xiaohongshu.com/publish/publish?from=homepage&target=video',
+  wechat: 'https://channels.weixin.qq.com/platform',
+  bilibili: 'https://member.bilibili.com/platform/upload/video/frame',
+};
 type Intent = 'manage' | 'publish' | 'comments' | 'messages';
-type WorkspaceTab = MatrixDesktopSession & { id: string; nickname: string; binding: boolean; accountId?: string; intent: Intent };
+type WorkspaceTab = MatrixDesktopSession & { id: string; nickname: string; binding: boolean; accountId?: string; intent: Intent; draftText?: string };
 interface WorkspaceContext {
   tabs: WorkspaceTab[];
   activeId: string | null;
@@ -17,7 +23,7 @@ interface WorkspaceContext {
   loadingAccounts: boolean;
   accountError: string;
   refreshAccounts(): Promise<void>;
-  openAccount(account: PlatformAccount, intent?: Intent, reconnect?: boolean): Promise<void>;
+  openAccount(account: PlatformAccount, intent?: Intent, reconnect?: boolean, draftText?: string): Promise<void>;
   bindAccount(platform: PlatformType): Promise<void>;
   show(intent?: Intent): void;
   hide(): void;
@@ -28,7 +34,7 @@ interface WorkspaceContext {
 const Context = createContext<WorkspaceContext | null>(null);
 export function useOfficialWorkspace() {
   const value = useContext(Context);
-  if (!value) throw new Error('官方工作区未初始化');
+  if (!value) throw new Error('账号操作面板未初始化');
   return value;
 }
 
@@ -56,29 +62,29 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     return () => window.removeEventListener('matrix:accounts-updated', refresh);
   }, [refreshAccounts]);
 
-  const prepare = async (platform: PlatformType, sessionId: string | undefined, nickname: string, binding: boolean, intent: Intent, accountId?: string) => {
+  const prepare = async (platform: PlatformType, sessionId: string | undefined, nickname: string, binding: boolean, intent: Intent, accountId?: string, draftText?: string) => {
     if (!window.matrixDesktop?.isDesktop) {
-      toast.info('请使用矩效桌面版打开内嵌官方工作区');
+      toast.info('请使用矩效桌面版打开内嵌账号操作面板');
       return;
     }
     try {
       const prepared = await window.matrixDesktop.preparePlatformLogin(platform, sessionId);
       if ('error' in prepared) throw new Error(prepared.error);
       const id = `${platform}-${prepared.sessionId}`;
-      const tab: WorkspaceTab = { ...prepared, id, nickname, binding, intent, accountId };
+      const tab: WorkspaceTab = { ...prepared, id, nickname, binding, intent, accountId, draftText };
       setTabs(current => current.some(item => item.id === id)
-        ? current.map(item => item.id === id ? { ...item, intent, binding: item.binding || binding } : item)
+        ? current.map(item => item.id === id ? { ...item, intent, binding: item.binding || binding, ...(draftText !== undefined ? { draftText } : {}) } : item)
         : [...current, tab]);
       setActiveId(id);
       setVisible(true);
     } catch (error) { toast.error(error instanceof Error ? error.message : '无法打开官方页面'); }
   };
-  const openAccount = async (account: PlatformAccount, intent: Intent = preferredIntent.current, reconnect = false) => {
+  const openAccount = async (account: PlatformAccount, intent: Intent = preferredIntent.current, reconnect = false, draftText?: string) => {
     if (!account.connectorSessionId) {
       toast.info('该账号通过 API 授权绑定，请在官方页面另行登录后绑定本机工作区');
       return;
     }
-    await prepare(account.platform, account.connectorSessionId, account.nickname || platformLabels[account.platform], reconnect, intent, account.id);
+    await prepare(account.platform, account.connectorSessionId, account.nickname || platformLabels[account.platform], reconnect, intent, account.id, draftText);
   };
   const close = (id: string) => {
     const remaining = tabs.filter(tab => tab.id !== id);
@@ -86,7 +92,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     if (activeId === id) setActiveId(remaining.at(-1)?.id || null);
   };
   return <Context.Provider value={{ tabs, activeId, visible, accounts, loadingAccounts, accountError, refreshAccounts, openAccount,
-    bindAccount: platform => prepare(platform, undefined, `登录${platformLabels[platform]}`, true, 'manage'),
+    bindAccount: platform => prepare(platform, undefined, `登录${platformLabels[platform]}`, true, preferredIntent.current),
     show: intent => {
       if (typeof intent === 'string' && intent in intentInfo) {
         preferredIntent.current = intent;
@@ -101,9 +107,9 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
 
 export function WorkspaceTabs() {
   const workspace = useOfficialWorkspace();
+  if (!workspace.tabs.length || !workspace.visible) return null;
   return <div className="matrix-workspace-tabs" role="tablist" aria-label="工作区标签">
-    <button role="tab" aria-selected={!workspace.visible} className={!workspace.visible ? 'is-active' : ''} onClick={workspace.hide}><Home size={14} />矩效工作台</button>
-    <button role="tab" aria-selected={workspace.visible && !workspace.activeId} className={workspace.visible && !workspace.activeId ? 'is-active' : ''} onClick={() => workspace.show()}><Globe2 size={14} />官方工作区</button>
+    <button onClick={workspace.hide}><ArrowLeft size={14} />收起账号页面</button>
     {workspace.tabs.map(tab => <div className={`matrix-account-tab ${workspace.visible && workspace.activeId === tab.id ? 'is-active' : ''}`} key={tab.id}>
       <button role="tab" aria-selected={workspace.visible && workspace.activeId === tab.id} onClick={() => workspace.select(tab.id)}><PlatformMark platform={tab.platform} small /><span>{tab.nickname}</span></button>
       <button className="matrix-tab-close" aria-label={`关闭${tab.nickname}`} onClick={() => workspace.close(tab.id)}><X size={13} /></button>
@@ -113,6 +119,11 @@ export function WorkspaceTabs() {
 export function OfficialActionButton({ intent, children }: { intent: Intent; children: ReactNode }) {
   const workspace = useOfficialWorkspace();
   return <Button variant="outline" onClick={() => workspace.show(intent)}><Globe2 size={15} />{children}</Button>;
+}
+function AccountPicker() {
+  const workspace = useOfficialWorkspace();
+  const tab = workspace.tabs.find(item => item.id === workspace.activeId);
+  return <div className="matrix-context-account"><label htmlFor="matrix-context-account">当前账号</label><select id="matrix-context-account" value={tab?.accountId || ''} onChange={event => { const account = workspace.accounts.find(item => item.id === event.target.value); if (account) void workspace.openAccount(account); }}><option value="">选择已绑定的个人账号</option>{workspace.accounts.filter(account => account.connectorSessionId).map(account => <option key={account.id} value={account.id}>{platformLabels[account.platform]} · {account.nickname}</option>)}</select></div>;
 }
 function PlatformMark({ platform, small = false }: { platform: PlatformType; small?: boolean }) {
   return <span className={`matrix-platform-mark ${small ? 'small' : ''}`} style={{ background: platformColors[platform] }}>{platformLabels[platform].slice(0, 1)}</span>;
@@ -124,7 +135,7 @@ export function OfficialWorkspaceDeck() {
   const [filter, setFilter] = useState<PlatformType | 'all'>('all');
   const filtered = workspace.accounts.filter(account => (filter === 'all' || account.platform === filter) && `${account.nickname || ''} ${account.accountRemark || ''} ${account.groupName || ''}`.toLowerCase().includes(query.toLowerCase()));
   const groups = [...new Set(filtered.map(account => account.groupName || '默认分组'))];
-  return <section className="matrix-official-deck" hidden={!workspace.visible} aria-label="官方工作区">
+  return <section className="matrix-official-deck" hidden={!workspace.visible} aria-label="账号操作面板">
     <aside className="matrix-account-rail">
       <div className="matrix-rail-title"><div><strong>我的账号</strong><span>{workspace.accounts.length} 个已绑定账号</span></div><button title="刷新账号" onClick={() => void workspace.refreshAccounts()}><RefreshCw size={16} className={workspace.loadingAccounts ? 'animate-spin' : ''} /></button></div>
       <div className="matrix-account-search"><Search size={14} /><input aria-label="搜索账号" placeholder="搜索昵称 / 备注 / 分组" value={query} onChange={event => setQuery(event.target.value)} /></div>
@@ -137,6 +148,7 @@ export function OfficialWorkspaceDeck() {
       <div className="matrix-add-platforms"><span>添加个人账号</span><div>{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><Plus size={12} />{platformLabels[platform]}</button>)}</div></div>
     </aside>
     <div className="matrix-browser-area">
+      <AccountPicker />
       {!workspace.activeId && <div className="matrix-workspace-welcome"><span className="matrix-welcome-icon"><Globe2 size={32} /></span><span className="matrix-eyebrow">OFFICIAL WORKSPACE</span><h1>账号与操作，都在一个工作区</h1><p>选择左侧账号，打开官方后台。发布内容、回复评论和发送私信，直接在官方页面中完成。</p><div className="matrix-welcome-features"><span><Users size={17} />账号分组切换</span><span><Send size={17} />官方页面发布</span><span><MessageCircle size={17} />评论与私信</span></div><div className="matrix-platform-cards">{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><PlatformMark platform={platform} /><strong>{platformLabels[platform]}</strong><small>{platform === "xiaohongshu" ? "官方短信登录" : "官方扫码登录"}</small><Plus size={15} /></button>)}</div><small>登录会话保存在本机，各账号独立。平台页面中提交的操作以官方结果为准。</small></div>}
       {workspace.tabs.map(tab => <OfficialBrowser key={tab.id} tab={tab} active={tab.id === workspace.activeId} />)}
     </div>
@@ -159,8 +171,21 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const [url, setUrl] = useState(tab.url);
   const [back, setBack] = useState(false);
   const [forward, setForward] = useState(false);
-  const [helperOpen, setHelperOpen] = useState(false);
-  const [draft, setDraft] = useState('');
+  const [helperOpen, setHelperOpen] = useState(Boolean(tab.draftText));
+  const [draft, setDraft] = useState(tab.draftText || '');
+  const [uploading, setUploading] = useState(false);
+  const [uploadNote, setUploadNote] = useState('');
+  useEffect(() => { if (tab.draftText !== undefined) { setDraft(tab.draftText); setHelperOpen(true); } }, [tab.draftText]);
+  const upload = async (mediaType: 'video' | 'image') => {
+    if (!window.matrixDesktop || uploading || tab.binding) return;
+    setUploading(true); setUploadNote('');
+    try {
+      const result = await window.matrixDesktop.uploadMedia({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId(), mediaType });
+      if (result.error) throw new Error(result.error);
+      if (result.uploadStarted) setUploadNote(`已交给官方上传控件：${result.filenames?.join('、')}。请等待官方上传结果，核对后自行点击发表；尚未发布。`);
+    } catch (failure) { setUploadNote(failure instanceof Error ? failure.message : '无法准备上传，请使用官方上传按钮'); }
+    finally { setUploading(false); }
+  };
   const [zoom, setZoom] = useState(100);
   const [detectedAccount, setDetectedAccount] = useState('');
   const [slowLoad, setSlowLoad] = useState(false);
@@ -239,7 +264,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     {error && <div role="alert" className="matrix-browser-error">{error}<button onClick={() => operate(() => view.current.reload())}>重试</button></div>}
     <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.url, partition: tab.partition, className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
       {loading && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" onClick={() => operate(() => view.current.reload())}>重新加载</Button>}</div>}
-      {helperOpen && <aside className="matrix-draft-helper"><div><strong>文案辅助</strong><button aria-label="关闭文案辅助" onClick={() => setHelperOpen(false)}><X size={16} /></button></div><p>整理标题、正文或回复文案，复制后粘贴到官方页面。</p><textarea aria-label="文案辅助内容" placeholder="输入要发布的文案或回复…" value={draft} onChange={event => setDraft(event.target.value)} /><Button disabled={!draft.trim()} onClick={() => void navigator.clipboard.writeText(draft).then(() => toast.success('文案已复制')).catch(() => toast.error('复制失败，请手动选择文案复制'))}><Copy size={14} />复制文案</Button><small>文案仅保留在当前标签内，关闭标签后清除。</small></aside>}
+      {helperOpen && <aside className="matrix-draft-helper"><div><strong>文案辅助</strong><button aria-label="关闭文案辅助" onClick={() => setHelperOpen(false)}><X size={16} /></button></div><p>整理标题、正文或回复文案，复制后粘贴到官方页面。</p><textarea aria-label="文案辅助内容" placeholder="输入要发布的文案或回复…" value={draft} onChange={event => setDraft(event.target.value)} /><Button disabled={!draft.trim()} onClick={() => void navigator.clipboard.writeText(draft).then(() => toast.success('文案已复制')).catch(() => toast.error('复制失败，请手动选择文案复制'))}><Copy size={14} />复制文案</Button><div className="matrix-personal-upload"><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => operate(() => view.current.loadURL(publishEntrances[tab.platform]))}>打开发表入口</Button><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('video')}>选择视频上传</Button><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('image')}>选择图片上传</Button><small>先进入官方发布表单；只上传本人选定素材，不自动发表。</small>{uploadNote && <p role="status">{uploadNote}</p>}</div><small>文案仅保留在当前标签内，关闭标签后清除。</small></aside>}
     </div>
     <div className="matrix-browser-status"><span><i />{loading ? '正在加载官方页面…' : '官方页面'} · {platformLabels[tab.platform]}</span><span>本机独立会话 · 操作由你确认</span></div>
   </div>;

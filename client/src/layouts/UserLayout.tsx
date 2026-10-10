@@ -243,7 +243,7 @@ const UserLayoutContent = () => {
 
   const activeTopMenu = getActiveTopMenu();
   const activeMenu = topMenuItems.find((m) => m.basePath === activeTopMenu) || topMenuItems[0];
-  const showSidebar = !workspace.visible && activeMenu.groups.reduce((count, group) => count + group.items.length, 0) > 1;
+  const showSidebar = activeMenu.groups.reduce((count, group) => count + group.items.length, 0) > 1;
 
   const handleLogout = () => {
     clearAuthToken();
@@ -295,7 +295,6 @@ const UserLayoutContent = () => {
 
         {/* Right section */}
         <div className="flex items-center gap-2 ml-auto">
-          <Button size="sm" variant="outline" onClick={() => workspace.show()} className="matrix-open-workspace"><Globe2 className="h-4 w-4" />官方工作区</Button>
           {vipActive ? (
             <Badge variant="default" className="gap-1 bg-[hsl(46_100%_52%)] text-[hsl(30_60%_20%)] border-[hsl(46_100%_40%)]">
               <Crown className="w-3 h-3" />
@@ -383,8 +382,8 @@ const UserLayoutContent = () => {
         )}
 
         {/* Content area */}
-        <main className={`matrix-main flex-1 min-w-0 min-h-0 ${workspace.visible ? 'matrix-main-browser' : ''}`}>
-          <div className="matrix-page-content" hidden={workspace.visible}><Outlet /></div>
+        <main className={`matrix-main flex-1 min-w-0 min-h-0 ${workspace.visible ? 'matrix-main-browser' : ''} ${workspace.visible && activeTopMenu !== '/accounts' ? 'matrix-main-integrated' : ''}`}>
+          <div className="matrix-page-content" hidden={workspace.visible && activeTopMenu === '/accounts'}><Outlet /></div>
           <OfficialWorkspaceDeck />
         </main>
       </div>
