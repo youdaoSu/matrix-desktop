@@ -75,6 +75,8 @@ try {
   await wait(() => evaluate("!!document.querySelector('.matrix-add-platforms button')"), 'Packaged official workspace missing');
   await evaluate("document.querySelector('.matrix-add-platforms button').click(); true");
   await wait(() => evaluate("(async()=>{try{return await document.querySelector('webview')?.executeJavaScript(\"document.body.innerText.trim().length > 60\");}catch{return false;}})()"), 'Packaged official guest did not render content');
+  // Guest DOM becomes ready before Chromium submits its first visible surface.
+  await new Promise(resolve => setTimeout(resolve, 2000));
   const screenshot = await call('Page.captureScreenshot', { format: 'png' });
   fs.mkdirSync('logs', { recursive: true });
   fs.writeFileSync('logs/qa-packaged-workspace.png', Buffer.from(screenshot.data, 'base64'));
