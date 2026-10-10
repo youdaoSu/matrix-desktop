@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter as WebRouter, HashRouter as DesktopRouter } from 'react-router-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import RoutesComponent from './app.tsx';
@@ -11,8 +11,9 @@ import { Toaster } from '@client/src/components/ui/sonner';
 const CLIENT_BASE_PATH = process.env.CLIENT_BASE_PATH || '/';
 
 const MainApp = () => {
+  const Router = window.matrixDesktop?.isDesktop ? DesktopRouter : WebRouter;
   return (
-    <BrowserRouter basename={CLIENT_BASE_PATH}>
+    <Router basename={window.matrixDesktop?.isDesktop ? undefined : CLIENT_BASE_PATH}>
       <ErrorBoundary
         fallbackRender={({ error, resetErrorBoundary }) => (
           <div className="min-h-screen flex items-center justify-center p-6">
@@ -27,7 +28,7 @@ const MainApp = () => {
         <RoutesComponent />
         {createPortal(<Toaster />, document.body)}
       </ErrorBoundary>
-    </BrowserRouter>
+    </Router>
   );
 };
 

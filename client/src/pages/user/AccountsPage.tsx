@@ -1,4 +1,5 @@
-import { createElement, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 import {
   Plus,
   Search,
@@ -143,7 +144,6 @@ interface GroupItem {
 }
 
 type EmbeddedAuthMode = 'bind' | 'reauthorize' | 'manage';
-type EmbeddedAuthState = MatrixDesktopSession & { mode: EmbeddedAuthMode };
 
 function apiErrorMessage(error: any, fallback: string) {
   return error?.response?.data?.error?.message
@@ -188,6 +188,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string; default?: boolean }[] = [
 ];
 
 const AccountsPage = () => {
+  const workspace = useOfficialWorkspace();
   const [searchText, setSearchText] = useState('');
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -206,12 +207,6 @@ const AccountsPage = () => {
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [startingOAuth, setStartingOAuth] = useState(false);
   const [oauthStatus, setOAuthStatus] = useState<Record<PlatformType, { available: boolean; message: string }> | null>(null);
-  const [embeddedAuth, setEmbeddedAuth] = useState<EmbeddedAuthState | null>(null);
-  const [embeddedUrl, setEmbeddedUrl] = useState('');
-  const [embeddedLoading, setEmbeddedLoading] = useState(false);
-  const [embeddedError, setEmbeddedError] = useState('');
-  const authWebviewRef = useRef<any>(null);
-
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailAccount, setDetailAccount] = useState<AccountItem | null>(null);
 
@@ -294,14 +289,11 @@ const AccountsPage = () => {
     mode: EmbeddedAuthMode = 'bind',
   ) => {
     if (!window.matrixDesktop?.isDesktop) return false;
-    const prepared = await window.matrixDesktop.preparePlatformLogin(platform, sessionId);
-    if ('error' in prepared) throw new Error(prepared.error);
-    setEmbeddedAuth({ ...prepared, mode });
-    setEmbeddedUrl(prepared.url);
-    setEmbeddedError('');
-    setEmbeddedLoading(true);
     setBindDialogOpen(false);
     setReAuthOpen(false);
+    const account = accounts.find(item => item.platform === platform && item.connectorSessionId === sessionId);
+    if (account && sessionId) await workspace.openAccount(account, 'manage', mode === 'reauthorize');
+    else await workspace.bindAccount(platform);
     return true;
   };
 
@@ -324,62 +316,10 @@ const AccountsPage = () => {
   };
 
   useEffect(() => {
-    const view = authWebviewRef.current;
-    if (!view || !embeddedAuth) return;
-    const start = () => { setEmbeddedLoading(true); setEmbeddedError(''); };
-    const stop = () => {
-      setEmbeddedLoading(false);
-      try { setEmbeddedUrl(view.getURL() || embeddedAuth.url); } catch { setEmbeddedUrl(embeddedAuth.url); }
-    };
-    const navigate = (event: any) => setEmbeddedUrl(event.url || embeddedAuth.url);
-    const failed = (event: any) => {
-      if (event.errorCode !== -3) setEmbeddedError(`官方页面加载失败：${event.errorDescription || event.errorCode}`);
-      setEmbeddedLoading(false);
-    };
-    view.addEventListener('did-start-loading', start);
-    view.addEventListener('did-stop-loading', stop);
-    view.addEventListener('did-navigate', navigate);
-    view.addEventListener('did-navigate-in-page', navigate);
-    view.addEventListener('did-fail-load', failed);
-    return () => {
-      view.removeEventListener('did-start-loading', start);
-      view.removeEventListener('did-stop-loading', stop);
-      view.removeEventListener('did-navigate', navigate);
-      view.removeEventListener('did-navigate-in-page', navigate);
-      view.removeEventListener('did-fail-load', failed);
-    };
-  }, [embeddedAuth]);
-
-  const completeEmbeddedAuth = async () => {
-    if (!embeddedAuth || !authWebviewRef.current || !window.matrixDesktop) return;
-    setStartingOAuth(true);
-    setEmbeddedError('');
-    try {
-      const result = await window.matrixDesktop.completePlatformLogin({
-        platform: embeddedAuth.platform,
-        sessionId: embeddedAuth.sessionId,
-        webContentsId: authWebviewRef.current.getWebContentsId(),
-      });
-      if ('error' in result) throw new Error(result.error);
-      await axiosForBackend.post('/api/platform/accounts/desktop', {
-        platform: result.platform,
-        connectorSessionId: result.sessionId,
-        nickname: result.nickname,
-        avatarUrl: result.avatarUrl || undefined,
-        pageUrl: result.pageUrl,
-      });
-      await loadAccounts();
-      setEmbeddedAuth(null);
-      setReAuthAccount(null);
-      toast.success(`已绑定${platformMeta[result.platform].label}账号「${result.nickname}」`);
-    } catch (error: any) {
-      const message = apiErrorMessage(error, '账号绑定失败，请确认已在官方页面登录');
-      setEmbeddedError(message);
-      toast.error(message);
-    } finally {
-      setStartingOAuth(false);
-    }
-  };
+    const refresh = () => { void loadAccounts(); void loadGroups(); };
+    window.addEventListener('matrix:accounts-updated', refresh);
+    return () => window.removeEventListener('matrix:accounts-updated', refresh);
+  }, []);
 
   const platformAvailable = (platform: PlatformType) =>
     Boolean(window.matrixDesktop?.isDesktop || oauthStatus?.[platform]?.available);
@@ -681,7 +621,7 @@ const AccountsPage = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px-48px)]">
+    <div className="flex flex-col h-[calc(100vh-152px)] min-h-[520px]">
       {/* 平台接入状态 */}
       <Alert
         variant="default"
@@ -1620,103 +1560,6 @@ const AccountsPage = () => {
               {startingOAuth ? '正在打开…' : window.matrixDesktop?.isDesktop ? '在矩效中重新授权' : '前往官方重新授权'}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 桌面端内嵌官方平台，交互方式与小V猫一致：官方页面始终留在主软件内 */}
-      <Dialog
-        open={Boolean(embeddedAuth)}
-        onOpenChange={(open) => {
-          if (!open && !startingOAuth) {
-            setEmbeddedAuth(null);
-            setEmbeddedError('');
-          }
-        }}
-      >
-        <DialogContent className="w-[96vw] h-[92vh] sm:max-w-[96vw] p-0 gap-0 overflow-hidden flex flex-col [&>button]:hidden">
-          {embeddedAuth && (
-            <>
-              <div className="h-14 px-4 border-b border-border bg-card flex items-center gap-3 shrink-0">
-                <div
-                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white shrink-0"
-                  style={{ backgroundColor: platformMeta[embeddedAuth.platform].color }}
-                >
-                  {createElement(platformMeta[embeddedAuth.platform].icon, { className: 'w-5 h-5' })}
-                </div>
-                <div className="min-w-0">
-                  <DialogTitle className="text-base">
-                    {embeddedAuth.mode === 'manage' ? '平台后台' : embeddedAuth.mode === 'reauthorize' ? '重新授权账号' : '绑定账号'}
-                    <span className="ml-2 text-muted-foreground font-normal">· {platformMeta[embeddedAuth.platform].label}</span>
-                  </DialogTitle>
-                  <DialogDescription className="text-xs mt-0.5">
-                    官方页面已安全嵌入矩效，登录状态仅保存在本机独立会话中
-                  </DialogDescription>
-                </div>
-                <div className="flex-1" />
-                {embeddedLoading && <span className="text-xs text-muted-foreground">页面加载中…</span>}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={startingOAuth}
-                  onClick={() => setEmbeddedAuth(null)}
-                  aria-label="关闭官方页面"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-
-              <div className="h-11 px-3 border-b border-border bg-muted/30 flex items-center gap-2 shrink-0">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => authWebviewRef.current?.goBack()} disabled={embeddedLoading}>
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => authWebviewRef.current?.goForward()} disabled={embeddedLoading}>
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => authWebviewRef.current?.reload()}>
-                  <RotateCw className={cn('w-4 h-4', embeddedLoading && 'animate-spin')} />
-                </Button>
-                <div className="h-8 flex-1 min-w-0 rounded-md border border-border bg-background px-3 flex items-center gap-2 text-xs">
-                  <LockKeyhole className="w-3.5 h-3.5 text-[hsl(130_54%_42%)] shrink-0" />
-                  <span className="truncate text-muted-foreground">{embeddedUrl || embeddedAuth.url}</span>
-                </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => authWebviewRef.current?.loadURL(embeddedAuth.url)} title="返回平台首页">
-                  <Globe2 className="w-4 h-4" />
-                </Button>
-              </div>
-
-              {embeddedError && (
-                <Alert variant="destructive" className="rounded-none border-x-0 border-t-0 shrink-0">
-                  <AlertCircle className="w-4 h-4" />
-                  <AlertDescription>{embeddedError}</AlertDescription>
-                </Alert>
-              )}
-
-              <div className="flex-1 min-h-0 bg-white relative">
-                {createElement('webview', {
-                  key: `${embeddedAuth.platform}-${embeddedAuth.sessionId}`,
-                  ref: authWebviewRef,
-                  src: embeddedAuth.url,
-                  partition: embeddedAuth.partition,
-                  className: 'w-full h-full bg-white',
-                  style: { display: 'flex', width: '100%', height: '100%' },
-                })}
-              </div>
-
-              <div className="h-16 px-4 border-t border-border bg-card flex items-center gap-3 shrink-0">
-                <Shield className="w-4 h-4 text-primary shrink-0" />
-                <p className="text-xs text-muted-foreground flex-1">
-                  请直接在上方官方页面完成扫码或验证码登录。矩效不会读取或上传平台密码、Cookie。
-                </p>
-                <Button variant="outline" disabled={startingOAuth} onClick={() => setEmbeddedAuth(null)}>关闭</Button>
-                {embeddedAuth.mode !== 'manage' && (
-                  <Button disabled={startingOAuth || embeddedLoading} onClick={() => void completeEmbeddedAuth()}>
-                    {startingOAuth ? '正在读取账号…' : '我已登录，完成绑定'}
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
         </DialogContent>
       </Dialog>
 

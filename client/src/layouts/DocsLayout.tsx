@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { BookOpen, Search, ArrowLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
@@ -14,9 +15,10 @@ const docItems = [
 
 const DocsLayout = () => {
   const navigate = useNavigate();
+  const [search, setSearch] = useState('');
 
   return (
-    <div className="min-h-screen bg-[hsl(220_20%_98%)] flex">
+    <div className="matrix-secondary-shell matrix-docs-shell min-h-screen flex">
       {/* Left sidebar */}
       <aside className="w-60 bg-sidebar border-r border-sidebar-border flex flex-col h-screen sticky top-0">
         <div className="h-14 flex items-center px-4 border-b border-sidebar-border gap-2">
@@ -38,6 +40,8 @@ const DocsLayout = () => {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
               placeholder="搜索文档..."
               className="pl-8 h-8 text-sm bg-background"
             />
@@ -46,7 +50,7 @@ const DocsLayout = () => {
 
         {/* Doc nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {docItems.map((item) => (
+          {docItems.filter(item => item.label.includes(search.trim())).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

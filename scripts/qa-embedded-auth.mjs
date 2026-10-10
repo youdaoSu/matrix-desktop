@@ -61,14 +61,15 @@ const results = [];
 for (const platform of platforms) {
   await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find((item) => item.innerText.trim() === '绑定账号'); button.click(); return true; })()`);
   await waitFor("document.body.innerText.includes('在矩效中打开官方授权')", `${platform.label}绑定弹窗未打开`);
-  await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find((item) => item.innerText.trim() === ${JSON.stringify(platform.label)}); if (!button) return false; button.click(); return true; })()`);
+  await evaluate(`(() => { const button = [...document.querySelector("[role=dialog]").querySelectorAll('button')].find((item) => item.innerText.trim() === ${JSON.stringify(platform.label)}); if (!button) return false; button.click(); return true; })()`);
   await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find((item) => item.innerText.includes('在矩效中打开官方授权')); button.click(); return true; })()`);
   await waitFor("!!document.querySelector('webview')", `${platform.label}内嵌官方授权 webview 未创建`);
-  await waitFor("document.body.innerText.includes('官方页面已安全嵌入矩效')", `${platform.label}内嵌授权工具栏未显示`);
+  await waitFor("document.querySelector('.matrix-official-deck')?.hidden === false && document.body.innerText.includes('我已登录，完成绑定')", `${platform.label}内嵌工作区未显示`);
 
   let guest;
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    guest = (await targets()).find((item) => item.type === 'webview' && item.url.includes(platform.host));
+    const domain = platform.key === 'wechat' ? 'weixin.qq.com' : platform.host.split('.').slice(-2).join('.');
+    guest = (await targets()).find((item) => item.type === 'webview' && item.url.includes(domain));
     if (guest) break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -96,8 +97,9 @@ for (const platform of platforms) {
   })()`);
   if (!guardResult?.error?.includes('尚未检测到')) throw new Error(`${platform.label}未登录时没有阻止绑定：${JSON.stringify({ guardResult, state, guestUrl: guest.url })}`);
   results.push({ platform: platform.label, embedded: true, guestUrl: guest.url, ...state });
-  await evaluate(`(() => { const buttons = [...document.querySelectorAll('button')].filter((item) => item.innerText.trim() === '关闭'); buttons.at(-1)?.click(); return true; })()`);
+  await evaluate("document.querySelector('.matrix-account-tab.is-active .matrix-tab-close')?.click(); true");
   await waitFor("!document.querySelector('webview')", `${platform.label}内嵌窗口未正确关闭`);
+  await evaluate("document.querySelector('.matrix-workspace-tabs > button').click(); true");
 }
 console.log(JSON.stringify({ passed: platforms.length * 6, results }, null, 2));
 socket.close();

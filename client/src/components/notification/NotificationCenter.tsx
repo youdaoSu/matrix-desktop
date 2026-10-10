@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { axiosForBackend } from '@/api';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -22,7 +24,6 @@ import {
   ScrollArea,
 } from '@client/src/components/ui/scroll-area';
 import {
-  mockNotifications,
   notificationFilterTabs,
   getNotificationTypeMeta,
 } from '@client/src/pages/user/dashboard-data';
@@ -36,7 +37,16 @@ interface NotificationCenterProps {
 const NotificationCenter = ({ className }: NotificationCenterProps) => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const refresh = useCallback(async () => {
+    try {
+      const response = await axiosForBackend.get('/api/notifications', { params: { page: 1, pageSize: 100 } });
+      setNotifications(response.data?.data?.items || []);
+      setLoadError(false);
+    } catch { setLoadError(true); }
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh, open]);
   const [activeTab, setActiveTab] = useState<string>('all');
 
   const unreadCount = useMemo(
@@ -49,13 +59,17 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
     return notifications.filter((n) => n.type === activeTab);
   }, [notifications, activeTab]);
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
+    try { await axiosForBackend.post('/api/notifications/read-all'); }
+    catch { toast.error('标记已读失败，请重试'); return; }
     setNotifications((prev) =>
       prev.map((n) => ({ ...n, isRead: true }))
     );
   };
 
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = async (notification: Notification) => {
+    try { await axiosForBackend.post(`/api/notifications/${notification.id}/read`); }
+    catch { toast.error('标记已读失败，请重试'); return; }
     // 标记为已读
     setNotifications((prev) =>
       prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n))
@@ -78,8 +92,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
   };
 
   const handleViewAll = () => {
-    setOpen(false);
-    navigate('/settings/profile'); // 后续可改为专门的通知列表页
+    void refresh();
   };
 
   const formatTime = (dateStr: string): string => {
@@ -238,7 +251,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
             className="w-full h-7 text-xs text-[hsl(26_90%_49%)] hover:text-[hsl(26_90%_45%)] hover:bg-[hsl(26_90%_49%)/8] justify-center"
             onClick={handleViewAll}
           >
-            查看全部通知
+            {loadError ? '加载失败，点击重试' : '刷新通知'}
             <ChevronRight className="w-3.5 h-3.5" />
           </Button>
         </div>

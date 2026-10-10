@@ -25,23 +25,34 @@ export const axiosForBackend = axios.create({
 
 export function setAuthToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+export function setSessionAuthToken(token: string) {
+  sessionStorage.setItem(TOKEN_KEY, token);
+  localStorage.removeItem(TOKEN_KEY);
 }
 
 export function getAuthToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function clearAuthToken() {
   localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  sessionStorage.removeItem(USER_KEY);
 }
 
-export function setUser(user: any) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+export function setUser(user: any, remember = Boolean(localStorage.getItem(TOKEN_KEY) || !sessionStorage.getItem(TOKEN_KEY))) {
+  const storage = remember ? localStorage : sessionStorage;
+  const otherStorage = remember ? sessionStorage : localStorage;
+  storage.setItem(USER_KEY, JSON.stringify(user));
+  otherStorage.removeItem(USER_KEY);
 }
 
 export function getUser(): any {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 

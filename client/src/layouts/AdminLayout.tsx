@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 
 } from '@client/src/components/ui/dropdown-menu';
-import { getAdminToken } from '@client/src/api';
+import { clearAdminToken, getAdminToken, getAdminUser } from '@client/src/api';
 
 const menuItems = [
   { to: '/admin/dashboard', label: '运营总览', icon: LayoutDashboard },
@@ -40,11 +40,12 @@ const AdminLayout = () => {
   }
 
   const handleLogout = () => {
+    clearAdminToken();
     navigate('/admin/login');
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(220_20%_98%)] flex">
+    <div className="matrix-secondary-shell matrix-admin-shell min-h-screen flex">
       {/* Sidebar - dark style */}
       <aside className="w-60 bg-[hsl(220_14%_14%)] text-[hsl(220_14%_90%)] flex flex-col h-screen sticky top-0">
         {/* Logo */}
@@ -112,7 +113,7 @@ const AdminLayout = () => {
                     </AvatarFallback>
                   </Avatar>
                   <span className="text-sm font-medium hidden sm:inline">
-                    管理员
+                    {getAdminUser()?.nickname || getAdminUser()?.username || '管理员'}
                   </span>
                 </Button>
               </DropdownMenuTrigger>

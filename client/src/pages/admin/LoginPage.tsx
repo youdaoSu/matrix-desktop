@@ -1,13 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Shield, LogIn, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, AtSign, ShieldCheck } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { adminAxios, logger, setAdminToken, setAdminUser } from '@client/src/api';
 import type { AdminUser } from '@shared/api.interface';
+import { AuthCard, AuthError, AuthField, AuthPasswordField, AuthSubmit, getAuthError } from '@/components/auth/AuthComponents';
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
@@ -16,103 +13,40 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username || !password) {
-      setError('请输入管理员账号和密码');
-      return;
-    }
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!username.trim() || !password) return setError('请输入管理员账号和密码');
     setLoading(true);
-
     setError('');
     try {
-      const response = await adminAxios.post('/api/admin/login', { username, password });
+      const response = await adminAxios.post('/api/admin/login', { username: username.trim(), password });
       const result = response.data.data as { token: string; user: AdminUser };
       setAdminToken(result.token);
       setAdminUser(result.user);
-      logger.info('管理员登录成功', username);
+      logger.info('管理员登录成功', username.trim());
       navigate('/admin/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.message || '管理员账号或密码错误');
+    } catch (requestError: unknown) {
+      setError(getAuthError(requestError, '管理员账号或密码错误'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-amber-500/20 mb-4">
-          <Shield className="w-6 h-6 text-amber-400" />
-        </div>
-        <h1 className="text-2xl font-bold text-white mb-2">管理后台</h1>
-        <p className="text-sm text-slate-400">请使用管理员账号登录</p>
+    <AuthCard eyebrow="安全管理入口" title="管理员登录" description="请使用已获授权的管理员账号进入系统管理后台。">
+      <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+        <AuthError>{error}</AuthError>
+        <Alert className="rounded-xl border-amber-200 bg-amber-50 text-amber-900">
+          <ShieldCheck className="h-4 w-4 text-amber-700" />
+          <AlertDescription className="text-xs leading-5">管理员入口仅用于系统维护。请使用部署时设置的管理账号，并在首次登录后修改初始密码。</AlertDescription>
+        </Alert>
+        <AuthField id="admin-username" label="管理员账号" icon={AtSign} value={username} onChange={(event) => { setUsername(event.target.value); setError(''); }} placeholder="请输入管理员账号" autoComplete="username" autoFocus required />
+        <AuthPasswordField id="admin-password" label="密码" value={password} onChange={(event) => { setPassword(event.target.value); setError(''); }} placeholder="请输入管理员密码" autoComplete="current-password" required />
+        <AuthSubmit loading={loading}>{loading ? '正在验证…' : '安全登录'}</AuthSubmit>
+      </form>
+      <div className="mt-5 border-t border-slate-100 pt-5 text-center">
+        <Link to="/login" className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition hover:text-slate-900"><ArrowLeft className="h-4 w-4" />返回用户登录</Link>
       </div>
-
-      <Card className="bg-slate-800/50 border-slate-700 backdrop-blur">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg text-white">管理员登录</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Alert className="mb-4 bg-amber-500/10 border-amber-500/30">
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
-            <AlertTitle className="text-amber-400 text-xs">安全提示</AlertTitle>
-            <AlertDescription className="text-slate-400 text-xs">
-              首次登录后请立即修改初始密码，确保账号安全
-            </AlertDescription>
-          </Alert>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <Alert variant="destructive" className="py-2">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            <div className="space-y-2">
-              <Label className="text-slate-300">管理员用户名</Label>
-              <Input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="请输入管理员账号"
-                className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary"
-                autoComplete="username"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-slate-300">密码</Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="请输入管理员密码"
-                className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary"
-                autoComplete="current-password"
-              />
-            </div>
-
-            <Button type="submit" className="w-full" disabled={loading}>
-              <LogIn className="w-4 h-4" />
-              {loading ? '登录中...' : '登 录'}
-            </Button>
-
-            <p className="text-xs text-slate-600 text-center">
-              初始账号：admin / admin123456
-            </p>
-          </form>
-
-          <div className="mt-5 text-center">
-            <Link
-              to="/login"
-              className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-300"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              返回用户登录
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    </AuthCard>
   );
 }

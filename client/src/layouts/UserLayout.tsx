@@ -42,7 +42,9 @@ import {
   DropdownMenuTrigger,
 } from '@client/src/components/ui/dropdown-menu';
 import NotificationCenter from '@client/src/components/notification/NotificationCenter';
-import { getAuthToken } from '@client/src/api';
+import { clearAuthToken, getAuthToken, getUser } from '@client/src/api';
+import { Globe2 } from 'lucide-react';
+import { OfficialWorkspaceDeck, OfficialWorkspaceProvider, useOfficialWorkspace, WorkspaceTabs } from '@/components/workspace/OfficialWorkspace';
 
 interface SubMenuItem {
   to: string;
@@ -214,15 +216,17 @@ const topMenuItems: TopMenuItem[] = [
   },
 ];
 
-const UserLayout = () => {
+const UserLayoutContent = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const workspace = useOfficialWorkspace();
+  const user = getUser();
 
   // 鉴权：未登录则跳转登录页
   if (!getAuthToken()) {
     return <Navigate to="/login" replace />;
   }
-  const [vipActive] = useState(true);
+  const vipActive = user?.vipStatus === 'active';
 
   const getActiveTopMenu = (): string => {
     const path = location.pathname;
@@ -239,19 +243,20 @@ const UserLayout = () => {
 
   const activeTopMenu = getActiveTopMenu();
   const activeMenu = topMenuItems.find((m) => m.basePath === activeTopMenu) || topMenuItems[0];
-  const showSidebar = activeMenu.groups.length > 0 && activeMenu.groups[0].items.length > 1;
+  const showSidebar = !workspace.visible && activeMenu.groups.reduce((count, group) => count + group.items.length, 0) > 1;
 
   const handleLogout = () => {
+    clearAuthToken();
     navigate('/login');
   };
 
   return (
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="matrix-shell h-screen bg-background flex flex-col overflow-hidden">
       {/* Top navigation bar */}
-      <header className="h-14 bg-card border-b border-border flex items-center px-4 gap-2 sticky top-0 z-30 shrink-0">
+      <header className="matrix-topbar h-14 bg-card border-b border-border flex items-center px-4 gap-2 z-30 shrink-0">
         {/* Logo */}
         <div className="flex items-center gap-2 mr-6">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shrink-0">
+          <div className="matrix-brand-icon w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shrink-0">
             <PlaySquare className="w-4 h-4" />
           </div>
           <div className="flex flex-col overflow-hidden">
@@ -268,6 +273,7 @@ const UserLayout = () => {
             return (
               <NavLink
                 key={item.basePath}
+                onClick={workspace.hide}
                 to={item.groups[0]?.items[0]?.to || item.basePath}
                 end
                 className={({ isActive: linkActive }) =>
@@ -289,6 +295,7 @@ const UserLayout = () => {
 
         {/* Right section */}
         <div className="flex items-center gap-2 ml-auto">
+          <Button size="sm" variant="outline" onClick={() => workspace.show()} className="matrix-open-workspace"><Globe2 className="h-4 w-4" />官方工作区</Button>
           {vipActive ? (
             <Badge variant="default" className="gap-1 bg-[hsl(46_100%_52%)] text-[hsl(30_60%_20%)] border-[hsl(46_100%_40%)]">
               <Crown className="w-3 h-3" />
@@ -306,15 +313,15 @@ const UserLayout = () => {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 p-1 h-auto">
                 <Avatar className="w-8 h-8">
-                  <AvatarImage src="" />
-                  <AvatarFallback>用</AvatarFallback>
+                  <AvatarImage src={user?.avatarUrl || ''} />
+                  <AvatarFallback>{(user?.nickname || user?.username || '用').slice(0, 1)}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <div className="px-2 py-1.5">
-                <div className="text-sm font-medium">用户昵称</div>
-                <div className="text-xs text-muted-foreground">user@example.com</div>
+                <div className="text-sm font-medium">{user?.nickname || user?.username || '个人用户'}</div>
+                <div className="text-xs text-muted-foreground">{user?.email || '个人创作工作区'}</div>
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate('/settings/profile')}>
@@ -335,11 +342,13 @@ const UserLayout = () => {
         </div>
       </header>
 
+      <WorkspaceTabs />
+
       {/* Main body: sidebar + content */}
       <div className="flex-1 flex min-h-0">
         {/* Left sidebar with groups */}
         {showSidebar && (
-          <aside className="w-52 bg-card border-r border-border flex flex-col shrink-0 overflow-y-auto">
+          <aside className="matrix-module-sidebar w-52 bg-card border-r border-border flex flex-col shrink-0 overflow-y-auto">
             <div className="py-3 px-2 space-y-4">
               {activeMenu.groups.map((group) => (
                 <div key={group.label}>
@@ -374,13 +383,14 @@ const UserLayout = () => {
         )}
 
         {/* Content area */}
-        <main className="flex-1 min-w-0 overflow-auto p-6">
-          <Outlet />
+        <main className={`matrix-main flex-1 min-w-0 min-h-0 ${workspace.visible ? 'matrix-main-browser' : ''}`}>
+          <div className="matrix-page-content" hidden={workspace.visible}><Outlet /></div>
+          <OfficialWorkspaceDeck />
         </main>
       </div>
 
       {/* VIP banner (if inactive) */}
-      {!vipActive && (
+      {!vipActive && !workspace.visible && (
         <div className="bg-gradient-to-r from-primary to-primary/80 text-white py-3 px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 text-sm">
             <Crown className="w-5 h-5" />
@@ -394,5 +404,7 @@ const UserLayout = () => {
     </div>
   );
 };
+
+const UserLayout = () => <OfficialWorkspaceProvider><UserLayoutContent /></OfficialWorkspaceProvider>;
 
 export default UserLayout;

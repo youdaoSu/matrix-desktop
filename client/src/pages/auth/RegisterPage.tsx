@@ -1,188 +1,79 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Shield, UserPlus, CheckCircle2 } from 'lucide-react';
+import { AtSign, CheckCircle2, Mail, Phone, UserRound, UserRoundPlus } from 'lucide-react';
 import { axiosForBackend, logger } from '@client/src/api';
+import { AuthCard, AuthError, AuthField, AuthPasswordField, AuthSubmit, getAuthError } from '@/components/auth/AuthComponents';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    username: '',
-    nickname: '',
-    password: '',
-    confirmPassword: '',
-    email: '',
-    phone: '',
-  });
+  const [formData, setFormData] = useState({ username: '', nickname: '', password: '', confirmPassword: '', email: '', phone: '' });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-
-  const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+  const update = (field: keyof typeof formData) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData((current) => ({ ...current, [field]: event.target.value }));
     setError('');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const { username, password, confirmPassword } = formData;
-
-    if (!username || !password) {
-      setError('用户名和密码不能为空');
-      return;
-    }
-    if (password.length < 6) {
-      setError('密码长度不能少于6位');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('两次输入的密码不一致');
-      return;
-    }
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const { username, password, confirmPassword, email, phone } = formData;
+    if (username.trim().length < 4) return setError('用户名至少需要 4 个字符');
+    if (password.length < 8) return setError('密码至少需要 8 位');
+    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return setError('密码需同时包含字母和数字');
+    if (password !== confirmPassword) return setError('两次输入的密码不一致');
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError('请输入有效的邮箱地址');
+    if (phone && !/^\+?[0-9\s-]{7,20}$/.test(phone)) return setError('请输入有效的手机号');
 
     setLoading(true);
+    setError('');
     try {
       await axiosForBackend.post('/api/auth/register', {
-        username,
-        password,
-        nickname: formData.nickname || undefined,
-        email: formData.email || undefined,
-        phone: formData.phone || undefined,
+        username: username.trim(), password,
+        nickname: formData.nickname.trim() || undefined,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
       });
-      logger.info('用户注册成功', username);
+      logger.info('用户注册成功', username.trim());
       setSuccess(true);
-      setTimeout(() => {
-        navigate('/login');
-      }, 1500);
-    } catch (err: any) {
-      setError(err.response?.data?.message || '注册失败，请稍后重试');
+      window.setTimeout(() => navigate('/login'), 1200);
+    } catch (requestError: unknown) {
+      setError(getAuthError(requestError, '注册失败，请稍后重试'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary/20 mb-4">
-          <Shield className="w-6 h-6 text-primary-foreground" />
+    <AuthCard
+      eyebrow="开始使用"
+      title="创建你的矩效账号"
+      description="创建账号后即可登录；VIP 功能可在之后使用授权码开通。"
+      footer={<>已经有账号？ <Link to="/login" className="font-semibold text-blue-700 hover:text-blue-800">返回登录</Link></>}
+    >
+      {success ? (
+        <div className="py-8 text-center" role="status">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-7 w-7" /></div>
+          <h2 className="text-lg font-semibold text-slate-900">账号创建成功</h2>
+          <p className="mt-2 text-sm text-slate-500">正在带你前往登录页面…</p>
         </div>
-        <h1 className="text-2xl font-bold text-white mb-2">新媒体矩阵管理系统</h1>
-        <p className="text-sm text-slate-400">创建您的账号，开启矩阵管理之旅</p>
-      </div>
-
-      <Card className="bg-slate-800/50 border-slate-700 backdrop-blur">
-        <CardHeader>
-          <CardTitle className="text-lg text-white">用户注册</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {success ? (
-            <div className="py-8 text-center">
-              <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-              <p className="text-white font-medium">注册成功！</p>
-              <p className="text-sm text-slate-400 mt-1">正在跳转到登录页...</p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-3">
-              {error && (
-                <Alert variant="destructive" className="py-2">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-slate-300 text-xs">用户名 *</Label>
-                  <Input
-                    type="text"
-                    value={formData.username}
-                    onChange={handleChange('username')}
-                    placeholder="请设置用户名"
-                    className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary h-9"
-                    autoComplete="username"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-slate-300 text-xs">昵称</Label>
-                  <Input
-                    type="text"
-                    value={formData.nickname}
-                    onChange={handleChange('nickname')}
-                    placeholder="显示用昵称"
-                    className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary h-9"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-slate-300 text-xs">密码 *</Label>
-                  <Input
-                    type="password"
-                    value={formData.password}
-                    onChange={handleChange('password')}
-                    placeholder="至少6位"
-                    className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary h-9"
-                    autoComplete="new-password"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-slate-300 text-xs">确认密码 *</Label>
-                  <Input
-                    type="password"
-                    value={formData.confirmPassword}
-                    onChange={handleChange('confirmPassword')}
-                    placeholder="再次输入密码"
-                    className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary h-9"
-                    autoComplete="new-password"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-slate-300 text-xs">邮箱（选填）</Label>
-                  <Input
-                    type="email"
-                    value={formData.email}
-                    onChange={handleChange('email')}
-                    placeholder="用于找回密码"
-                    className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-slate-300 text-xs">手机号（选填）</Label>
-                  <Input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={handleChange('phone')}
-                    placeholder="接收通知"
-                    className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500 focus-visible:border-primary h-9"
-                  />
-                </div>
-              </div>
-
-              <Button type="submit" className="w-full mt-2" disabled={loading}>
-                <UserPlus className="w-4 h-4" />
-                {loading ? '注册中...' : '注 册'}
-              </Button>
-            </form>
-          )}
-
-          <div className="mt-5 text-center text-sm">
-            <span className="text-slate-500">
-              已有账号？
-              <Link to="/login" className="text-primary hover:text-primary/80 ml-1">
-                去登录
-              </Link>
-            </span>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <AuthError>{error}</AuthError>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <AuthField id="register-username" label="用户名" icon={AtSign} value={formData.username} onChange={update('username')} placeholder="至少 4 个字符" autoComplete="username" required />
+            <AuthField id="register-nickname" label="昵称（选填）" icon={UserRound} value={formData.nickname} onChange={update('nickname')} placeholder="工作区显示名称" autoComplete="nickname" />
           </div>
-        </CardContent>
-      </Card>
-    </div>
+          <AuthPasswordField id="register-password" label="设置密码" value={formData.password} onChange={update('password')} placeholder="至少 8 位，包含字母和数字" autoComplete="new-password" required />
+          <AuthPasswordField id="register-confirm-password" label="确认密码" value={formData.confirmPassword} onChange={update('confirmPassword')} placeholder="再次输入密码" autoComplete="new-password" required />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <AuthField id="register-email" label="邮箱（选填）" icon={Mail} type="email" value={formData.email} onChange={update('email')} placeholder="用于账号安全联系" autoComplete="email" />
+            <AuthField id="register-phone" label="手机号（选填）" icon={Phone} type="tel" value={formData.phone} onChange={update('phone')} placeholder="用于账号安全联系" autoComplete="tel" />
+          </div>
+          <p className="text-xs leading-5 text-slate-400">请妥善保管登录凭据。邮箱和手机号作为账号资料保存，目前不用于验证码验证。</p>
+          <AuthSubmit loading={loading}><UserRoundPlus className="mr-2 h-4 w-4" />{loading ? '正在创建账号…' : '创建账号'}</AuthSubmit>
+        </form>
+      )}
+    </AuthCard>
   );
 }

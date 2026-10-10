@@ -28,7 +28,7 @@ interface PlatformInfo {
   name: string;
   nameEn: string;
   brandColor: string;
-  status: '框架已完成' | '部分能力可用';
+  status: '待平台审核' | '能力需确认';
   statusDetail: string;
   subject: string;
   capabilities: string[];
@@ -43,91 +43,86 @@ const platforms: PlatformInfo[] = [
     name: '抖音',
     nameEn: 'Douyin',
     brandColor: 'bg-[hsl(0_0%_8%)] text-white',
-    status: '框架已完成',
-    statusDetail: '待配置 AppID / Secret',
+    status: '待平台审核',
+    statusDetail: '当前仅有 OAuth 接入框架；未配置应用凭据及权限，不能绑定或调用平台业务接口',
     subject:
-      '认证企业号及员工号、小程序品牌号；内容发布对主体要求较高：企业注册资本 ≥ 50 万、注册满 1 年，不对个体工商户开放。',
+      '先按抖音开放平台要求完成开发者/机构认证、创建并审核应用。主体和材料要求以应用类型及控制台审核结果为准；不采用未经官方确认的固定注册资本或成立年限门槛。',
     capabilities: [
-      '内容发布（video.create 等接口）',
-      '评论管理（item.comment / video.comment）',
-      '私信 IM 接待能力',
-      '数据开放（用户数据、内容数据、粉丝数据）',
+      '账号授权与用户资料：应用审核、用户同意及对应用户信息权限',
+      '视频/图文发布：申请并获批 video.create；用户授权；每次发布须由用户明确感知',
+      '评论读取/回复：申请互动管理权限（如 item.comment / video.comment），按账号类型和接口范围审核',
+      '企业号私信：申请 im 权限；该权限并非普通登录授权自动包含',
+      '粉丝、作品及数据分析：分别申请 data.external.user、data.external.item、fans.data 等权限',
     ],
-    authMethod: 'Web 扫码授权 OAuth 2.0',
+    authMethod: '开放平台 Web OAuth 2.0；仅适用于已审核应用及已获批 scope',
     qualification:
-      '企业主体营业执照、ICP 备案；IM / 私信接待类 SaaS 需额外提交 BRD 审核。',
+      '开发者/机构认证资料、应用信息、隐私政策和用途说明；按目标 API 提交权限申请及平台要求的补充材料。',
     specialNotes:
-      '评论管理、私信等权限默认关闭，需在开放平台控制台单独申请，部分权限需要人工审核。',
+      '授权只代表用户同意，不代表应用已获得接口权限。video.create 默认可能未开通；私信、评论、数据能力须逐项核对权限页。发布操作应有清晰确认，不能后台无感代发。',
   },
   {
     name: '小红书',
     nameEn: 'Xiaohongshu',
     brandColor: 'bg-[hsl(350_85%_60%)] text-white',
-    status: '框架已完成',
-    statusDetail: '待配置 AppID / Secret',
+    status: '待平台审核',
+    statusDetail: '当前未接入小红书官方 OAuth API；需先创建并审核开放平台应用',
     subject:
-      '企业开发者 / 软件服务商（中国大陆企业、成立满 1 年、经营范围含技术开发等）；商家自研走 ARK / 千帆体系。',
+      '在小红书开放平台提交应用主体、名称、图标、平台类型及用途，审核通过后取得 app_id；服务端 Secret 模式需安全保管 app_secret，公开客户端按官方要求评估 PKCE。',
     capabilities: [
-      '内容发布与管理（笔记）',
-      '私信消息接收与回复',
-      '电商相关能力（以商家与专业号开放范围为准）',
-      '数据开放接口',
+      '基础资料 basic_info：当前公开首期 scope；仍需应用审核和用户授权',
+      '笔记读取、发布、粉丝读取：官方 scope 文档标为规划中/敏感权限，不能按已开放能力承诺',
+      '评论、私信、电商和数据：须有对应正式 API、应用权限及用户授权；当前矩效未接入',
     ],
-    authMethod: 'OAuth 2.0 授权',
+    authMethod: '小红书官方 OAuth 2.0；Web/桌面扫码授权按官方设备授权流程接入',
     qualification:
-      '企业营业执照、ICP 备案、软件著作权等；商家类型需有小红书店铺。',
+      '按应用类型提交主体、产品用途、隐私政策及安全材料；敏感 scope 需额外申请，最终以开放平台审核为准。',
     specialNotes:
-      '不同开发者类型（服务商 / 商家自研）的开放能力和接入流程不同，需根据实际情况选择对应路径。',
+      '当前官方文档显示首期仅开放 basic_info；write_notes、read_followers 等属于规划/需审核范围。账号授权不能据此推导出内容发布或私信能力。',
   },
   {
     name: '微信视频号',
     nameEn: 'WeChat Channels',
     brandColor: 'bg-[hsl(142_45%_45%)] text-white',
-    status: '部分能力可用',
-    statusDetail: '内容发布待官方开放',
-    subject: '微信认证的公众号 / 小程序主体。',
+    status: '能力需确认',
+    statusDetail: '矩效未接入视频号官方账号授权或内容操作接口',
+    subject: '必须按具体微信开放能力确定主体：公众号/小程序/视频号的主体关系、认证和绑定条件并不通用。',
     capabilities: [
-      '商品与橱窗管理（电商场景）',
-      '直播数据查询',
-      '视频号基础信息',
-      '部分粉丝与互动数据',
+      '视频号登录、内容发布、评论、私信和数据：须逐项找到适用于该主体的腾讯官方接口与权限；当前未接入',
+      '公众号/小程序已有的微信开放能力不等于视频号账号管理权限',
     ],
-    authMethod: '微信公众号 / 小程序授权',
+    authMethod: '没有可直接套用的通用视频号 OAuth；按具体官方产品和已批准接口接入',
     qualification:
-      '微信认证的公众号或小程序主体，完成微信认证（每年 300 元认证费）。',
+      '先确认产品归属、主体关系及目标接口的官方准入条件；不以公众号或小程序认证替代视频号权限审批。',
     warning:
-      '截至目前，微信视频号未开放视频内容发布的开放 API，开放接口集中在商品 / 橱窗、直播数据等电商场景。系统内内容发布能力标注为「手动发布 / 跳转引导」，引导用户跳转视频号助手手动完成发布。',
+      '目前没有在矩效中配置可验证的视频号官方授权/发布接口。不会使用逆向私有接口、盗用 Cookie 或绕过平台限制；如需发布，可保留用户主动前往官方助手完成操作的引导。',
   },
   {
     name: 'B站',
     nameEn: 'Bilibili',
     brandColor: 'bg-[hsl(200_90%_55%)] text-white',
-    status: '框架已完成',
-    statusDetail: '待配置 AppID / Secret',
-    subject: '企业 / 个人开发者均可申请，企业主体能力范围更广。',
+    status: '待平台审核',
+    statusDetail: '当前未接入 B 站开放平台 OAuth 或稿件接口',
+    subject: '需在哔哩哔哩开放平台填写身份资料并通过审核后创建应用；可用能力取决于具体应用获批权限。',
     capabilities: [
-      'OAuth 账号授权',
-      '用户信息获取',
-      '视频稿件发布 / 删除 / 查询',
-      '专栏（图文）管理',
-      '数据开放（播放、点赞、收藏等）',
-      '直播能力（直播相关接口需单独报备）',
+      '稿件投稿/批量分发：仅在开放平台对应用开通相应稿件接口后接入',
+      '用户资料、稿件管理和数据查询：按各 API 文档及应用授权范围逐项确认',
+      '评论、私信、专栏和直播：不视为默认权限；需确认官方存在适用接口并单独获批',
     ],
-    authMethod: 'OAuth 2.0 授权',
+    authMethod: '哔哩哔哩开放平台规定的应用授权流程；以该应用文档为准',
     qualification:
-      '开发者账号认证；企业开发者需提供营业执照；部分高级接口需单独申请。',
+      '完成开发者身份资料审核、应用创建及相关接口权限申请；按平台服务协议处理用户数据和授权撤销。',
     specialNotes:
-      '视频发布采用分片上传方式，视频码率、分辨率等有明确规格要求，上传前需做格式与大小校验。',
+      '稿件投稿通常涉及视频分片上传、格式校验和平台审核。开放平台协议及应用权限是前提，登录网页或取得本地会话不等于 API 授权。',
   },
 ];
 
 const unifiedSteps = [
-  '以企业主体入驻对应开放平台，完成开发者认证',
-  '创建应用，获取 AppID / AppSecret',
-  '配置 OAuth 回调地址（Redirect URI）',
-  '申请对应 scope 权限包，等待审核通过',
-  '在矩效管理后台配置平台 AppID / Secret',
-  '测试授权流程与接口调用，确认联调通过',
+  '先确定每个目标操作对应的官方 API、适用主体和平台条款；没有官方接口的操作不接入',
+  '完成平台开发者身份和应用审核，取得该应用专属凭据',
+  '登记 HTTPS 回调地址、应用域名和平台要求的隐私政策/用户协议',
+  '按最小权限原则逐项申请 OAuth scope / API 权限，等待平台批准',
+  '将凭据保存在服务端密钥配置中；桌面客户端不内置可复用的应用密钥',
+  '逐平台验证用户授权、令牌刷新/撤销、限流、失败回滚和用户主动确认后再开放操作',
 ];
 
 const PlatformsPage: React.FC = () => {
@@ -186,14 +181,10 @@ const PlatformsPage: React.FC = () => {
                   {p.nameEn}
                 </div>
                 <Badge
-                  variant={p.status === '框架已完成' ? 'outline' : 'secondary'}
-                  className="mt-3 w-fit border-success/50 text-success"
+                  variant="secondary"
+                  className="mt-3 w-fit border-warning/50 bg-warning/10 text-warning"
                 >
-                  {p.status === '框架已完成' ? (
-                    <CheckCircle2 className="mr-1 h-3 w-3" />
-                  ) : (
-                    <Clock className="mr-1 h-3 w-3" />
-                  )}
+                  <Clock className="mr-1 h-3 w-3" />
                   {p.status}
                 </Badge>
               </CardContent>
@@ -222,18 +213,10 @@ const PlatformsPage: React.FC = () => {
                   </div>
                 </div>
                 <Badge
-                  variant={p.status === '框架已完成' ? 'outline' : 'secondary'}
-                  className={
-                    p.status === '框架已完成'
-                      ? 'border-success/50 text-success'
-                      : 'border-warning/50 text-warning bg-warning/10'
-                  }
+                  variant="secondary"
+                  className="border-warning/50 bg-warning/10 text-warning"
                 >
-                  {p.status === '框架已完成' ? (
-                    <CheckCircle2 className="mr-1 h-3 w-3" />
-                  ) : (
-                    <Clock className="mr-1 h-3 w-3" />
-                  )}
+                  <Clock className="mr-1 h-3 w-3" />
                   {p.status}
                 </Badge>
               </div>
@@ -340,7 +323,7 @@ const PlatformsPage: React.FC = () => {
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="flex items-start gap-2">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                个人开发者主体可申请的能力非常有限，大部分平台的内容发布、私信、评论等核心能力仅对企业主体开放。
+                平台准入和权限按应用类型、主体、具体 API 分别审核；不得把某个平台的资质要求套用到其他平台，也不得将账号登录授权当作业务操作权限。
               </p>
               <p className="flex items-start gap-2">
                 <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-primary" />

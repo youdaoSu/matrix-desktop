@@ -216,7 +216,13 @@ function createMainWindow() {
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
     const safePartition = /^persist:matrix-(douyin|xiaohongshu|wechat|bilibili)-[a-z0-9-]{16,80}$/i.test(params.partition || '');
-    const safeUrl = /^https:\/\//i.test(params.src || '');
+    let safeUrl = false;
+    try {
+      const platform = /^persist:matrix-(douyin|xiaohongshu|wechat|bilibili)-/.exec(params.partition || '')?.[1];
+      const target = new URL(params.src);
+      const domain = PLATFORM[platform]?.domain;
+      safeUrl = target.protocol === 'https:' && Boolean(domain) && (target.hostname === domain || target.hostname.endsWith(`.${domain}`));
+    } catch { /* Reject invalid initial URLs. */ }
     if (!safePartition || !safeUrl) event.preventDefault();
   });
   win.webContents.on('did-attach-webview', (_event, contents) => {
@@ -474,6 +480,9 @@ async function completeEmbeddedPlatformLogin(input) {
     return { error: '官方登录页已关闭，请重新打开' };
   }
   const expectedSession = session.fromPartition(`persist:matrix-${input.platform}-${input.sessionId}`);
+  if (contents.session !== expectedSession) {
+    return { error: '当前页面与所选账号会话不一致，请重新打开' };
+  }
   let currentUrl;
   try {
     currentUrl = new URL(contents.getURL());

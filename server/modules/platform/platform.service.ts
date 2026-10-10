@@ -458,15 +458,21 @@ export class PlatformService {
   }
 
   getOAuthStatus() {
-    const configured = Boolean(
-      process.env.DOUYIN_CLIENT_KEY &&
-      process.env.DOUYIN_CLIENT_SECRET &&
-      process.env.OAUTH_CALLBACK_URL,
-    );
+    const missingConfig: string[] = [];
+    if (!process.env.DOUYIN_CLIENT_KEY) missingConfig.push('抖音应用 Client Key');
+    if (!process.env.DOUYIN_CLIENT_SECRET) missingConfig.push('抖音应用 Client Secret');
+    if (!process.env.OAUTH_CALLBACK_URL) missingConfig.push('OAuth 回调地址');
+    if (!process.env.OAUTH_STATE_SECRET) missingConfig.push('OAuth 状态校验密钥');
+    if (!process.env.TOKEN_ENCRYPTION_KEY) missingConfig.push('账号令牌加密密钥');
+
+    const configured = missingConfig.length === 0;
+    const douyinMessage = configured
+      ? '可授权'
+      : `请先完成配置：${missingConfig.join('、')}`;
     return {
       douyin: {
         available: configured,
-        message: configured ? '可授权' : '请配置抖音开放平台网站应用凭证和 HTTPS 回调地址',
+        message: douyinMessage,
       },
       xiaohongshu: {
         available: false,
@@ -491,11 +497,14 @@ export class PlatformService {
     const status = this.getOAuthStatus()[platform as PlatformType];
     if (!status.available) throw new BadRequestException(status.message);
 
+    const stateSecret = process.env.OAUTH_STATE_SECRET;
+    if (!stateSecret) throw new BadRequestException('服务端未配置 OAuth 状态校验密钥');
+
     const clientKey = process.env.DOUYIN_CLIENT_KEY!;
     const callbackUrl = process.env.OAUTH_CALLBACK_URL!;
     const state = jwt.sign(
       { userId, platform: 'douyin', nonce: CryptoJS.lib.WordArray.random(16).toString() } satisfies OAuthState,
-      this.oauthStateSecret(),
+      stateSecret,
       { expiresIn: '10m', issuer: 'matrix-oauth' },
     );
     const scope = process.env.DOUYIN_SCOPES || 'user_info';
@@ -525,9 +534,12 @@ export class PlatformService {
     if (input.error) return resultUrl('error', input.errorDescription || input.error);
     if (!input.code || !input.state) return resultUrl('error', '授权回调缺少 code 或 state');
 
+    const stateSecret = process.env.OAUTH_STATE_SECRET;
+    if (!stateSecret) return resultUrl('error', '服务端未配置 OAuth 状态校验密钥，请联系管理员');
+
     let state: OAuthState;
     try {
-      state = jwt.verify(input.state, this.oauthStateSecret(), {
+      state = jwt.verify(input.state, stateSecret, {
         issuer: 'matrix-oauth',
       }) as OAuthState;
     } catch {
@@ -606,13 +618,9 @@ export class PlatformService {
     }
   }
 
-  private oauthStateSecret(): string {
-    return process.env.OAUTH_STATE_SECRET || process.env.JWT_SECRET || 'matrix-oauth-dev-only';
-  }
-
   private encryptToken(token: string): string {
-    const key = process.env.TOKEN_ENCRYPTION_KEY || process.env.JWT_SECRET;
-    if (!key) throw new Error('服务端未配置 TOKEN_ENCRYPTION_KEY');
+    const key = process.env.TOKEN_ENCRYPTION_KEY;
+    if (!key) throw new BadRequestException('服务端未配置账号令牌加密密钥');
     return CryptoJS.AES.encrypt(token, key).toString();
   }
 
