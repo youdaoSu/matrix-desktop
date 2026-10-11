@@ -45,7 +45,8 @@ import NotificationCenter from '@client/src/components/notification/Notification
 import PersonalTaskReminder from '@/components/notification/PersonalTaskReminder';
 import { clearAuthToken, getAuthToken, getUser } from '@client/src/api';
 import { Globe2 } from 'lucide-react';
-import { OfficialWorkspaceDeck, OfficialWorkspaceProvider, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
+import { OfficialWorkspaceDeck, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
+import { PublishProgressButton } from '@/components/workspace/PublishQueue';
 
 interface SubMenuItem {
   to: string;
@@ -225,6 +226,7 @@ const UserLayoutContent = () => {
   const user = getUser();
   useEffect(() => {
     if (location.pathname === '/accounts' && window.matrixDesktop?.isDesktop) workspace.show('manage');
+    else workspace.hide();
     // Route entry opens the unified account view; closing it must still expose the management panel.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
@@ -314,6 +316,7 @@ const UserLayoutContent = () => {
           )}
 
           <PersonalTaskReminder />
+          <PublishProgressButton />
           <NotificationCenter />
 
           <DropdownMenu>
@@ -411,6 +414,6 @@ const UserLayoutContent = () => {
   );
 };
 
-const UserLayout = () => <OfficialWorkspaceProvider><UserLayoutContent /></OfficialWorkspaceProvider>;
+const UserLayout = UserLayoutContent;
 
 export default UserLayout;

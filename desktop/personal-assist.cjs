@@ -60,7 +60,7 @@ function registerPersonalAssist({ ipcMain, dialog, webContents, session, getWind
       const url = new URL(guest.getURL());
       if (url.protocol !== 'https:' || !(url.hostname === config.domain || url.hostname.endsWith('.' + config.domain)) || !/upload|publish|post\/create|post\/video/.test(url.pathname)) throw new Error('请先在当前账号打开官方发布表单');
       if (!(await inspectPlatformSession(input.platform, guest.session, guest)).authenticated) throw new Error('请先登录当前平台账号');
-      if (!['fill', 'topics'].includes(input.command)) throw new Error('同步操作无效');
+      if (!['fill', 'topics', 'progress'].includes(input.command)) throw new Error('同步操作无效');
       if (input.command === 'fill') {
         const form = input.form;
         if (!form || typeof form.title !== 'string' || typeof form.body !== 'string' || form.title.length > 500 || form.body.length > 20000 || !Array.isArray(form.topics) || form.topics.length > 15 || form.topics.some(t => typeof t !== 'string' || !t.trim() || t.length > 40) || !form.options || Object.entries(form.options).some(([key, value]) => !['category', 'visibility', 'originality'].includes(key) || typeof value !== 'string' || value.length > 100)) throw new Error('发布配置格式或长度不正确');
@@ -156,11 +156,17 @@ function registerPersonalAssist({ ipcMain, dialog, webContents, session, getWind
       for (const nodeId of nodeIds) {
         const { object } = await command('DOM.resolveNode', { nodeId });
         try {
-          const { result } = await command('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function(){return {accept:this.accept,multiple:this.multiple,visible:!this.disabled};}', returnByValue: true });
+          const { result } = await command('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function(){return {accept:this.accept,multiple:this.multiple,visible:!this.disabled,coverLabel:[this.name,this.id,this.getAttribute("aria-label"),this.parentElement?.innerText].filter(Boolean).join(" ").slice(0,300)};}', returnByValue: true });
           inputs.push({ nodeId, ...result.value });
         } finally { await command('Runtime.releaseObject', { objectId: object.objectId }); }
       }
-      const nodeId = selectUploadInput(inputs, input.mediaType, selected.filePaths.length);
+      let nodeId;
+      if (input.coverIndex !== undefined) {
+        if (input.mediaType !== 'image' || selected.filePaths.length !== 1 || ![1, 2].includes(input.coverIndex)) throw new Error('封面必须是单张图片');
+        const covers = inputs.filter(item => item.visible && /封面|cover/i.test(item.coverLabel || '') && /image|png|jpg|jpeg|webp/i.test(item.accept || '')).filter(item => input.coverIndex === 2 ? /封面2|第二|横版|横屏|横向/.test(item.coverLabel) : !/封面2|第二|横版|横屏|横向/.test(item.coverLabel));
+        if (covers.length !== 1) throw new Error('未唯一识别对应封面上传框，请在官方页面上传并确认裁剪');
+        nodeId = covers[0].nodeId;
+      } else nodeId = selectUploadInput(inputs.filter(item => !/封面|cover/i.test(item.coverLabel || '')), input.mediaType, selected.filePaths.length);
       await command('DOM.setFileInputFiles', { nodeId, files: selected.filePaths });
       return { uploadStarted: true, count: selected.filePaths.length, filenames: selected.filePaths.map(file => path.basename(file)) };
     } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }

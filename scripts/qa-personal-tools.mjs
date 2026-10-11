@@ -80,12 +80,12 @@ try {
     await wait(`document.querySelectorAll('.matrix-prepared-text').length===2 && [...document.querySelectorAll('.matrix-draft-helper textarea')].filter(el=>el.value===${JSON.stringify(title)}).length===2`, 'Batch row did not hand off separate title/body preparation to both selected accounts'); checks++;
     await click('收起账号页面');
     await wait("!document.querySelector('.matrix-main-integrated')", 'Account pages did not collapse before native layout checks');
-    await navigate(`/publish/${suffix}`, `document.querySelector('.matrix-page-content')?.innerText.includes(${JSON.stringify(title)})`); checks++;
+    await navigate(`/publish/${suffix}`, `document.querySelector('.matrix-page-content')?.textContent.includes(${JSON.stringify(title)})`); checks++;
     const capture = await call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(`logs/qa-${suffix}.png`, Buffer.from(capture.data, 'base64'));
   }
   await navigate('/engage/batch-tasks', "!!document.querySelector('[data-matrix-personal-tasks]') && !document.querySelector('[role=status]')");
   await navigate('/publish/stats', "!!document.querySelector('[data-matrix-publish-stats]') && !document.querySelector('[role=status]')");
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('.matrix-publish-stat-cards article strong')].slice(1).map(el=>el.innerText)"), ['3','75.0%']); checks++;
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.matrix-task-metrics article strong')].map(el=>el.innerText)"), ['0','0','—','0','0 / 0']); checks++;
   const statsCapture=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('logs/qa-publish-stats.png',Buffer.from(statsCapture.data,'base64'));
   for (const route of ['comments-agg','messages-agg']) {
     await navigate(`/engage/${route}`, `!!document.querySelector('.matrix-${route.startsWith('comments') ? 'comments' : 'messages'}-aggregate') && !document.querySelector('.matrix-interaction-accounts')`);
@@ -121,6 +121,7 @@ try {
   await navigate('/publish/drafts', "!!document.querySelector('[data-matrix-content-records]') && !document.querySelector('[role=status]')");
   await fill('[aria-label="搜索本地草稿"]', `${run}_batch-video`); await click('搜索');
   await wait("document.querySelectorAll('[data-post-id]').length===4", 'Draft search or filtering failed'); checks++;
+  await evaluate("document.querySelector('[data-post-id] details').open=true;true");
   await click('编辑草稿'); await wait("!!document.querySelector('#content-record-title')", 'Draft editor missing');
   await fill('#content-record-body','QA persisted edit');await click('保存草稿修改');
   await wait("!document.querySelector('[role=dialog]') && document.querySelector('.matrix-page-content')?.innerText.includes('QA persisted edit')", 'Draft edit failed'); checks++;

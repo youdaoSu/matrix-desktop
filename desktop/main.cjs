@@ -219,6 +219,7 @@ function createMainWindow() {
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
+    webPreferences.backgroundThrottling = false;
     const safePartition = /^persist:matrix-(douyin|xiaohongshu|wechat|bilibili)-[a-z0-9-]{16,80}$/i.test(params.partition || '');
     let safeUrl = false;
     try {

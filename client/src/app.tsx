@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { WorkspaceSession } from './components/workspace/PublishQueue';
 
 import UserLayout from './layouts/UserLayout';
 import AdminLayout from './layouts/AdminLayout';
@@ -22,6 +23,7 @@ import ContentRecordsPage from './pages/publish/ContentRecordsPage';
 import ContentCreateRealPage from './pages/publish/ContentCreateRealPage';
 import BatchDraftPage from './pages/publish/BatchDraftPage';
 import PublishStatsPage from './pages/publish/PublishStatsPage';
+import PublishTasksPage from './pages/publish/PublishTasksPage';
 import ReplyToolsPage from './pages/user/ReplyToolsPage';
 import PersonalTasksPage from './pages/user/PersonalTasksPage';
 import AccountHealthPage from './pages/user/AccountHealthPage';
@@ -66,6 +68,7 @@ const RoutesComponent = () => {
         <Route path="/admin/login" element={<AdminLoginPage />} />
       </Route>
 
+      <Route element={<WorkspaceSession />}>
       <Route element={<UserLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
@@ -74,7 +77,7 @@ const RoutesComponent = () => {
         <Route path="/accounts/groups" element={<AccountGroupsPage />} />
 
         <Route path="/publish" element={<ContentRecordsPage />} />
-        <Route path="/publish/tasks" element={<PersonalTasksPage key="publish-tasks" />} />
+        <Route path="/publish/tasks" element={<PublishTasksPage />} />
         <Route path="/publish/create" element={<ContentCreateRealPage />} />
         <Route path="/publish/batch-video" element={<BatchDraftPage key="video" />} />
         <Route path="/publish/batch-image" element={<BatchDraftPage key="image" />} />
@@ -116,16 +119,6 @@ const RoutesComponent = () => {
         <Route path="/settings/data" element={<SettingsDataPage />} />
       </Route>
 
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<AdminRealDashboardPage />} />
-        <Route path="dashboard" element={<AdminRealDashboardPage />} />
-        <Route path="users" element={<AdminRealUsersPage />} />
-        <Route path="codes" element={<AdminCodesPage />} />
-        <Route path="plans" element={<AdminRealPlansPage />} />
-        <Route path="logs" element={<AdminRealLogsPage />} />
-        <Route path="settings" element={<AdminRealSettingsPage />} />
-      </Route>
-
       <Route path="/docs" element={<DocsLayout />}>
         <Route index element={<DocsOverviewPage />} />
         <Route path="overview" element={<DocsOverviewPage />} />
@@ -134,6 +127,17 @@ const RoutesComponent = () => {
         <Route path="roadmap" element={<DocsRoadmapPage />} />
         <Route path="testing" element={<DocsTestingPage />} />
         <Route path="platforms" element={<DocsPlatformsPage />} />
+      </Route>
+      </Route>
+
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<AdminRealDashboardPage />} />
+        <Route path="dashboard" element={<AdminRealDashboardPage />} />
+        <Route path="users" element={<AdminRealUsersPage />} />
+        <Route path="codes" element={<AdminCodesPage />} />
+        <Route path="plans" element={<AdminRealPlansPage />} />
+        <Route path="logs" element={<AdminRealLogsPage />} />
+        <Route path="settings" element={<AdminRealSettingsPage />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

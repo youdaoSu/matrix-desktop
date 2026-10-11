@@ -1,32 +1,27 @@
-import { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
-import { axiosForBackend } from '@/api';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useState } from 'react';
+import { usePublishQueue } from '@/components/workspace/PublishQueue';
+import { platformLabels } from '@/components/workspace/OfficialWorkspace';
+import { filterPublishJobs, publishReport, successRate, type TaskFilter } from '@/components/workspace/publish-report';
 
-interface PublishStats { total: number; statusStats: { status: string; count: number }[]; todayPublished: number }
-const labels: Record<string, string> = { draft: '本地草稿', scheduled: '历史定时记录', publishing: '发表中记录', published: '已发布记录', failed: '失败记录', reviewing: '审核中记录' };
 export default function PublishStatsPage() {
-  const [stats, setStats] = useState<PublishStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [refresh, setRefresh] = useState(0);
-  useEffect(() => {
-    const abort = new AbortController();
-    setLoading(true); setError(''); setStats(null);
-    axiosForBackend.get('/api/content/stats', { signal: abort.signal })
-      .then(r => { if (!abort.signal.aborted) setStats(r.data.data); })
-      .catch(e => { if (!abort.signal.aborted) setError(e?.response?.data?.message || '加载发布统计失败，请重试'); })
-      .finally(() => { if (!abort.signal.aborted) setLoading(false); });
-    return () => abort.abort();
-  }, [refresh]);
-  const count = (status: string) => stats?.statusStats.find(item => item.status === status)?.count || 0;
-  const finished = count('published') + count('failed');
-  const cards = [
-    { label: '创建记录总数', value: stats?.total ?? '—', detail: '包含草稿，每个目标账号一条记录' },
-    { label: '已发布记录总数', value: stats ? count('published') : '—', detail: '只读取本地 published 状态，不包含人工待办' },
-    { label: '记录成功率', value: stats && finished ? (100 * count('published') / finished).toFixed(1) + '%' : '—', detail: '已发布 /（已发布 + 失败）；没有执行记录时不显示成功率' },
-  ];
-  return <div className="matrix-publish-stats" data-matrix-publish-stats><header><h1>任务统计</h1><Button variant="outline" disabled={loading} onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} />刷新统计</Button></header><Alert><AlertDescription>统计范围为当前用户的矩效本地发布记录，不是平台实时数据。上传完成、草稿保存及本人确认待办均不算发表成功；当前自动发表和平台回执同步尚未接通。</AlertDescription></Alert>{loading && <p role="status">加载统计…</p>}{error && <p role="alert" className="text-destructive">{error}</p>}<div className="matrix-publish-stat-cards">{cards.map(card => <article key={card.label}><h2>{card.label}</h2><strong>{card.value}</strong><p>{card.detail}</p></article>)}</div><section><h2>状态分布</h2><Table><TableHeader><TableRow><TableHead>记录状态</TableHead><TableHead>记录数量</TableHead><TableHead>占创建记录比例</TableHead></TableRow></TableHeader><TableBody>{stats?.statusStats.map(item => <TableRow key={item.status}><TableCell>{labels[item.status] || item.status}</TableCell><TableCell>{item.count}</TableCell><TableCell>{stats.total ? (100 * item.count / stats.total).toFixed(1) + '%' : '—'}</TableCell></TableRow>)}{stats && !stats.total && <TableRow><TableCell colSpan={3} className="h-28 text-center text-muted-foreground">暂无发布记录</TableCell></TableRow>}</TableBody></Table></section></div>;
+  const { jobs } = usePublishQueue();
+  const [filter, setFilter] = useState<TaskFilter>({}), [page, setPage] = useState(1), [pageSize, setPageSize] = useState(20);
+  const change = (key: keyof TaskFilter, value: string) => { setFilter(previous => ({ ...previous, [key]: value })); setPage(1); };
+  const report = publishReport(filterPublishJobs(jobs, filter));
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(report.accounts.length / pageSize)));
+  const cards = [['创建总数', report.total], ['成功总数', report.success], ['成功率', successRate(report.success, report.total)], ['账号数', report.accounts.length], ['今日创建/成功', `${report.today} / ${report.todaySuccess}`]];
+  return <div className="matrix-task-statistics" data-matrix-publish-stats>
+    <section><header><h1>任务统计</h1><div className="matrix-task-filters">
+      <select aria-label="统计筛选平台" value={filter.platform || ''} onChange={event => change('platform', event.target.value)}><option value="">筛选平台</option>{Object.entries(platformLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
+      <input aria-label="统计搜索账号" placeholder="搜索账号昵称、矩效账号 ID" value={filter.account || ''} onChange={event => change('account', event.target.value)} />
+      <div className="matrix-task-date"><input aria-label="统计开始日期" type="date" value={filter.start || ''} max={filter.end} onChange={event => change('start', event.target.value)} /><span>→</span><input aria-label="统计结束日期" type="date" min={filter.start} value={filter.end || ''} onChange={event => change('end', event.target.value)} /></div>
+    </div></header>
+    <div className="matrix-task-metrics">{cards.map(([label, value]) => <article key={label}><p>{label}</p><strong>{value}</strong></article>)}</div>
+    <p className="matrix-task-scope">当前用户本机保留的任务，按创建日期统计；重试单独计数。成功指官方页面提示成功，不代表审核通过。删除任务记录会减少统计，不影响平台作品。</p></section>
+    <section><h2>账号统计</h2><div className="matrix-task-table-scroll"><table><thead><tr>{['平台', '账号', '创建数', '成功数', '成功率', '今日创建/成功'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
+      {report.accounts.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(account => <tr key={`${account.platform}:${account.accountId}`}><td>{platformLabels[account.platform]}</td><td><div className="matrix-task-account"><span className={`matrix-task-avatar platform-${account.platform}`}>{account.nickname.slice(0, 1)}</span><div>{account.nickname}<small title={account.accountId}>矩效 ID：{account.accountId}</small></div></div></td><td>{account.total}</td><td>{account.success}</td><td>{successRate(account.success, account.total)}</td><td>{account.today} / {account.todaySuccess}</td></tr>)}
+      {!report.accounts.length && <tr><td colSpan={6} className="matrix-task-empty">暂无符合筛选条件的任务</td></tr>}
+    </tbody></table></div><footer className="matrix-task-pagination"><button disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>‹</button><span>{currentPage}</span><button disabled={currentPage * pageSize >= report.accounts.length} onClick={() => setPage(currentPage + 1)}>›</button><select aria-label="每页账号数量" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>{[20, 50, 100].map(size => <option key={size} value={size}>{size} 条/页</option>)}</select></footer></section>
+    <section><h2>分日统计</h2><table><thead><tr>{['日期', '创建数', '成功数', '成功率'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{report.days.map(day => <tr key={day.date}><td>{day.date}</td><td>{day.total}</td><td>{day.success}</td><td>{successRate(day.success, day.total)}</td></tr>)}{!report.days.length && <tr><td colSpan={4} className="matrix-task-empty">暂无日期数据</td></tr>}</tbody></table></section>
+  </div>;
 }

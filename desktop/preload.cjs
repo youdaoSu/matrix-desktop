@@ -12,7 +12,13 @@ contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
     } catch (error) { return { error: error.message }; }
   },
   syncPublishForm: (input) => ipcRenderer.invoke('matrix:sync-publish-form', input),
-  submitPublishBatch: (entries) => ipcRenderer.invoke('matrix:submit-publish-batch', { entries }),
+  submitPublishBatch: (entries, batchId) => ipcRenderer.invoke('matrix:submit-publish-batch', { entries, batchId }),
+  cancelPublishBatch: (batchId, accessToken) => ipcRenderer.invoke('matrix:cancel-publish-batch', { batchId, accessToken }),
+  onPublishProgress: listener => {
+    const handler = (_event, progress) => listener(progress);
+    ipcRenderer.on('matrix:publish-batch-progress', handler);
+    return () => ipcRenderer.removeListener('matrix:publish-batch-progress', handler);
+  },
   inspectPageAction: (input) => ipcRenderer.invoke('matrix:inspect-page-action', input),
   submitPageAction: (input) => ipcRenderer.invoke('matrix:submit-page-action', input),
   listPageActions: (accessToken) => ipcRenderer.invoke('matrix:list-page-actions', { accessToken }),

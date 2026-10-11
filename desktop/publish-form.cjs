@@ -8,6 +8,20 @@ function publishForm(command, config = {}) {
     const nodes = [...document.querySelectorAll('[class*=topic] [role=option], [class*=topic] [class*=item], [class*=suggest] [role=option], [class*=tag] [role=option]')].filter(visible);
     return { topics: [...new Set(nodes.map(el => (el.innerText || '').trim().replace(/^#/, '')).filter(text => text && text.length <= 40 && !/创建|添加|搜索|查看更多/.test(text)))].slice(0, 20) };
   }
+  if (command === 'progress') {
+    const bars = [...document.querySelectorAll('progress,[role=progressbar]')].filter(visible);
+    const values = bars.map(el => {
+      const raw = el.tagName === 'PROGRESS' ? el.getAttribute('value') : el.getAttribute('aria-valuenow');
+      if (raw === null || raw === '') return NaN;
+      const min = Number(el.getAttribute('aria-valuemin') || 0), max = Number(el.tagName === 'PROGRESS' ? el.getAttribute('max') || 1 : el.getAttribute('aria-valuemax') || 100);
+      return max > min ? (Number(raw) - min) * 100 / (max - min) : NaN;
+    }).filter(value => Number.isFinite(value) && value >= 0 && value <= 100);
+    const notices = [...document.querySelectorAll('[role=alert],[role=status],[class*=upload]')].filter(visible).map(el => (el.innerText || '').trim()).filter(text => text.length < 300);
+    const uploadError = notices.find(text => /上传失败|转码失败|文件格式不支持|文件过大/.test(text));
+    const busy = notices.some(text => /上传中|正在上传|正在转码|转码中|处理中/.test(text)) || values.some(value => value < 100);
+    const buttons = [...document.querySelectorAll('button,[role=button]')].filter(visible).filter(el => el.getAttribute('aria-disabled') !== 'true' && /^(发布|发表|投稿|立即发布|确认发布|发布笔记)$/.test((el.innerText || '').trim()));
+    return { ...(values.length === 1 ? { uploadPercent: Math.round(values[0]) } : {}), ready: !uploadError && !busy && buttons.length === 1, uploadError, submitted: false };
+  }
   const controls = [...document.querySelectorAll('input,textarea,[contenteditable=true],select')].filter(el => visible(el) &&
     !/password|one-time-code|username|email|tel|search|hidden|file|checkbox|radio|token|secret|密码|验证码|手机号|邮箱|搜索|身份证|密钥/i.test([el.type, el.name, el.id, el.autocomplete, el.placeholder].join(' ')));
   const label = el => [el.placeholder, el.getAttribute('aria-label'), el.getAttribute('data-placeholder'), el.name,

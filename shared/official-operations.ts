@@ -1,5 +1,5 @@
 import type { PlatformType } from './api.interface';
-export type OfficialIntent = 'manage' | 'publish' | 'comments' | 'messages';
+export type OfficialIntent = 'manage' | 'publish' | 'comments' | 'messages' | 'withdraw';
 const homes: Record<PlatformType, string> = {
   douyin: 'https://creator.douyin.com/', xiaohongshu: 'https://creator.xiaohongshu.com/',
   wechat: 'https://channels.weixin.qq.com/', bilibili: 'https://member.bilibili.com/',
@@ -11,6 +11,7 @@ const publish: Record<PlatformType, string> = {
   bilibili: 'https://member.bilibili.com/platform/upload/video/frame',
 };
 export function officialOperation(platform: PlatformType, intent: OfficialIntent): { url: string; instruction: string } {
+  if (intent === 'withdraw') return { url: platform === 'douyin' ? 'https://creator.douyin.com/creator-micro/content/manage' : homes[platform], instruction: '在官方作品管理中找到并打开准确的作品，核对账号、标题和发布时间，再使用官方下架或设为私密操作。下架不等于删除作品；平台未提供下架入口时请使用官方 APP。' };
   if (intent === 'publish') return { url: publish[platform], instruction: platform === 'wechat' ? '进入视频号后台后点击发表视频；上传本人素材，核对后自行发表。' : '上传本人选定的素材；核对标题、正文和账号后，在官方页面确认发表。' };
   if (intent === 'comments') return {
     url: platform === 'douyin' ? 'https://creator.douyin.com/creator-micro/content/manage' : homes[platform],

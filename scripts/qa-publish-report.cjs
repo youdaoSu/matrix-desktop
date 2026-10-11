@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), ts = require('typescript'), Module = require('node:module');
+const fixture = new Module('report-fixture');
+fixture._compile(ts.transpileModule(fs.readFileSync('client/src/components/workspace/publish-report.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, 'report-fixture.cjs');
+const { localDay, filterPublishJobs, publishReport, successRate } = fixture.exports;
+const item = (id, stage, platform = 'douyin', accountId = 'account-a', day = '2026-10-11') => ({ id, stage, platform, accountId, nickname: '测试账号', title: '标题', files: ['sample.mp4'], config: { body: '描述' }, mediaType: 'video', batchId: 'batch-a', createdAt: day + 'T12:00:00', history: [] });
+const jobs = [item('1','confirmed'), item('2','failed'), item('3','unknown'), item('4','confirmed','xiaohongshu','account-b','2026-10-10')];
+const report = publishReport(jobs, '2026-10-11');
+assert.equal(report.total,4); assert.equal(report.success,2); assert.equal(report.today,3); assert.equal(report.todaySuccess,1);
+assert.equal(report.accounts.length,2); assert.equal(report.accounts[0].success,1); assert.equal(report.days[0].date,'2026-10-11');
+assert.equal(successRate(2,4),'50.00%'); assert.equal(successRate(0,0),'—');
+for (const [filter, count] of [[{text:'SAMPLE'},4],[{text:'描述'},4],[{platform:'douyin'},3],[{account:'account-b'},1],[{stage:'unknown'},1],[{mediaType:'image'},0],[{start:'2026-10-11',end:'2026-10-11'},3],[{batch:'missing'},0],[{start:'2026-10-12',end:'2026-10-10'},0]]) assert.equal(filterPublishJobs(jobs,filter).length,count);
+assert.equal(localDay('invalid'),''); assert.equal(publishReport([]).days.length,0);
+assert.equal(publishReport(jobs.slice(1)).total,3); assert.equal(jobs.length,4);
+console.log(JSON.stringify({ publishReportChecks:22, independentSuccessStates:true, noMutation:true }));

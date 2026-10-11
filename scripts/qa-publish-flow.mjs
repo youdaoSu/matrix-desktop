@@ -42,6 +42,7 @@ try {
   await main.evaluate("(()=>{const data=new DataTransfer();data.items.add(document.querySelector('#qa-drop-file').files[0]);document.querySelector('.matrix-dropzone').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));return true})()");
   await wait(() => main.evaluate("document.querySelector('.matrix-dropzone').innerText.includes('icon.png')"), 'Native dropped file was not imported');
   assert.equal(await main.evaluate("document.querySelector('.matrix-dropzone').innerText.includes('已导入本机素材')"), true);
+  await main.evaluate("document.querySelector('.matrix-publish-footer details').open=true;true");
   await click('为所选账号准备发布');
   let guest;
   await wait(async () => { guest = (await targets()).find(t => t.type === 'webview'); return !!guest; }, 'Guest missing');

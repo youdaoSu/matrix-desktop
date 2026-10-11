@@ -3,9 +3,10 @@ import { CheckCircle2, RefreshCw, Send } from 'lucide-react';
 import { getAuthToken } from '@/api';
 import { Button } from '@/components/ui/button';
 
-export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl, getGuestId }: {
+export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl, getGuestId, task }: {
   platform: MatrixDesktopPlatform; sessionId: string; accountId?: string;
-  kind: 'manage' | 'publish' | 'comments' | 'messages'; pageUrl: string; getGuestId(): number;
+  kind: 'manage' | 'publish' | 'comments' | 'messages' | 'withdraw'; pageUrl: string; getGuestId(): number;
+  task?: { id: string; title: string; kind: 'comments' | 'withdraw' };
 }) {
   const [plan, setPlan] = useState<MatrixPageActionPlan | null>(null);
   const [index, setIndex] = useState(0);
@@ -13,17 +14,18 @@ export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl,
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState<MatrixPageActionReceipt | null>(null);
   const lock = useRef(false), generation = useRef(0);
-  useEffect(() => { generation.current++; setPlan(null); setError(''); setReceipt(null); }, [kind, accountId, pageUrl]);
+  useEffect(() => { generation.current++; setPlan(null); setError(''); setReceipt(null); }, [kind, accountId, pageUrl, task?.id]);
   const input = (): MatrixPageActionInput => {
     const accessToken = getAuthToken();
     if (!accessToken || !accountId) throw new Error('请先登录矩效并完成账号绑定');
-    return { platform, sessionId, accountId, webContentsId: getGuestId(), accessToken };
+    return { platform, sessionId, accountId, webContentsId: getGuestId(), accessToken, ...(task?.kind === kind ? { taskId: task.id, expectedTitle: task.title } : {}) };
   };
   const inspect = async () => {
     if (lock.current || kind === 'manage') return;
     lock.current = true; setBusy(true); setError(''); setPlan(null); setReceipt(null);
     const current = generation.current;
     try {
+      if (task?.kind === kind && !window.confirm(`请核对正在操作的是这条作品：${task.title || '未填写标题'}。\n账号、作品内容和发布时间都一致吗？确认后本次${kind === 'withdraw' ? '下架' : '追评'}结果将关联到该任务。`)) return;
       const result = await window.matrixDesktop!.inspectPageAction({ ...input(), kind });
       if (current !== generation.current) return;
       if ('error' in result) throw new Error(result.error);
@@ -45,7 +47,7 @@ export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl,
     finally { lock.current = false; setBusy(false); }
   };
   if (kind === 'manage' || !accountId) return null;
-  return <section className="matrix-page-action-panel"><header><Send size={15} /><strong>提交当前{kind === 'publish' ? '作品' : kind === 'comments' ? '回复' : '私信'}</strong></header><p>在官方页面完成素材、文案和对象选择后，检查表单并提交。</p><Button variant="outline" size="sm" disabled={busy} onClick={() => void inspect()}><RefreshCw size={13} />{busy ? '处理中…' : '检查可提交表单'}</Button>{error && <p role="alert" className="text-destructive">{error}</p>}{plan && <div className="matrix-action-review"><strong>{plan.nickname}</strong>{plan.fields.filter(field => field.value.trim()).map((field, i) => <div key={i}><small>{field.label}</small><p>{field.value}</p></div>)}<label>官方提交按钮<select aria-label="官方提交按钮" value={index} disabled={busy} onChange={event => setIndex(Number(event.target.value))}>{plan.candidates.map(candidate => <option key={candidate.index} value={candidate.index}>{candidate.label} · {candidate.context.slice(0, 70)}</option>)}</select></label><Button disabled={busy} onClick={() => void submit()}><Send size={14} />核对并提交</Button></div>}{receipt && <div className={`matrix-action-receipt is-${receipt.status}`} role="status"><CheckCircle2 size={15} /><div><strong>{receipt.status === 'confirmed' ? '官方页面提示成功' : receipt.status === 'failed' ? '官方页面提示失败' : '提交结果待核对'}</strong><p>{receipt.message}</p><small>记录已保存在本机；作品审核与公开状态以平台为准。</small></div></div>}</section>;
+  return <section className="matrix-page-action-panel"><header><Send size={15} /><strong>提交当前{kind === 'publish' ? '作品' : kind === 'comments' ? '回复' : kind === 'withdraw' ? '下架操作' : '私信'}</strong></header><p>{task?.kind === kind ? '关联作品：' + (task.title || '未填写标题') + '。请核对准确的作品；结果将单独记录，不改变作品发布结果。' : '在官方页面完成素材、文案和对象选择后，检查表单并提交。'}</p><Button variant="outline" size="sm" disabled={busy} onClick={() => void inspect()}><RefreshCw size={13} />{busy ? '处理中…' : '检查可提交表单'}</Button>{error && <p role="alert" className="text-destructive">{error}</p>}{plan && <div className="matrix-action-review"><strong>{plan.nickname}</strong>{plan.fields.filter(field => field.value.trim()).map((field, i) => <div key={i}><small>{field.label}</small><p>{field.value}</p></div>)}<label>官方提交按钮<select aria-label="官方提交按钮" value={index} disabled={busy} onChange={event => setIndex(Number(event.target.value))}>{plan.candidates.map(candidate => <option key={candidate.index} value={candidate.index}>{candidate.label} · {candidate.context.slice(0, 70)}</option>)}</select></label><Button disabled={busy} onClick={() => void submit()}><Send size={14} />核对并提交</Button></div>}{receipt && <div className={`matrix-action-receipt is-${receipt.status}`} role="status"><CheckCircle2 size={15} /><div><strong>{receipt.status === 'confirmed' ? '官方页面提示成功' : receipt.status === 'failed' ? '官方页面提示失败' : '提交结果待核对'}</strong><p>{receipt.message}</p><small>记录已保存在本机；作品审核与公开状态以平台为准。</small></div></div>}</section>;
 }
 
 export function PageActionHistory() {

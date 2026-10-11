@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { BookOpen, Search, ArrowLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
+import { PublishProgressButton } from '@/components/workspace/PublishQueue';
 
 const docItems = [
   { to: '/docs/overview', label: '产品框架总览' },
@@ -85,6 +86,7 @@ const DocsLayout = () => {
           </div>
 
           <div className="ml-auto flex items-center gap-3">
+            <PublishProgressButton />
             <Button variant="outline" size="sm" onClick={() => navigate('/dashboard')}>
               <ArrowLeft className="w-4 h-4" />
               返回工作台

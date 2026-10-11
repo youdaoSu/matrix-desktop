@@ -201,6 +201,7 @@ try {
   ensure(await evaluate("document.querySelector('.matrix-page-content').getClientRects().length > 0 && document.querySelector('.matrix-official-deck').getClientRects().length > 0"), 'Publishing form stays visible alongside the account panel');
   await evaluate("(() => { [...document.querySelectorAll('.matrix-publish-account [role=checkbox]')].slice(0,2).forEach(item=>item.click()); const title=document.querySelector('#publish-title'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(title,'QA multi-account draft'); title.dispatchEvent(new Event('input',{bubbles:true})); return true; })()");
   await click('button', '同步至右侧');
+  await evaluate("document.querySelector('.matrix-publish-footer details').open=true;true");
   await click('button', '为所选账号准备发布');
   await waitUntil(() => evaluate("document.querySelectorAll('webview').length === 6"), 'Two selected accounts did not receive separate draft tabs');
   ensure(await evaluate("[...document.querySelectorAll('.matrix-draft-helper textarea')].filter(item=>item.value==='QA multi-account draft').length === 2"), 'Draft text is handed off to each selected account independently');
@@ -248,6 +249,8 @@ try {
   await runScript('scripts/qa-personal-tools.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-auto-binding.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-publish-flow.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-background-publish.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-publish-visuals.mjs', [String(debugPort), base]);
   fs.writeFileSync('logs/qa-workspace-results.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ passed: report.checks.length, officialPlatforms: report.officialPages.length, isolatedDatabase: true }, null, 2));
 } catch (error) {
