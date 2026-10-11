@@ -75,6 +75,7 @@ interface MatrixDesktopSession {
 interface Window {
   matrixDesktop?: {
     isDesktop: true;
+    insertDraft(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number; text: string }): Promise<{ error?: string; inserted?: boolean; sent?: false }>;
     uploadMedia(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number; mediaType: 'video' | 'image' }): Promise<{ error?: string; cancelled?: boolean; uploadStarted?: boolean; count?: number; filenames?: string[] }>;
     openPlatformLogin(platform: MatrixDesktopPlatform): Promise<MatrixDesktopLoginResult | MatrixDesktopCancelledResult | MatrixDesktopErrorResult>;
     openAccountSession(sessionId: string, platform: MatrixDesktopPlatform): Promise<void>;

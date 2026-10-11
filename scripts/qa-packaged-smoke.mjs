@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
-const executable = path.join(root, 'release/win-unpacked/矩效 Matrix.exe');
+const output = process.argv[2] || 'release';
+if (!['release', 'release-preview'].includes(output)) throw new Error('Unexpected package output directory');
+const packageRoot = path.join(root, output, 'win-unpacked');
+const executable = path.join(packageRoot, '矩效 Matrix.exe');
 if (!fs.existsSync(executable)) throw new Error('Build the desktop package first');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-packaged-qa-'));
 const debugPort = 9392;
@@ -56,7 +59,7 @@ try {
   });
   const call = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++sequence;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${method} timed out`)); }, 15000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${method} timed out`)); }, method === 'Page.captureScreenshot' ? 30000 : 15000);
     pending.set(id, { resolve, reject, timer }); socket.send(JSON.stringify({ id, method, params }));
   });
   const evaluate = async expression => {
@@ -91,7 +94,7 @@ try {
   socket?.close();
   if (desktop.exitCode === null) desktop.kill();
   const dataDir = path.join(profile, 'database');
-  if (fs.existsSync(path.join(dataDir, 'postmaster.pid'))) spawnSync(path.join(root, 'release/win-unpacked/resources/postgres/bin/pg_ctl.exe'), ['-D', dataDir, '-m', 'fast', '-w', 'stop'], { windowsHide: true, timeout: 15000, stdio: 'ignore' });
+  if (fs.existsSync(path.join(dataDir, 'postmaster.pid'))) spawnSync(path.join(packageRoot, 'resources/postgres/bin/pg_ctl.exe'), ['-D', dataDir, '-m', 'fast', '-w', 'stop'], { windowsHide: true, timeout: 15000, stdio: 'ignore' });
   if (!failed && path.dirname(profile) === os.tmpdir() && path.basename(profile).startsWith('matrix-packaged-qa-')) fs.rmSync(profile, { recursive: true, force: true });
   if (failed) console.error(`Diagnostic profile retained: ${profile}`);
 }

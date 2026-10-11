@@ -52,6 +52,7 @@ ehthumbs.db
 Thumbs.db
 
 # Temporary folders
+release-preview/
 tmp/
 temp/
 .playwright-cli/

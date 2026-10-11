@@ -164,6 +164,7 @@ export class AutoReplyService {
     id: string,
     testText: string,
   ): Promise<{ hit: boolean; replyContent?: string; replyType?: string; hitKeyword?: string }> {
+    if (typeof testText !== 'string' || testText.length > 20000) throw new BadRequestException('测试内容必须是长度不超过 20000 字符的文本');
     const existing = await this.db
       .select()
       .from(autoReplyRules)

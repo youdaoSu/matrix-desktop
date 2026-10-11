@@ -20,6 +20,8 @@ import MessagesPage from './pages/user/MessagesPage';
 
 import ContentRecordsPage from './pages/publish/ContentRecordsPage';
 import ContentCreateRealPage from './pages/publish/ContentCreateRealPage';
+import BatchDraftPage from './pages/publish/BatchDraftPage';
+import ReplyToolsPage from './pages/user/ReplyToolsPage';
 
 import AnalyticsPage from './pages/user/AnalyticsPage';
 
@@ -71,27 +73,27 @@ const RoutesComponent = () => {
         <Route path="/publish" element={<ContentRecordsPage />} />
         <Route path="/publish/tasks" element={<ContentRecordsPage />} />
         <Route path="/publish/create" element={<ContentCreateRealPage />} />
-        <Route path="/publish/batch-video" element={<CapabilityPendingPage />} />
-        <Route path="/publish/batch-image" element={<CapabilityPendingPage />} />
+        <Route path="/publish/batch-video" element={<BatchDraftPage key="video" />} />
+        <Route path="/publish/batch-image" element={<BatchDraftPage key="image" />} />
         <Route path="/publish/drafts" element={<ContentRecordsPage />} />
         <Route path="/publish/stats" element={<AnalyticsPage />} />
 
         <Route path="/engage/comments" element={<CommentsPage />} />
-        <Route path="/engage/comments-agg" element={<CapabilityPendingPage />} />
+        <Route path="/engage/comments-agg" element={<CommentsPage />} />
         <Route path="/engage/auto-comment" element={<CapabilityPendingPage />} />
         <Route path="/engage/batch-tasks" element={<CapabilityPendingPage />} />
         <Route path="/engage/messages" element={<MessagesPage />} />
-        <Route path="/engage/messages-agg" element={<CapabilityPendingPage />} />
+        <Route path="/engage/messages-agg" element={<MessagesPage />} />
         <Route path="/engage/auto-message" element={<CapabilityPendingPage />} />
         <Route path="/engage/followers" element={<FollowersPage />} />
         <Route path="/engage/follower-monitor" element={<CapabilityPendingPage />} />
 
-        <Route path="/automation/keywords" element={<CapabilityPendingPage />} />
-        <Route path="/automation/welcome" element={<CapabilityPendingPage />} />
-        <Route path="/automation/offline" element={<CapabilityPendingPage />} />
+        <Route path="/automation/keywords" element={<ReplyToolsPage key="keyword" />} />
+        <Route path="/automation/welcome" element={<ReplyToolsPage key="welcome" />} />
+        <Route path="/automation/offline" element={<ReplyToolsPage key="offline" />} />
         <Route path="/automation/active-messages" element={<CapabilityPendingPage />} />
         <Route path="/automation/monitor" element={<CapabilityPendingPage />} />
-        <Route path="/automation/templates" element={<CapabilityPendingPage />} />
+        <Route path="/automation/templates" element={<ReplyToolsPage key="templates" />} />
         <Route path="/automation/logs" element={<CapabilityPendingPage />} />
 
         <Route path="/analytics" element={<AnalyticsPage />} />

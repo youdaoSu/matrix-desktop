@@ -1,5 +1,12 @@
 const assert = require('node:assert/strict');
-const { selectUploadInput, registerPersonalAssist } = require('../desktop/personal-assist.cjs');
+const { selectUploadInput, registerPersonalAssist, isEditableTarget } = require('../desktop/personal-assist.cjs');
+const editor = { tagName: 'TEXTAREA', getBoundingClientRect: () => ({ width: 50, height: 30 }), getAttribute: () => '' };
+assert.equal(isEditableTarget(editor), true);
+assert.equal(isEditableTarget({ ...editor, tagName: 'INPUT', type: 'text' }), true);
+assert.equal(isEditableTarget({ ...editor, tagName: 'DIV', isContentEditable: true }), true);
+for (const patch of [{ disabled: true }, { readOnly: true }, { placeholder: '验证码' }, { autocomplete: 'one-time-code' }, { tagName: 'INPUT', type: 'password' }, { getBoundingClientRect: () => ({ width: 0, height: 30 }) }, { tagName: 'BUTTON' }]) assert.equal(isEditableTarget({ ...editor, ...patch }), false);
+assert.equal(isEditableTarget(null), false);
+console.log('11 focused-editor checks passed, including rejection of credentials and hidden inputs');
 const video = { nodeId: 1, accept: 'video/mp4,.mov', visible: true, multiple: false };
 const image = { nodeId: 2, accept: 'image/png,image/jpeg', visible: true, multiple: true };
 assert.equal(selectUploadInput([video, image], 'video', 1), 1);
@@ -12,7 +19,7 @@ assert.throws(() => selectUploadInput([image], 'video', 1));
 assert.throws(() => selectUploadInput([{ ...video, accept: '' }], 'video', 1));
 console.log('8 upload control selection and fail-safe checks passed; no platform uploads performed');
 async function testIpc() {
-  let handler;
+  const handlers = {};
   let authenticated = true;
   let url = 'https://member.bilibili.com/platform/upload/video/frame';
   let file = '/test/video.mp4';
@@ -29,7 +36,8 @@ async function testIpc() {
       if (method === 'DOM.setFileInputFiles') transfers++;
       return {};
     } } };
-  registerPersonalAssist({ ipcMain: { handle: (_channel, fn) => { handler = fn; } }, dialog: { showOpenDialog: async () => { dialogs++; return { canceled: false, filePaths: [file] }; } }, webContents: { fromId: id => id === 22 ? guest : undefined }, session: { fromPartition: partition => partition.endsWith('a'.repeat(16)) ? isolated : {} }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { bilibili: { domain: 'bilibili.com' } }, inspectPlatformSession: async () => ({ authenticated }), statFile: () => ({ isFile: () => true }) });
+  registerPersonalAssist({ ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } }, dialog: { showOpenDialog: async () => { dialogs++; return { canceled: false, filePaths: [file] }; } }, webContents: { fromId: id => id === 22 ? guest : undefined }, session: { fromPartition: partition => partition.endsWith('a'.repeat(16)) ? isolated : {} }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { bilibili: { domain: 'bilibili.com' } }, inspectPlatformSession: async () => ({ authenticated }), statFile: () => ({ isFile: () => true }) });
+  const handler = handlers['matrix:upload-media'];
   const input = { platform: 'bilibili', sessionId: 'a'.repeat(16), webContentsId: 22, mediaType: 'video' };
   const invoke = changes => handler({ sender: { id: 11 } }, { ...input, ...changes });
   assert.ok((await handler({ sender: { id: 999 } }, input)).error);
@@ -42,5 +50,21 @@ async function testIpc() {
   file = '/test/video.mp4'; const result = await invoke();
   assert.equal(result.uploadStarted, true); assert.equal(transfers, 1); assert.equal(attached, false); assert.equal(result.published, undefined);
   console.log('7 mocked IPC ownership, session, domain, login, file validation and upload-handoff checks passed; no real upload or publishing performed');
+  let inserted = '';
+  let editable = true;
+  guest.executeJavaScript = async () => editable;
+  guest.focus = () => {};
+  guest.insertText = async text => { inserted = text; };
+  const fill = (changes = {}, sender = 11) => handlers['matrix:insert-draft']({ sender: { id: sender } }, { ...input, text: 'test draft', ...changes });
+  assert.ok((await fill({}, 99)).error);
+  assert.ok((await fill({ sessionId: 'b'.repeat(16) })).error);
+  assert.ok((await fill({ text: 'x'.repeat(20001) })).error);
+  assert.ok((await fill({ text: '' })).error);
+  url = 'https://passport.bilibili.com/login'; assert.ok((await fill()).error);
+  url = 'https://example.com/editor'; assert.ok((await fill()).error);
+  url = 'https://member.bilibili.com/platform/upload/video/frame'; authenticated = false; assert.ok((await fill()).error);
+  authenticated = true; editable = false; assert.ok((await fill()).error); assert.equal(inserted, '');
+  editable = true; const filled = await fill(); assert.equal(filled.inserted, true); assert.equal(filled.sent, false); assert.equal(inserted, 'test draft');
+  console.log('9 mocked text insertion guard checks passed; no real platform input or messages sent');
 }
 testIpc().catch(error => { console.error(error); process.exitCode = 1; });

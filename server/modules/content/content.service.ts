@@ -89,9 +89,12 @@ export class ContentService {
       status?: string;
     },
   ): Promise<ContentPost[]> {
-    if (!data.accountIds || data.accountIds.length === 0) {
+    if (!Array.isArray(data.accountIds) || data.accountIds.length === 0 || data.accountIds.length > 100 || data.accountIds.some(id => typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id))) {
       throw new BadRequestException('请选择至少一个账号');
     }
+    if (!['text', 'image', 'video'].includes(data.mediaType)) throw new BadRequestException('内容类型不正确');
+    if ((data.title !== undefined && (typeof data.title !== 'string' || data.title.length > 500)) ||
+        (data.content !== undefined && (typeof data.content !== 'string' || data.content.length > 20000))) throw new BadRequestException('标题或正文过长或格式不正确');
 
     // Validate accounts belong to user
     const accounts = await this.db
@@ -99,7 +102,7 @@ export class ContentService {
       .from(platformAccounts)
       .where(and(eq(platformAccounts.userId, userId), inArray(platformAccounts.id, data.accountIds)));
 
-    if (accounts.length === 0) {
+    if (accounts.length !== new Set(data.accountIds).size) {
       throw new BadRequestException('账号不存在或无权限');
     }
 

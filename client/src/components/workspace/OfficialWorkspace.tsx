@@ -175,6 +175,17 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const [draft, setDraft] = useState(tab.draftText || '');
   const [uploading, setUploading] = useState(false);
   const [uploadNote, setUploadNote] = useState('');
+  const [inserting, setInserting] = useState(false);
+  const insert = async () => {
+    if (!window.matrixDesktop || inserting || tab.binding) return;
+    setInserting(true);
+    try {
+      const result = await window.matrixDesktop.insertDraft({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId(), text: draft });
+      if (result.error) throw new Error(result.error);
+      if (result.inserted) toast.success('文案已填入；请核对内容和对象后，在官方页面确认提交。尚未发送。');
+    } catch (failure) { toast.error(failure instanceof Error ? failure.message : '填入失败，请使用复制文案'); }
+    finally { setInserting(false); }
+  };
   useEffect(() => { if (tab.draftText !== undefined) { setDraft(tab.draftText); setHelperOpen(true); } }, [tab.draftText]);
   const upload = async (mediaType: 'video' | 'image') => {
     if (!window.matrixDesktop || uploading || tab.binding) return;
@@ -264,7 +275,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     {error && <div role="alert" className="matrix-browser-error">{error}<button onClick={() => operate(() => view.current.reload())}>重试</button></div>}
     <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.url, partition: tab.partition, className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
       {loading && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" onClick={() => operate(() => view.current.reload())}>重新加载</Button>}</div>}
-      {helperOpen && <aside className="matrix-draft-helper"><div><strong>文案辅助</strong><button aria-label="关闭文案辅助" onClick={() => setHelperOpen(false)}><X size={16} /></button></div><p>整理标题、正文或回复文案，复制后粘贴到官方页面。</p><textarea aria-label="文案辅助内容" placeholder="输入要发布的文案或回复…" value={draft} onChange={event => setDraft(event.target.value)} /><Button disabled={!draft.trim()} onClick={() => void navigator.clipboard.writeText(draft).then(() => toast.success('文案已复制')).catch(() => toast.error('复制失败，请手动选择文案复制'))}><Copy size={14} />复制文案</Button><div className="matrix-personal-upload"><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => operate(() => view.current.loadURL(publishEntrances[tab.platform]))}>打开发表入口</Button><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('video')}>选择视频上传</Button><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('image')}>选择图片上传</Button><small>先进入官方发布表单；只上传本人选定素材，不自动发表。</small>{uploadNote && <p role="status">{uploadNote}</p>}</div><small>文案仅保留在当前标签内，关闭标签后清除。</small></aside>}
+      {helperOpen && <aside className="matrix-draft-helper"><div><strong>文案辅助</strong><button aria-label="关闭文案辅助" onClick={() => setHelperOpen(false)}><X size={16} /></button></div><p>先在官方页面点击标题、正文或回复输入框，再填入文案；核对后自行提交。</p><textarea aria-label="文案辅助内容" placeholder="输入要发布的文案或回复…" value={draft} onChange={event => setDraft(event.target.value)} /><Button disabled={!draft.trim()} onClick={() => void navigator.clipboard.writeText(draft).then(() => toast.success('文案已复制')).catch(() => toast.error('复制失败，请手动选择文案复制'))}><Copy size={14} />复制文案</Button><Button variant="outline" disabled={!draft.trim() || tab.binding || loading || inserting} onClick={() => void insert()}>{inserting ? "正在填入…" : "填入选中的官方输入框"}</Button><div className="matrix-personal-upload"><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => operate(() => view.current.loadURL(publishEntrances[tab.platform]))}>打开发表入口</Button><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('video')}>选择视频上传</Button><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('image')}>选择图片上传</Button><small>先进入官方发布表单；只上传本人选定素材，不自动发表。</small>{uploadNote && <p role="status">{uploadNote}</p>}</div><small>文案仅保留在当前标签内，关闭标签后清除。</small></aside>}
     </div>
     <div className="matrix-browser-status"><span><i />{loading ? '正在加载官方页面…' : '官方页面'} · {platformLabels[tab.platform]}</span><span>本机独立会话 · 操作由你确认</span></div>
   </div>;

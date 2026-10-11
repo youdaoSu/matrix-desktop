@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
   isDesktop: true,
+  insertDraft: (input) => ipcRenderer.invoke('matrix:insert-draft', input),
   uploadMedia: (input) => ipcRenderer.invoke('matrix:upload-media', input),
   openPlatformLogin: (platform) => ipcRenderer.invoke('matrix:platform-login', platform),
   openAccountSession: async (sessionId, platform) => {
