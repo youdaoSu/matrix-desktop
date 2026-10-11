@@ -92,7 +92,9 @@ button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .matrix-intent-bar .is-active { color: var(--primary); border-bottom-color: var(--primary); }
 .matrix-intent-bar > span { font-size: 11px; color: var(--muted-foreground); }
 .matrix-binding-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 16px; background: var(--sidebar-accent); font-size: 12px; flex-shrink: 0; }
-.matrix-browser-hint { padding: 8px 16px; font-size: 11px; background: var(--muted); color: var(--muted-foreground); flex-shrink: 0; }
+.matrix-browser-hint { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; font-size: 11px; background: var(--muted); color: var(--muted-foreground); flex-shrink: 0; }
+.matrix-browser-hint > span { min-width: 0; }
+.matrix-browser-hint > button { flex-shrink: 0; }
 .matrix-browser-error { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; font-size: 12px; color: #b13c43; background: #fff2f3; flex-shrink: 0; }
 .matrix-browser-error button { text-decoration: underline; }
 .matrix-browser-body { flex: 1; min-height: 0; display: flex; }

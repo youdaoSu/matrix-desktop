@@ -7,10 +7,12 @@ import { TemplatesController } from './templates.controller';
 import { TemplatesService } from './templates.service';
 import { AutoReplyController } from './auto-reply.controller';
 import { AutoReplyService } from './auto-reply.service';
+import { PersonalTasksController } from './personal-tasks.controller';
+import { PersonalTasksService } from './personal-tasks.service';
 
 @Module({
-  controllers: [MonitorController, AutoMessageController, TemplatesController, AutoReplyController],
-  providers: [MonitorService, AutoMessageService, TemplatesService, AutoReplyService],
+  controllers: [MonitorController, AutoMessageController, TemplatesController, AutoReplyController, PersonalTasksController],
+  providers: [MonitorService, AutoMessageService, TemplatesService, AutoReplyService, PersonalTasksService],
   exports: [MonitorService, AutoMessageService, TemplatesService, AutoReplyService],
 })
 export class AutomationModule {}

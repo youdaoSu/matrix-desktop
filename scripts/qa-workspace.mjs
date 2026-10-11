@@ -88,6 +88,7 @@ try {
     await sql`INSERT INTO platform_accounts(user_id,platform,platform_user_id,nickname,group_name,auth_status,health_status,raw_data)
       VALUES(${user.id},${platform},${`desktop:${sessionId}`},${`QA ${platform}`},'QA 工作区','authorized','normal',${sql.json({ provider: 'desktop-connector', connectorSessionId: sessionId })})`;
   }
+  await runScript('scripts/qa-personal-tasks.mjs', [base]);
   desktop = launch(path.join(root, '.desktop-deps/node_modules/electron/dist/electron.exe'), [
     'desktop/main.cjs', `--remote-debugging-port=${debugPort}`, `--matrix-user-data-dir=${profile}`,
   ], { ...process.env, MATRIX_APP_URL: `${base}/app/#/login` });

@@ -42,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from '@client/src/components/ui/dropdown-menu';
 import NotificationCenter from '@client/src/components/notification/NotificationCenter';
+import PersonalTaskReminder from '@/components/notification/PersonalTaskReminder';
 import { clearAuthToken, getAuthToken, getUser } from '@client/src/api';
 import { Globe2 } from 'lucide-react';
 import { OfficialWorkspaceDeck, OfficialWorkspaceProvider, useOfficialWorkspace, WorkspaceTabs } from '@/components/workspace/OfficialWorkspace';
@@ -114,7 +115,7 @@ const topMenuItems: TopMenuItem[] = [
         items: [
           { to: '/engage/comments', label: '评论管理' },
           { to: '/engage/comments-agg', label: '评论聚合' },
-          { to: '/engage/auto-comment', label: '自动评论' },
+          { to: '/engage/auto-comment', label: '评论回复待办' },
           { to: '/engage/batch-tasks', label: '批量任务' },
         ],
       },
@@ -124,7 +125,7 @@ const topMenuItems: TopMenuItem[] = [
         items: [
           { to: '/engage/messages', label: '私信管理' },
           { to: '/engage/messages-agg', label: '私信聚合' },
-          { to: '/engage/auto-message', label: '主动私信' },
+          { to: '/engage/auto-message', label: '私信回复待办' },
         ],
       },
       {
@@ -143,7 +144,7 @@ const topMenuItems: TopMenuItem[] = [
           { to: '/automation/welcome', label: '欢迎语' },
           { to: '/automation/offline', label: '离线回复' },
           { to: '/automation/monitor', label: '监控任务' },
-          { to: '/automation/active-messages', label: '主动私信' },
+          { to: '/automation/active-messages', label: '个人操作待办' },
           { to: '/automation/templates', label: '消息模板' },
         ],
       },
@@ -164,15 +165,15 @@ const topMenuItems: TopMenuItem[] = [
       {
         label: '账号与通知',
         items: [
-          { to: '/analytics/account-monitor', label: '账号监控' },
-          { to: '/analytics/notify-monitor', label: '通知监控' },
+          { to: '/analytics/account-monitor', label: '账号会话检查' },
+          { to: '/analytics/notify-monitor', label: '待办提醒' },
         ],
       },
       {
         label: '合规与草稿',
         items: [
           { to: '/analytics/violation', label: '作品违规' },
-          { to: '/analytics/drafts', label: '草稿监控' },
+          { to: '/analytics/drafts', label: '本地草稿管理' },
         ],
       },
     ],
@@ -306,6 +307,7 @@ const UserLayoutContent = () => {
             </Badge>
           )}
 
+          <PersonalTaskReminder />
           <NotificationCenter />
 
           <DropdownMenu>

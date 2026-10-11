@@ -22,6 +22,8 @@ import ContentRecordsPage from './pages/publish/ContentRecordsPage';
 import ContentCreateRealPage from './pages/publish/ContentCreateRealPage';
 import BatchDraftPage from './pages/publish/BatchDraftPage';
 import ReplyToolsPage from './pages/user/ReplyToolsPage';
+import PersonalTasksPage from './pages/user/PersonalTasksPage';
+import AccountHealthPage from './pages/user/AccountHealthPage';
 
 import AnalyticsPage from './pages/user/AnalyticsPage';
 
@@ -71,7 +73,7 @@ const RoutesComponent = () => {
         <Route path="/accounts/groups" element={<AccountGroupsPage />} />
 
         <Route path="/publish" element={<ContentRecordsPage />} />
-        <Route path="/publish/tasks" element={<ContentRecordsPage />} />
+        <Route path="/publish/tasks" element={<PersonalTasksPage key="publish-tasks" />} />
         <Route path="/publish/create" element={<ContentCreateRealPage />} />
         <Route path="/publish/batch-video" element={<BatchDraftPage key="video" />} />
         <Route path="/publish/batch-image" element={<BatchDraftPage key="image" />} />
@@ -80,29 +82,29 @@ const RoutesComponent = () => {
 
         <Route path="/engage/comments" element={<CommentsPage />} />
         <Route path="/engage/comments-agg" element={<CommentsPage />} />
-        <Route path="/engage/auto-comment" element={<CapabilityPendingPage />} />
-        <Route path="/engage/batch-tasks" element={<CapabilityPendingPage />} />
+        <Route path="/engage/auto-comment" element={<PersonalTasksPage key="comment-tasks" />} />
+        <Route path="/engage/batch-tasks" element={<PersonalTasksPage key="batch-tasks" />} />
         <Route path="/engage/messages" element={<MessagesPage />} />
         <Route path="/engage/messages-agg" element={<MessagesPage />} />
-        <Route path="/engage/auto-message" element={<CapabilityPendingPage />} />
+        <Route path="/engage/auto-message" element={<PersonalTasksPage key="message-tasks" />} />
         <Route path="/engage/followers" element={<FollowersPage />} />
         <Route path="/engage/follower-monitor" element={<CapabilityPendingPage />} />
 
         <Route path="/automation/keywords" element={<ReplyToolsPage key="keyword" />} />
         <Route path="/automation/welcome" element={<ReplyToolsPage key="welcome" />} />
         <Route path="/automation/offline" element={<ReplyToolsPage key="offline" />} />
-        <Route path="/automation/active-messages" element={<CapabilityPendingPage />} />
+        <Route path="/automation/active-messages" element={<PersonalTasksPage key="active-message-tasks" />} />
         <Route path="/automation/monitor" element={<CapabilityPendingPage />} />
         <Route path="/automation/templates" element={<ReplyToolsPage key="templates" />} />
-        <Route path="/automation/logs" element={<CapabilityPendingPage />} />
+        <Route path="/automation/logs" element={<PersonalTasksPage key="task-logs" />} />
 
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/analytics/flow" element={<CapabilityPendingPage />} />
-        <Route path="/analytics/account-monitor" element={<CapabilityPendingPage />} />
-        <Route path="/analytics/notify-monitor" element={<CapabilityPendingPage />} />
+        <Route path="/analytics/account-monitor" element={<AccountHealthPage />} />
+        <Route path="/analytics/notify-monitor" element={<PersonalTasksPage key="task-reminders" />} />
         <Route path="/analytics/violation" element={<CapabilityPendingPage />} />
-        <Route path="/analytics/drafts" element={<CapabilityPendingPage />} />
-        <Route path="/analytics/data-screen" element={<CapabilityPendingPage />} />
+        <Route path="/analytics/drafts" element={<ContentRecordsPage key="draft-monitor" />} />
+        <Route path="/analytics/data-screen" element={<AnalyticsPage />} />
 
         <Route path="/settings/profile" element={<SettingsProfilePage />} />
         <Route path="/settings/password" element={<SettingsPasswordPage />} />

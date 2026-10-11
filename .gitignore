@@ -53,6 +53,7 @@ Thumbs.db
 
 # Temporary folders
 release-preview/
+release-next/
 tmp/
 temp/
 .playwright-cli/

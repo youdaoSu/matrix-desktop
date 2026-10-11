@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 const output = process.argv[2] || 'release';
-if (!['release', 'release-preview'].includes(output)) throw new Error('Unexpected package output directory');
+if (!['release', 'release-preview', 'release-next'].includes(output)) throw new Error('Unexpected package output directory');
 const packageRoot = path.join(root, output, 'win-unpacked');
 const executable = path.join(packageRoot, '矩效 Matrix.exe');
 if (!fs.existsSync(executable)) throw new Error('Build the desktop package first');

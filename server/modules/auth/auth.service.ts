@@ -158,52 +158,53 @@ export class AuthService {
   }
 
   async activateCode(userId: string, dto: ActivateCodeDto): Promise<AppUser> {
-    const users = await this.db
-      .select()
-      .from(appUsers)
-      .where(eq(appUsers.id, userId))
-      .limit(1);
-    if (users.length === 0) {
-      throw new NotFoundException('用户不存在');
-    }
-    const user = users[0];
+    const activated = await this.db.transaction(async (tx) => {
+      // Serialize both repeated redemption and concurrent renewals by the same user.
+      const users = await tx
+        .select()
+        .from(appUsers)
+        .where(eq(appUsers.id, userId))
+        .limit(1).for('update');
+      if (users.length === 0) {
+        throw new NotFoundException('用户不存在');
+      }
+      const user = users[0];
 
-    const codeUpper = dto.code.toUpperCase().trim();
-    const codes = await this.db
-      .select()
-      .from(activationCodes)
-      .where(eq(activationCodes.code, codeUpper))
-      .limit(1);
+      const codeUpper = dto.code.toUpperCase().trim();
+      const codes = await tx
+        .select()
+        .from(activationCodes)
+        .where(eq(activationCodes.code, codeUpper))
+        .limit(1).for('update');
 
-    if (codes.length === 0) {
-      throw new BadRequestException('激活码不存在');
-    }
+      if (codes.length === 0) {
+        throw new BadRequestException('激活码不存在');
+      }
 
-    const code = codes[0];
-    if (code.status === 'used') {
-      throw new BadRequestException('激活码已被使用');
-    }
-    if (code.status === 'disabled') {
-      throw new BadRequestException('激活码已作废');
-    }
+      const code = codes[0];
+      if (code.status === 'used') {
+        throw new BadRequestException('激活码已被使用');
+      }
+      if (code.status === 'disabled') {
+        throw new BadRequestException('激活码已作废');
+      }
 
-    const plans = await this.db
-      .select()
-      .from(vipPlans)
-      .where(eq(vipPlans.id, code.planId))
-      .limit(1);
-    if (plans.length === 0) {
-      throw new BadRequestException('关联套餐不存在');
-    }
-    const plan = plans[0];
+      const plans = await tx
+        .select()
+        .from(vipPlans)
+        .where(eq(vipPlans.id, code.planId))
+        .limit(1);
+      if (plans.length === 0) {
+        throw new BadRequestException('关联套餐不存在');
+      }
+      const plan = plans[0];
 
-    const now = new Date();
-    const currentExpiry = user.vipExpiresAt && user.vipStatus === 'active'
-      ? new Date(user.vipExpiresAt.getTime() > now.getTime() ? user.vipExpiresAt : now)
-      : now;
-    const newExpiry = new Date(currentExpiry.getTime() + code.durationDays * 24 * 60 * 60 * 1000);
+      const now = new Date();
+      const currentExpiry = user.vipExpiresAt && user.vipStatus === 'active'
+        ? new Date(user.vipExpiresAt.getTime() > now.getTime() ? user.vipExpiresAt : now)
+        : now;
+      const newExpiry = new Date(currentExpiry.getTime() + code.durationDays * 24 * 60 * 60 * 1000);
 
-    const updated = await this.db.transaction(async (tx) => {
       await tx
         .update(activationCodes)
         .set({
@@ -223,20 +224,18 @@ export class AuthService {
         })
         .where(eq(appUsers.id, user.id))
         .returning();
-      return result[0];
+      await tx.insert(operationLogs).values({
+        operatorType: 'user',
+        operatorId: user.id,
+        operatorName: user.username,
+        action: 'activate_vip',
+        targetType: 'activation_code',
+        targetId: code.id,
+        detail: `激活授权码，开通${plan.name}套餐${code.durationDays}天`,
+      });
+      return { user: result[0], planName: plan.name };
     });
-
-    await this.db.insert(operationLogs).values({
-      operatorType: 'user',
-      operatorId: user.id,
-      operatorName: user.username,
-      action: 'activate_vip',
-      targetType: 'activation_code',
-      targetId: code.id,
-      detail: `激活授权码 ${code.code}，开通${plan.name}套餐${code.durationDays}天`,
-    });
-
-    return mapUser({ ...updated, vipPlanName: plan.name });
+    return mapUser({ ...activated.user, vipPlanName: activated.planName });
   }
 
   async forgotPassword(_dto: ForgotPasswordDto): Promise<void> {

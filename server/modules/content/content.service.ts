@@ -22,6 +22,7 @@ export class ContentService {
     },
   ): Promise<{ items: ContentPost[]; total: number; page: number; pageSize: number }> {
     const { status, platform, accountId, keyword, page, pageSize } = params;
+    if (!Number.isInteger(page) || page < 1 || page > 1000000 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new BadRequestException('分页参数不正确');
     const conditions = [eq(contentPosts.userId, userId)];
     if (status) conditions.push(eq(contentPosts.status, status));
     if (platform) conditions.push(eq(contentPosts.platform, platform));
@@ -152,6 +153,13 @@ export class ContentService {
       throw new NotFoundException('内容不存在');
     }
 
+    if (post.status !== 'draft') throw new BadRequestException('只能编辑本地草稿；平台作品请在官方页面修改');
+    if ((data.title !== undefined && (typeof data.title !== 'string' || data.title.length > 500)) ||
+        (data.content !== undefined && (typeof data.content !== 'string' || data.content.length > 20000))) throw new BadRequestException('标题或正文过长或格式不正确');
+    if (data.mediaType !== undefined && !['text', 'image', 'video'].includes(data.mediaType)) throw new BadRequestException('内容类型不正确');
+    if (data.tags !== undefined && (!Array.isArray(data.tags) || data.tags.length > 50 || data.tags.some(tag => typeof tag !== 'string' || tag.length > 100))) throw new BadRequestException('标签格式不正确');
+    if (data.mediaUrls !== undefined && (!Array.isArray(data.mediaUrls) || data.mediaUrls.length > 100 || data.mediaUrls.some(url => typeof url !== 'string' || url.length > 4096))) throw new BadRequestException('素材地址格式不正确');
+
     const patch: Partial<typeof contentPosts.$inferInsert> = {};
     if (data.title !== undefined) patch.title = data.title;
     if (data.content !== undefined) patch.content = data.content;
@@ -209,6 +217,7 @@ export class ContentService {
     if (!post) {
       throw new NotFoundException('内容不存在');
     }
+    if (post.status !== 'scheduled') throw new BadRequestException('该内容不是定时任务，不能取消定时或修改发布状态');
 
     const updated = await this.db
       .update(contentPosts)

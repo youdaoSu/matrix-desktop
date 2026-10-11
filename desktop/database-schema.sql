@@ -1363,8 +1363,20 @@ ALTER TABLE ONLY public.quick_replies
 
 
 --
+-- Personal-account manual workflow. Existing installations add this via the server's additive migration.
+CREATE TABLE IF NOT EXISTS public.personal_tasks (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES public.app_users(id) ON DELETE CASCADE,
+    account_id uuid REFERENCES public.platform_accounts(id) ON DELETE SET NULL,
+    platform varchar(20) NOT NULL, request_id uuid NOT NULL, request_hash varchar(64) NOT NULL,
+    kind varchar(20) NOT NULL, title varchar(140) NOT NULL, content text NOT NULL DEFAULT '',
+    status varchar(20) NOT NULL DEFAULT 'pending', due_at timestamptz,
+    note text NOT NULL DEFAULT '', completed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_tasks_request_account ON public.personal_tasks(user_id,request_id,account_id);
+CREATE INDEX IF NOT EXISTS idx_personal_tasks_user_due ON public.personal_tasks(user_id,status,due_at);
+
 -- PostgreSQL database dump complete
 --
 
 \unrestrict UWUQRaodCToJvMj47momplN2WC5eB6RlmUmF4K2MkKUhfDfXwe9wpskryMIBe7l
-

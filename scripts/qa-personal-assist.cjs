@@ -1,4 +1,18 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const ts = require('typescript');
+const Module = require('node:module');
+const operationModule = new Module('official-operation-unit');
+operationModule._compile(ts.transpileModule(fs.readFileSync(require.resolve('../shared/official-operations.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, 'official-operation-unit.cjs');
+const { officialOperation } = operationModule.exports;
+const platformDomains = { douyin: 'douyin.com', xiaohongshu: 'xiaohongshu.com', wechat: 'weixin.qq.com', bilibili: 'bilibili.com' };
+for (const [platform, domain] of Object.entries(platformDomains)) for (const intent of ['manage', 'publish', 'comments', 'messages']) {
+  const operation = officialOperation(platform, intent), target = new URL(operation.url);
+  assert.equal(target.protocol, 'https:'); assert.ok(target.hostname === domain || target.hostname.endsWith('.' + domain)); assert.ok(operation.instruction.length > 10);
+}
+assert.equal(officialOperation('douyin', 'comments').url, 'https://creator.douyin.com/creator-micro/content/manage');
+assert.equal(officialOperation('douyin', 'messages').url, 'https://www.douyin.com/');
+console.log('16 official operation mappings and 2 verified Douyin entry checks passed; these do not claim a successful platform submission');
 const { selectUploadInput, registerPersonalAssist, isEditableTarget } = require('../desktop/personal-assist.cjs');
 const editor = { tagName: 'TEXTAREA', getBoundingClientRect: () => ({ width: 50, height: 30 }), getAttribute: () => '' };
 assert.equal(isEditableTarget(editor), true);

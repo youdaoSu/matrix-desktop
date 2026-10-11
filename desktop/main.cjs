@@ -314,7 +314,7 @@ async function checkPlatformSession(input) {
     const isolatedSession = session.fromPartition(`persist:matrix-${input.platform}-${input.sessionId}`);
     const state = await inspectPlatformSession(input.platform, isolatedSession);
     return state.authenticated
-      ? { healthy: true, message: `${config.label}登录会话有效` }
+      ? { healthy: true, message: `本机保留${config.label}登录凭据，请打开官方页面确认是否仍有效` }
       : { healthy: false, message: `未检测到${config.label}登录状态，请重新授权` };
   } catch (error) {
     return { healthy: false, message: error instanceof Error ? error.message : String(error) };
@@ -528,7 +528,10 @@ ipcMain.handle('matrix:prepare-platform-login', (_event, input) => {
   }
 });
 ipcMain.handle('matrix:complete-platform-login', (_event, input) => completeEmbeddedPlatformLogin(input));
-ipcMain.handle('matrix:check-platform-session', (_event, input) => checkPlatformSession(input));
+ipcMain.handle('matrix:check-platform-session', (event, input) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return { healthy: false, message: '只允许矩效主窗口检查本机会话' };
+  return checkPlatformSession(input);
+});
 ipcMain.handle('matrix:create-database-backup', () => createDatabaseBackup());
 ipcMain.handle('matrix:open-data-folder', () => openDataFolder());
 ipcMain.handle('matrix:restore-database-backup', () => restoreDatabaseBackup());
