@@ -15,7 +15,7 @@ const platformColors: Record<PlatformType, string> = { douyin: '#24242b', xiaoho
 type Intent = 'manage' | 'publish' | 'comments' | 'messages' | 'withdraw';
 type TaskLink = { id: string; title: string; kind: 'comments' | 'withdraw' };
 type PublishPreparation = { media?: MatrixMediaSelection; title: string; body: string };
-type WorkspaceTab = MatrixDesktopSession & { id: string; nickname: string; binding: boolean; accountId?: string; intent: Intent; draftText?: string; preparation?: PublishPreparation; initialUrl?: string; background?: boolean; task?: TaskLink };
+type WorkspaceTab = MatrixDesktopSession & { id: string; parentId?: string; pageTitle?: string; nickname: string; binding: boolean; accountId?: string; intent: Intent; draftText?: string; preparation?: PublishPreparation; initialUrl?: string; background?: boolean; task?: TaskLink };
 interface WorkspaceContext {
   tabs: WorkspaceTab[];
   activeId: string | null;
@@ -29,6 +29,8 @@ interface WorkspaceContext {
   show(intent?: Intent): void;
   hide(): void;
   select(id: string): void;
+  selectAccount(id: string): void;
+  openPage(sourceId: string, url: string): void;
   close(id: string): void;
   update(id: string, patch: Partial<WorkspaceTab>): void;
   registerPublisher(accountId: string, publisher: Publisher, background?: boolean): () => void;
@@ -47,6 +49,7 @@ export function useOfficialWorkspace() {
 
 export function OfficialWorkspaceProvider({ children }: { children: ReactNode }) {
   const [tabs, setTabs] = useState<WorkspaceTab[]>([]);
+  const tabsRef = useRef(tabs); tabsRef.current = tabs;
   const [activeId, setActiveId] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
   const [accounts, setAccounts] = useState<PlatformAccount[]>([]);
@@ -54,6 +57,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
   const [accountError, setAccountError] = useState('');
   const preferredIntent = useRef<Intent>('manage');
   const publishers = useRef(new Map<string, Publisher>());
+  const rememberedPages = useRef(new Map<string, string>());
   const [jobsLocked, lockJobs] = useState(false);
   const registerPublisher = useCallback((accountId: string, publisher: Publisher, background = false) => {
     const key = accountId + (background ? ':job' : '');
@@ -89,7 +93,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
       setTabs(current => current.some(item => item.id === id)
         ? current.map(item => item.id === id ? { ...item, intent, task: undefined, binding: item.binding || binding, ...(draftText !== undefined ? { draftText } : {}), ...(preparation ? { preparation } : {}) } : item)
         : [...current, tab]);
-      if (!background) { setActiveId(id); setVisible(true); }
+      if (!background) { setActiveId(intent === 'manage' && !binding ? rememberedPages.current.get(id) || id : id); setVisible(true); }
       return true;
     } catch (error) { toast.error(error instanceof Error ? error.message : '无法打开官方页面'); return false; }
   };
@@ -103,13 +107,29 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
   };
   const close = (id: string) => {
     if (jobsLocked && tabs.some(tab => tab.id === id && tab.background)) { toast.info('发布任务正在使用该页面，请先停止后续任务'); return; }
-    const remaining = tabs.filter(tab => tab.id !== id);
+    const closing = tabs.find(tab => tab.id === id);
+    const remaining = tabs.filter(tab => tab.id !== id && tab.parentId !== id);
+    tabsRef.current = remaining;
     setTabs(remaining);
-    if (activeId === id) setActiveId(remaining.at(-1)?.id || null);
+    for (const [root, page] of rememberedPages.current) if (root === id || page === id) rememberedPages.current.delete(root);
+    if (activeId === id || tabs.find(tab => tab.id === activeId)?.parentId === id) setActiveId(closing?.parentId || remaining.filter(tab => !tab.background).at(-1)?.id || null);
+  };
+  const select = (id: string) => { const tab = tabs.find(item => item.id === id); if (!tab) return; rememberedPages.current.set(tab.parentId || tab.id, tab.id); setActiveId(id); setVisible(true); };
+  const openPage = (sourceId: string, url: string) => {
+    const current = tabsRef.current, source = current.find(tab => tab.id === sourceId); if (!source) return;
+    if (source.background) { toast.info('后台发布页请求打开新页面，请先处理当前任务；原发布页保持不变'); return; }
+    const parentId = source.parentId || source.id;
+    if (!current.some(tab => tab.id === parentId)) return;
+    if (current.filter(tab => tab.id === parentId || tab.parentId === parentId).length >= 12) { toast.info('该账号最多同时打开 12 个页面，请先关闭不用的页面'); return; }
+    const id = `${parentId}-page-${crypto.randomUUID()}`;
+    // Reserve the page immediately: multiple popup events in one render cannot exceed the cap.
+    tabsRef.current = [...current, { ...source, id, parentId, initialUrl: url, pageTitle: '新页面', binding: false, draftText: undefined, preparation: undefined, task: undefined }];
+    setTabs(tabsRef.current);
+    rememberedPages.current.set(parentId, id); setActiveId(id); setVisible(true);
   };
   return <Context.Provider value={{ tabs, activeId, visible, accounts, loadingAccounts, accountError, refreshAccounts, openAccount,
     registerPublisher, publisher: (id, background = false) => publishers.current.get(id + (background ? ':job' : '')), lockJobs, jobsLocked,
-    linkTask: (accountId, task) => setTabs(current => current.map(tab => tab.accountId === accountId && !tab.background ? { ...tab, task } : tab)),
+    linkTask: (accountId, task) => setTabs(current => current.map(tab => tab.accountId === accountId && !tab.background && !tab.parentId ? { ...tab, task } : tab)),
     bindAccount: async platform => { await prepare(platform, undefined, `登录${platformLabels[platform]}`, true, preferredIntent.current); },
     show: intent => {
       if (typeof intent === 'string' && intent in intentInfo) {
@@ -119,8 +139,8 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
       }
       setVisible(true);
     }, hide: () => setVisible(false),
-    select: id => { setActiveId(id); setVisible(true); }, close,
-    update: (id, patch) => setTabs(current => current.map(tab => tab.id === id ? { ...tab, ...patch } : tab)),
+    select, selectAccount: id => select(rememberedPages.current.get(id) || id), openPage, close,
+    update: (id, patch) => setTabs(current => current.map(tab => tab.id === id ? { ...tab, ...patch } : tab.parentId === id && patch.accountId ? { ...tab, accountId: patch.accountId, nickname: patch.nickname || tab.nickname } : tab)),
   }}>{children}<BackgroundPublishPages /></Context.Provider>;
 }
 
@@ -138,14 +158,22 @@ function BackgroundPublishPages() {
 
 export function WorkspaceTabs() {
   const workspace = useOfficialWorkspace();
+  const selected = workspace.tabs.find(tab => tab.id === workspace.activeId);
+  const rootId = selected?.parentId || selected?.id;
   if (!workspace.tabs.length || !workspace.visible) return null;
   return <div className="matrix-workspace-tabs" role="tablist" aria-label="工作区标签">
     <button onClick={workspace.hide}><ArrowLeft size={14} />收起账号页面</button>
-    {workspace.tabs.map(tab => <div className={`matrix-account-tab ${workspace.visible && workspace.activeId === tab.id ? 'is-active' : ''}`} key={tab.id}>
-      <button role="tab" aria-selected={workspace.visible && workspace.activeId === tab.id} onClick={() => workspace.select(tab.id)}><PlatformMark platform={tab.platform} small /><span>{tab.nickname}</span></button>
+    {workspace.tabs.filter(tab => !tab.parentId && !tab.background).map(tab => <div className={`matrix-account-tab ${rootId === tab.id ? 'is-active' : ''}`} key={tab.id}>
+      <button role="tab" aria-selected={rootId === tab.id} onClick={() => workspace.selectAccount(tab.id)}><PlatformMark platform={tab.platform} small /><span>{tab.nickname}</span></button>
       <button className="matrix-tab-close" aria-label={`关闭${tab.nickname}`} onClick={() => workspace.close(tab.id)}><X size={13} /></button>
     </div>)}
   </div>;
+}
+function AccountPageTabs() {
+  const workspace = useOfficialWorkspace(), current = workspace.tabs.find(tab => tab.id === workspace.activeId);
+  if (!current || current.background) return null;
+  const rootId = current.parentId || current.id;
+  return <div className="matrix-account-page-tabs" role="tablist" aria-label="当前账号的页面">{workspace.tabs.filter(tab => tab.id === rootId || tab.parentId === rootId).map(tab => <div key={tab.id} className={tab.id === current.id ? 'is-active' : ''}><button role="tab" aria-selected={tab.id === current.id} title={tab.pageTitle || platformLabels[tab.platform] + '官方后台'} onClick={() => workspace.select(tab.id)}>{tab.pageTitle || platformLabels[tab.platform] + '官方后台'}</button>{tab.parentId && <button aria-label={`关闭页面 ${tab.pageTitle || '新页面'}`} onClick={() => workspace.close(tab.id)}><X size={13} /></button>}</div>)}<button aria-label="在当前账号中新建页面" title="新建官方首页" onClick={() => workspace.openPage(current.id, current.url)}><Plus size={15} /></button></div>;
 }
 export function OfficialActionButton({ intent, children }: { intent: Intent; children: ReactNode }) {
   const workspace = useOfficialWorkspace();
@@ -181,7 +209,8 @@ export function OfficialWorkspaceDeck() {
     </aside>
     <div className="matrix-browser-area">
       <WorkspaceTabs />
-      <AccountPicker />
+      {!workspace.activeId && <AccountPicker />}
+      <AccountPageTabs />
       {!workspace.activeId && <div className="matrix-workspace-welcome"><span className="matrix-welcome-icon"><Globe2 size={32} /></span><span className="matrix-eyebrow">OFFICIAL WORKSPACE</span><h1>账号与操作，都在一个工作区</h1><p>选择左侧账号，打开官方后台。发布内容、回复评论和发送私信，直接在官方页面中完成。</p><div className="matrix-welcome-features"><span><Users size={17} />账号分组切换</span><span><Send size={17} />官方页面发布</span><span><MessageCircle size={17} />评论与私信</span></div><div className="matrix-platform-cards">{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><PlatformMark platform={platform} /><strong>{platformLabels[platform]}</strong><small>{platform === "xiaohongshu" ? "官方短信登录" : "官方扫码登录"}</small><Plus size={15} /></button>)}</div><small>登录会话保存在本机，各账号独立。平台页面中提交的操作以官方结果为准。</small></div>}
       {workspace.tabs.filter(tab => !tab.background).map(tab => <OfficialBrowser key={tab.id} tab={tab} active={tab.id === workspace.activeId} />)}
     </div>
@@ -213,6 +242,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const operation = officialOperation(tab.platform, tab.intent);
   const openOperation = async (intent = tab.intent) => {
     if (tab.binding || loading || busy) return;
+    if (!tab.background) { workspace.openPage(tab.id, officialOperation(tab.platform, intent).url); return; }
     if (!window.confirm('将切换当前官方页面，官方页面中尚未保存的内容可能丢失。矩效已保存的草稿和待办不受影响。继续打开吗？')) return;
     await operate(() => view.current.loadURL(officialOperation(tab.platform, intent).url));
   };
@@ -243,7 +273,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const [bindingStatus, setBindingStatus] = useState('');
   const [domReady, setDomReady] = useState(false);
   useEffect(() => {
-    if (!tab.accountId) return;
+    if (!tab.accountId || tab.parentId) return;
     return workspace.registerPublisher(tab.accountId, {
       input: () => {
         const accessToken = getAuthToken();
@@ -264,6 +294,13 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const bindingRunner = useRef<ReturnType<typeof createAutoBinding<PlatformAccount>> | null>(null);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
+  useEffect(() => window.matrixDesktop?.onOfficialPageOpen?.(event => {
+    try {
+      if (view.current?.getWebContentsId() !== event.webContentsId) return;
+      if (event.blocked) { toast.info('已阻止非当前平台的新窗口链接，原页面保持不变'); return; }
+      workspaceRef.current.openPage(tab.id, event.url);
+    } catch { /* A closing guest cannot open another tab. */ }
+  }), [tab.id]);
   useEffect(() => {
     if (!tab.binding || !window.matrixDesktop) return;
     const ownerToken = getAuthToken();
@@ -305,6 +342,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     if (!element) return;
     const start = () => { setLoading(true); setDetectedAccount(''); setError(''); };
     const ready = () => setDomReady(true);
+    const title = (event: any) => workspaceRef.current.update(tab.id, { pageTitle: String(event.title || '官方页面').slice(0, 120) });
     const navigating = (event: any) => { if (event.isMainFrame && !event.isInPlace) setDomReady(false); };
     const stop = () => {
       setLoading(false);
@@ -317,6 +355,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     };
     element.addEventListener('did-start-loading', start);
     element.addEventListener('dom-ready', ready);
+    element.addEventListener('page-title-updated', title);
     element.addEventListener('did-start-navigation', navigating);
     element.addEventListener('did-stop-loading', stop);
     element.addEventListener('did-fail-load', failed);
@@ -325,6 +364,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     return () => {
       element.removeEventListener('did-start-loading', start);
       element.removeEventListener('dom-ready', ready);
+      element.removeEventListener('page-title-updated', title);
       element.removeEventListener('did-start-navigation', navigating);
       element.removeEventListener('did-stop-loading', stop);
       element.removeEventListener('did-fail-load', failed);
@@ -348,7 +388,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     {tab.binding ? <div className={"matrix-binding-banner " + (detectedAccount ? "is-ready" : "")}><div><strong>{detectedAccount ? `已检测到登录：${detectedAccount}` : tab.platform === "xiaohongshu" ? "小红书官方登录" : `用${tab.platform === "wechat" ? "微信" : platformLabels[tab.platform]} APP 扫描下方官方二维码`}</strong><small>{detectedAccount ? "正在自动保存账号，登录会话仅保存于本机。" : tab.platform === "xiaohongshu" ? "在下方官方页面扫码或使用其提供的登录方式；登录成功后会自动识别并绑定，无需再次点击确认。" : "手机确认登录后自动识别并绑定；二维码过期请刷新。此处是官方网页登录，不是开放平台 API 授权。"}</small></div><div><Button variant="outline" size="sm" disabled={busy} onClick={() => operate(() => view.current.reload())}><RefreshCw size={14} />刷新登录页</Button><Button size="sm" disabled={loading || busy} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? "正在绑定" : detectedAccount ? "重试绑定该账号" : "我已登录，完成绑定"}</Button><button className="matrix-cancel-binding" onClick={() => workspace.close(tab.id)}>取消绑定</button></div></div> : <div className="matrix-browser-hint"><span>{operation.instruction}</span><Button variant="outline" size="sm" disabled={loading || busy} onClick={() => void openOperation()}>打开{intentInfo[tab.intent].label}页面</Button>{tab.intent !== 'manage' && <Button variant="outline" size="sm" onClick={() => setHelperOpen(true)}>文案与提交</Button>}</div>}
     {tab.binding && bindingStatus && !error && <div role="status" className="matrix-browser-hint">{bindingStatus}</div>}
     {error && <div role="alert" className="matrix-browser-error">{error}<button onClick={() => operate(() => view.current.reload())}>重试</button></div>}
-    <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.initialUrl || tab.url, partition: tab.partition, className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
+    <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.initialUrl || tab.url, partition: tab.partition, allowpopups: 'true', className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
       {loading && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" onClick={() => operate(() => view.current.reload())}>重新加载</Button>}</div>}
       {helperOpen && <aside className="matrix-draft-helper"><div><strong>文案与提交</strong><button aria-label="关闭文案辅助" onClick={() => setHelperOpen(false)}><X size={16} /></button></div><p>点击官方页面的输入框，再填入文案。</p>{tab.preparation && <div className="matrix-prepared-text"><Button size="sm" variant="outline" onClick={() => setDraft(tab.preparation!.title)}>使用通用标题</Button><Button size="sm" variant="outline" onClick={() => setDraft(tab.preparation!.body)}>使用通用简介</Button></div>}<textarea aria-label="文案辅助内容" placeholder="输入要发布的文案或回复…" value={draft} onChange={event => setDraft(event.target.value)} /><Button disabled={!draft.trim()} onClick={() => void navigator.clipboard.writeText(draft).then(() => toast.success('文案已复制')).catch(() => toast.error('复制失败，请手动选择文案复制'))}><Copy size={14} />复制文案</Button><Button variant="outline" disabled={!draft.trim() || tab.binding || loading || inserting} onClick={() => void insert()}>{inserting ? "正在填入…" : "填入选中的官方输入框"}</Button><div className="matrix-personal-upload"><Button variant="outline" disabled={tab.binding || loading || uploading || busy} onClick={() => void openOperation('publish')}>打开发表入口</Button>{tab.preparation?.media && <div className="matrix-prepared-media"><strong>通用素材</strong><p>{tab.preparation.media.files.map(file => file.name).join('、')}</p><Button disabled={tab.binding || loading || uploading} onClick={() => void upload(tab.preparation!.media!.mediaType, tab.preparation!.media!.id)}>{uploading ? '正在交给上传控件…' : '将已选素材上传到当前账号'}</Button></div>}<Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('video')}>选择视频上传</Button><Button variant="outline" disabled={tab.binding || loading || uploading} onClick={() => void upload('image')}>选择图片上传</Button>{uploadNote && <p role="status">{uploadNote}</p>}</div>{!tab.binding && <PageActionPanel platform={tab.platform} sessionId={tab.sessionId} accountId={tab.accountId} kind={tab.intent} task={tab.task} pageUrl={url} getGuestId={() => view.current.getWebContentsId()} />}<small>未保存的文案会在关闭标签后清除。</small></aside>}
     </div>

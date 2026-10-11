@@ -487,6 +487,11 @@ button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
 /* Publishing reference layout: a fixed filter/footer frame and independently scrolling records. */
 .matrix-task-page { min-height: 100%; }
+.matrix-account-page-tabs { display: flex; align-items: stretch; gap: 3px; flex-shrink: 0; height: 37px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--card); padding: 3px 7px 0; }
+.matrix-account-page-tabs > div { display: flex; align-items: center; border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--muted); flex-shrink: 0; max-width: 250px; }
+.matrix-account-page-tabs > div.is-active { background: var(--card); color: #f58225; }
+.matrix-account-page-tabs button { display: inline-flex; align-items: center; padding: 6px 10px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.matrix-account-page-tabs button[role=tab] { display: block; max-width: 215px; }
 .matrix-task-records { height: calc(100vh - 104px); min-height: 520px; display: flex; flex-direction: column; gap: 14px; background: var(--card); border-radius: 5px; padding: 16px; position: relative; }
 .matrix-task-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .matrix-task-filters > input { width: 220px; flex: 1 1 190px; }

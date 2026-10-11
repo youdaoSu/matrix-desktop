@@ -232,7 +232,15 @@ function createMainWindow() {
   });
   win.webContents.on('did-attach-webview', (_event, contents) => {
     contents.setWindowOpenHandler(({ url }) => {
-      if (/^https:\/\//i.test(url)) void contents.loadURL(url);
+      // Route official popups to a sibling guest in the same account partition.
+      // Never replace the originating editor or create an unisolated native window.
+      let allowed = false;
+      try {
+        const source = new URL(contents.getURL()), target = new URL(url);
+        const platform = Object.values(PLATFORM).find(config => source.hostname === config.domain || source.hostname.endsWith(`.${config.domain}`));
+        allowed = target.protocol === 'https:' && !target.username && !target.password && Boolean(platform) && (target.hostname === platform.domain || target.hostname.endsWith(`.${platform.domain}`));
+      } catch { /* Invalid and nonofficial popup targets remain blocked. */ }
+      if (!win.isDestroyed()) win.webContents.send('matrix:official-page-open', { webContentsId: contents.id, url: allowed ? url : '', blocked: !allowed });
       return { action: 'deny' };
     });
   });

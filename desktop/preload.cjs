@@ -2,6 +2,11 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
   isDesktop: true,
+  onOfficialPageOpen: listener => {
+    const handler = (_event, page) => listener(page);
+    ipcRenderer.on('matrix:official-page-open', handler);
+    return () => ipcRenderer.removeListener('matrix:official-page-open', handler);
+  },
   insertDraft: (input) => ipcRenderer.invoke('matrix:insert-draft', input),
   uploadMedia: (input) => ipcRenderer.invoke('matrix:upload-media', input),
   chooseMedia: (mediaType) => ipcRenderer.invoke('matrix:choose-media', { mediaType }),

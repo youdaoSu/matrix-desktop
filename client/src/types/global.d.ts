@@ -125,6 +125,7 @@ interface MatrixPublishResult { accountId: string; error?: string; cancelled?: b
 interface Window {
   matrixDesktop?: {
     isDesktop: true;
+    onOfficialPageOpen(listener: (event: { webContentsId: number; url: string; blocked: boolean }) => void): () => void;
     inspectPageAction(input: MatrixPageActionInput & { kind: 'publish' | 'comments' | 'messages' | 'withdraw' }): Promise<MatrixPageActionPlan | MatrixDesktopErrorResult>;
     submitPageAction(input: MatrixPageActionInput & { nonce: string; index: number }): Promise<{ error?: string; cancelled?: boolean; mayHaveSubmitted?: boolean; receipt?: MatrixPageActionReceipt }>;
     listPageActions(accessToken: string): Promise<{ error?: string; items?: MatrixPageActionReceipt[] }>;

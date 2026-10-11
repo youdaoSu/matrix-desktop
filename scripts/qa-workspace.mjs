@@ -246,6 +246,7 @@ try {
   await evaluate("document.querySelector('.matrix-account-tab.is-active .matrix-tab-close').click(); true");
   await waitUntil(() => evaluate(`document.querySelectorAll('webview').length === ${count - 1}`), 'Closing a tab did not release its guest');
   ensure(await evaluate(`document.querySelectorAll('webview').length === ${count - 1}`), 'Closing one tab preserves other account pages');
+  await runScript('scripts/qa-account-pages.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-personal-tools.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-auto-binding.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-publish-flow.mjs', [String(debugPort), base]);
