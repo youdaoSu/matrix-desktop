@@ -1,13 +1,14 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, Copy, Globe2, Home, Loader2, MessageCircle, Plus, RefreshCw, Search, Send, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { axiosForBackend } from '@/api';
+import { axiosForBackend, getAuthToken } from '@/api';
 import type { PlatformAccount, PlatformType } from '@shared/api.interface';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Link } from 'react-router-dom';
 import { officialOperation } from '@shared/official-operations';
 import { PageActionPanel } from './PageActionPanel';
+import { createAutoBinding } from './auto-binding';
 
 export const platformLabels: Record<PlatformType, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
 const platformColors: Record<PlatformType, string> = { douyin: '#24242b', xiaohongshu: '#f04462', wechat: '#38a46a', bilibili: '#3ea9e4' };
@@ -207,6 +208,33 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   };
   const [zoom, setZoom] = useState(100);
   const [detectedAccount, setDetectedAccount] = useState('');
+  const [domReady, setDomReady] = useState(false);
+  const bindingRunner = useRef<ReturnType<typeof createAutoBinding<PlatformAccount>> | null>(null);
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
+  useEffect(() => {
+    if (!tab.binding || !window.matrixDesktop) return;
+    const ownerToken = getAuthToken();
+    const runner = createAutoBinding<PlatformAccount>({
+      isCurrent: () => Boolean(ownerToken && getAuthToken() === ownerToken),
+      detect: () => window.matrixDesktop!.completePlatformLogin({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId() }),
+      persist: async result => {
+        const response = await axiosForBackend.post('/api/platform/accounts/desktop', { platform: result.platform, connectorSessionId: result.sessionId, nickname: result.nickname, avatarUrl: result.avatarUrl || undefined, pageUrl: result.pageUrl });
+        if (!response.data?.data?.id) throw new Error('账号保存结果不完整，请重试绑定');
+        return response.data.data;
+      },
+      detected: result => { setDetectedAccount(result.nickname); setError(''); },
+      saved: (result, account) => {
+        workspaceRef.current.update(tab.id, { nickname: result.nickname, binding: false, accountId: account.id });
+        window.dispatchEvent(new Event('matrix:accounts-updated'));
+        toast.success(`已自动绑定 ${result.nickname}`);
+      },
+      failed: message => setError(message),
+      saving: setBusy,
+    });
+    bindingRunner.current = runner;
+    return () => { runner.dispose(); bindingRunner.current = null; };
+  }, [tab.id, tab.binding, tab.platform, tab.sessionId]);
   const [slowLoad, setSlowLoad] = useState(false);
   useEffect(() => {
     if (!loading) { setSlowLoad(false); return; }
@@ -214,26 +242,17 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     return () => window.clearTimeout(timer);
   }, [loading]);
   useEffect(() => {
-    if (!active || !tab.binding || loading || error || !window.matrixDesktop) return;
-    let cancelled = false;
-    let checking = false;
-    const check = async () => {
-      if (checking || cancelled) return;
-      checking = true;
-      try {
-        const result = await window.matrixDesktop!.completePlatformLogin({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId() });
-        if (!cancelled) setDetectedAccount('error' in result ? '' : result.nickname);
-      } catch { if (!cancelled) setDetectedAccount(''); }
-      finally { checking = false; }
-    };
-    void check();
-    const timer = window.setInterval(() => void check(), 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [active, tab.binding, tab.platform, tab.sessionId, loading, error]);
+    if (!tab.binding || !domReady) return;
+    void bindingRunner.current?.run();
+    const timer = window.setInterval(() => void bindingRunner.current?.run(), 2000);
+    return () => window.clearInterval(timer);
+  }, [tab.binding, domReady]);
   useEffect(() => {
     const element = view.current;
     if (!element) return;
     const start = () => { setLoading(true); setDetectedAccount(''); setError(''); };
+    const ready = () => setDomReady(true);
+    const navigating = (event: any) => { if (event.isMainFrame && !event.isInPlace) setDomReady(false); };
     const stop = () => {
       setLoading(false);
       try { setUrl(element.getURL()); setBack(element.canGoBack()); setForward(element.canGoForward()); } catch { /* Guest may be closing. */ }
@@ -244,12 +263,16 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
       setError(`页面暂时无法加载（${event.errorDescription || event.errorCode}），可以刷新或返回平台首页。`);
     };
     element.addEventListener('did-start-loading', start);
+    element.addEventListener('dom-ready', ready);
+    element.addEventListener('did-start-navigation', navigating);
     element.addEventListener('did-stop-loading', stop);
     element.addEventListener('did-fail-load', failed);
     element.addEventListener('did-navigate', stop);
     element.addEventListener('did-navigate-in-page', stop);
     return () => {
       element.removeEventListener('did-start-loading', start);
+      element.removeEventListener('dom-ready', ready);
+      element.removeEventListener('did-start-navigation', navigating);
       element.removeEventListener('did-stop-loading', stop);
       element.removeEventListener('did-fail-load', failed);
       element.removeEventListener('did-navigate', stop);
@@ -265,24 +288,11 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     view.current.setZoomFactor(percent / 100);
     setZoom(percent);
   });
-  const bind = async () => {
-    if (!window.matrixDesktop || !view.current) return;
-    setBusy(true);
-    setError('');
-    try {
-      const result = await window.matrixDesktop.completePlatformLogin({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId() });
-      if ('error' in result) throw new Error(result.error);
-      const response = await axiosForBackend.post('/api/platform/accounts/desktop', { platform: result.platform, connectorSessionId: result.sessionId, nickname: result.nickname, avatarUrl: result.avatarUrl || undefined, pageUrl: result.pageUrl });
-      workspace.update(tab.id, { nickname: result.nickname, binding: false, accountId: response.data?.data?.id });
-      window.dispatchEvent(new Event('matrix:accounts-updated'));
-      toast.success(`已绑定 ${result.nickname}`);
-    } catch (failure: any) { setError(failure?.response?.data?.message || failure?.message || '绑定失败，请确认已登录'); }
-    finally { setBusy(false); }
-  };
+  const bind = () => bindingRunner.current?.run(false);
   return <div className="matrix-official-browser" hidden={!active}>
     <div className="matrix-browser-toolbar"><button title="后退" aria-label="后退" disabled={!back} onClick={() => operate(() => view.current.goBack())}><ArrowLeft size={16} /></button><button title="前进" aria-label="前进" disabled={!forward} onClick={() => operate(() => view.current.goForward())}><ArrowRight size={16} /></button><button title="刷新官方页面" aria-label="刷新官方页面" onClick={() => operate(() => view.current.reload())}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button><button title="平台首页" aria-label="平台首页" onClick={() => operate(() => view.current.loadURL(tab.url))}><Home size={16} /></button><div className="matrix-address"><Globe2 size={14} /><span>{url}</span></div><div className="matrix-zoom-controls"><button aria-label="缩小官方页面" onClick={() => changeZoom(zoom - 10)}>−</button><button aria-label="重置页面缩放" onClick={() => changeZoom(100)}>{zoom}%</button><button aria-label="放大官方页面" onClick={() => changeZoom(zoom + 10)}>+</button></div><button className={helperOpen ? 'is-active' : ''} onClick={() => setHelperOpen(!helperOpen)}><Copy size={15} />文案辅助</button></div>
     <div className="matrix-intent-bar"><div>{(Object.keys(intentInfo) as Intent[]).map(intent => <button key={intent} className={tab.intent === intent ? 'is-active' : ''} onClick={() => workspace.update(tab.id, { intent })}>{intentInfo[intent].label}</button>)}</div><span>{tab.binding ? '请先完成官方登录' : `${platformLabels[tab.platform]} · ${tab.nickname}`}</span></div>
-    {tab.binding ? <div className={"matrix-binding-banner " + (detectedAccount ? "is-ready" : "")}><div><strong>{detectedAccount ? `已检测到登录：${detectedAccount}` : tab.platform === "xiaohongshu" ? "小红书官方短信登录" : `用${tab.platform === "wechat" ? "微信" : platformLabels[tab.platform]} APP 扫描下方官方二维码`}</strong><small>{detectedAccount ? "核对当前账号后点击确认绑定，登录会话仅保存于本机。" : tab.platform === "xiaohongshu" ? "当前官方创作后台提供短信登录，请在下方官方页面输入手机号并完成验证；验证码不经过矩效后台。" : "手机确认登录后自动检测账号；二维码过期请刷新。此处是官方网页登录，不是开放平台 API 授权。"}</small></div><div><Button variant="outline" size="sm" disabled={busy} onClick={() => operate(() => view.current.reload())}><RefreshCw size={14} />刷新登录页</Button><Button size="sm" disabled={loading || busy} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? "正在绑定" : detectedAccount ? "确认绑定该账号" : "我已登录，完成绑定"}</Button><button className="matrix-cancel-binding" onClick={() => workspace.close(tab.id)}>取消绑定</button></div></div> : <div className="matrix-browser-hint"><span>{operation.instruction}</span><Button variant="outline" size="sm" disabled={loading || busy} onClick={() => void openOperation()}>打开{intentInfo[tab.intent].label}页面</Button>{tab.intent !== 'manage' && <Button variant="outline" size="sm" onClick={() => setHelperOpen(true)}>文案与提交</Button>}</div>}
+    {tab.binding ? <div className={"matrix-binding-banner " + (detectedAccount ? "is-ready" : "")}><div><strong>{detectedAccount ? `已检测到登录：${detectedAccount}` : tab.platform === "xiaohongshu" ? "小红书官方登录" : `用${tab.platform === "wechat" ? "微信" : platformLabels[tab.platform]} APP 扫描下方官方二维码`}</strong><small>{detectedAccount ? "正在自动保存账号，登录会话仅保存于本机。" : tab.platform === "xiaohongshu" ? "在下方官方页面扫码或使用其提供的登录方式；登录成功后会自动识别并绑定，无需再次点击确认。" : "手机确认登录后自动识别并绑定；二维码过期请刷新。此处是官方网页登录，不是开放平台 API 授权。"}</small></div><div><Button variant="outline" size="sm" disabled={busy} onClick={() => operate(() => view.current.reload())}><RefreshCw size={14} />刷新登录页</Button><Button size="sm" disabled={loading || busy} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? "正在绑定" : detectedAccount ? "重试绑定该账号" : "我已登录，完成绑定"}</Button><button className="matrix-cancel-binding" onClick={() => workspace.close(tab.id)}>取消绑定</button></div></div> : <div className="matrix-browser-hint"><span>{operation.instruction}</span><Button variant="outline" size="sm" disabled={loading || busy} onClick={() => void openOperation()}>打开{intentInfo[tab.intent].label}页面</Button>{tab.intent !== 'manage' && <Button variant="outline" size="sm" onClick={() => setHelperOpen(true)}>文案与提交</Button>}</div>}
     {error && <div role="alert" className="matrix-browser-error">{error}<button onClick={() => operate(() => view.current.reload())}>重试</button></div>}
     <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.initialUrl || tab.url, partition: tab.partition, className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
       {loading && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" onClick={() => operate(() => view.current.reload())}>重新加载</Button>}</div>}

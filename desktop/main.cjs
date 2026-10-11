@@ -7,6 +7,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const net = require('node:net');
 const { registerPersonalAssist } = require('./personal-assist.cjs');
 const { registerPageActions, createJournal } = require('./page-actions.cjs');
+const { classifySession } = require('./platform-session.cjs');
 
 let appUrl = process.env.MATRIX_APP_URL || 'http://localhost:8080';
 let serverProcess = null;
@@ -255,15 +256,18 @@ function platformProfileScript() {
     const text = (el) => el && (el.getAttribute('title') || el.getAttribute('alt') || el.textContent || '').trim();
     const nicknameSelectors = [
       '[class*=nickname]', '[class*=user-name]', '[class*=username]',
-      '[class*=account-name]', '[class*=userName]', '[class*=name]'
+      '[class*=account-name]', '[class*=userName]',
+      '[class*=user-info] [class*=name]', '[class*=userInfo] [class*=name]',
+      'header [class*=name]'
     ];
     const avatarSelectors = [
       'img[class*=avatar]', '[class*=avatar] img', 'img[class*=user]', 'header img'
     ];
     let nickname = '';
     for (const selector of nicknameSelectors) {
-      const candidate = text(document.querySelector(selector));
-      if (candidate && candidate.length <= 80) { nickname = candidate; break; }
+      const el = [...document.querySelectorAll(selector)].find(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+      const candidate = text(el);
+      if (candidate && candidate.length <= 80 && !/登录|扫码|创作服务平台|账号管理|手机号|验证码/i.test(candidate)) { nickname = candidate; break; }
     }
     let avatarUrl = '';
     for (const selector of avatarSelectors) {
@@ -274,36 +278,25 @@ function platformProfileScript() {
       nickname,
       avatarUrl,
       pageUrl: location.href,
-      title: document.title.trim()
+      title: document.title.trim(),
+      loginVisible: [...document.querySelectorAll('input')].some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && /密码|验证码|手机号|password|one-time-code/.test([el.type,el.placeholder,el.autocomplete].join(' ')))
     };
   })()`;
 }
 
-const AUTH_COOKIE_NAMES = Object.freeze({
-  douyin: ['sessionid', 'sessionid_ss', 'sid_guard'],
-  xiaohongshu: ['web_session'],
-  wechat: ['sessionid', 'wxuin', 'uin', 'pass_ticket', 'ticket', 'token'],
-  bilibili: ['SESSDATA'],
-});
-
-function isLoginPage(url) {
-  return /(?:login|passport|signin|auth\/login|passport\.bilibili)/i.test(url || '');
-}
-
 async function inspectPlatformSession(platform, isolatedSession, contents) {
   const config = PLATFORM[platform];
-  const cookies = await isolatedSession.cookies.get({ url: config.home });
-  const expectedNames = AUTH_COOKIE_NAMES[platform] || [];
-  const cookieNames = new Set(cookies.map((cookie) => cookie.name));
-  const hasSessionCookie = expectedNames.some((name) => cookieNames.has(name));
+  const pageUrlBefore = contents && !contents.isDestroyed() ? contents.getURL() : config.home;
+  const current = new URL(pageUrlBefore);
+  if (current.protocol !== 'https:' || !(current.hostname === config.domain || current.hostname.endsWith('.' + config.domain))) return { authenticated: false, hasSessionCookie: false, profile: {} };
+  const cookies = await isolatedSession.cookies.get({ url: pageUrlBefore });
   let profile = { nickname: '', avatarUrl: '', pageUrl: config.home, title: '' };
   if (contents && !contents.isDestroyed()) {
     profile = await contents.executeJavaScript(platformProfileScript(), true);
   }
   const pageUrl = profile.pageUrl || contents?.getURL() || config.home;
-  const hasProfile = Boolean(profile.nickname && !/登录|扫码|login|sign in/i.test(profile.nickname));
-  const authenticated = !isLoginPage(pageUrl) && (hasSessionCookie || (platform === 'wechat' && hasProfile));
-  return { authenticated, hasSessionCookie, profile };
+  if (contents && contents.getURL() !== pageUrlBefore) return { authenticated: false, hasSessionCookie: false, profile };
+  return classifySession(platform, cookies, profile, pageUrl);
 }
 
 async function checkPlatformSession(input) {

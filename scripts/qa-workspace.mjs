@@ -245,6 +245,7 @@ try {
   await waitUntil(() => evaluate(`document.querySelectorAll('webview').length === ${count - 1}`), 'Closing a tab did not release its guest');
   ensure(await evaluate(`document.querySelectorAll('webview').length === ${count - 1}`), 'Closing one tab preserves other account pages');
   await runScript('scripts/qa-personal-tools.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-auto-binding.mjs', [String(debugPort), base]);
   fs.writeFileSync('logs/qa-workspace-results.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ passed: report.checks.length, officialPlatforms: report.officialPages.length, isolatedDatabase: true }, null, 2));
 } catch (error) {
