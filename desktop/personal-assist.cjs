@@ -1,6 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
+const { publishForm } = require('./publish-form.cjs');
 
 // Self-contained so the same check can run in the guest renderer and unit tests.
 function isEditableTarget(el) {
@@ -36,6 +37,39 @@ function registerPersonalAssist({ ipcMain, dialog, webContents, session, getWind
       return { name: path.basename(file), size: stat.size, modified: stat.mtimeMs };
     });
   };
+  ipcMain.handle('matrix:import-media', async (event, input) => {
+    try {
+      if (event.sender.id !== getWindow()?.webContents.id) throw new Error('仅允许矩效主窗口导入素材');
+      if (!['video', 'image'].includes(input?.mediaType) || !Array.isArray(input?.paths) || input.paths.some(file => typeof file !== 'string' || !path.isAbsolute(file))) throw new Error('请拖入本机的视频或图片文件');
+      const paths = [...new Set(input.paths)], files = describeFiles(paths, input.mediaType), id = randomUUID();
+      selections.set(id, { owner: event.sender.id, mediaType: input.mediaType, paths, files });
+      if (selections.size > 32) selections.delete(selections.keys().next().value);
+      return { selection: { id, mediaType: input.mediaType, files } };
+    } catch (error) { return { error: error.message }; }
+  });
+  ipcMain.handle('matrix:sync-publish-form', async (event, input) => {
+    let guest;
+    let acquired = false;
+    try {
+      if (event.sender.id !== getWindow()?.webContents.id) throw new Error('仅允许矩效主窗口同步');
+      const config = platforms[input?.platform];
+      guest = webContents.fromId(input?.webContentsId);
+      if (!config || !/^[a-z0-9-]{16,80}$/i.test(input.sessionId || '') || !guest || guest.isDestroyed() || guest.hostWebContents?.id !== event.sender.id || guest.session !== session.fromPartition(`persist:matrix-${input.platform}-${input.sessionId}`)) throw new Error('账号会话不一致');
+      if (busy.has(guest.id)) throw new Error('当前账号正在处理操作');
+      busy.add(guest.id); acquired = true;
+      const url = new URL(guest.getURL());
+      if (url.protocol !== 'https:' || !(url.hostname === config.domain || url.hostname.endsWith('.' + config.domain)) || !/upload|publish|post\/create|post\/video/.test(url.pathname)) throw new Error('请先在当前账号打开官方发布表单');
+      if (!(await inspectPlatformSession(input.platform, guest.session, guest)).authenticated) throw new Error('请先登录当前平台账号');
+      if (!['fill', 'topics'].includes(input.command)) throw new Error('同步操作无效');
+      if (input.command === 'fill') {
+        const form = input.form;
+        if (!form || typeof form.title !== 'string' || typeof form.body !== 'string' || form.title.length > 500 || form.body.length > 20000 || !Array.isArray(form.topics) || form.topics.length > 15 || form.topics.some(t => typeof t !== 'string' || !t.trim() || t.length > 40) || !form.options || Object.entries(form.options).some(([key, value]) => !['category', 'visibility', 'originality'].includes(key) || typeof value !== 'string' || value.length > 100)) throw new Error('发布配置格式或长度不正确');
+      }
+      if (guest.getURL() !== url.href) throw new Error('官方页面已切换，请重新同步');
+      return await guest.executeJavaScriptInIsolatedWorld(1002, [{ code: `(${publishForm.toString()})(${JSON.stringify(input.command)},${JSON.stringify({ ...input.form, platform: input.platform })})` }]);
+    } catch (error) { return { error: error.message }; }
+    finally { if (guest && acquired) busy.delete(guest.id); }
+  });
   ipcMain.handle('matrix:choose-media', async (event, input) => {
     let acquired = false;
     try {

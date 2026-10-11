@@ -1,10 +1,18 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
   isDesktop: true,
   insertDraft: (input) => ipcRenderer.invoke('matrix:insert-draft', input),
   uploadMedia: (input) => ipcRenderer.invoke('matrix:upload-media', input),
   chooseMedia: (mediaType) => ipcRenderer.invoke('matrix:choose-media', { mediaType }),
+  importMedia: async (files, mediaType) => {
+    try {
+      if (!Array.isArray(files) || files.length > 9) throw new Error('请选择一个视频或最多 9 张图片');
+      return await ipcRenderer.invoke('matrix:import-media', { mediaType, paths: files.map(file => webUtils.getPathForFile(file)) });
+    } catch (error) { return { error: error.message }; }
+  },
+  syncPublishForm: (input) => ipcRenderer.invoke('matrix:sync-publish-form', input),
+  submitPublishBatch: (entries) => ipcRenderer.invoke('matrix:submit-publish-batch', { entries }),
   inspectPageAction: (input) => ipcRenderer.invoke('matrix:inspect-page-action', input),
   submitPageAction: (input) => ipcRenderer.invoke('matrix:submit-page-action', input),
   listPageActions: (accessToken) => ipcRenderer.invoke('matrix:list-page-actions', { accessToken }),

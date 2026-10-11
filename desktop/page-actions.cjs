@@ -114,7 +114,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
       return { nonce, nickname: ctx.nickname, expiresAt: new Date(plan.expires).toISOString(), ...details };
     } catch (error) { return { error: error.message }; }
   });
-  ipcMain.handle('matrix:submit-page-action', async (event, input) => {
+  async function submitPage(event, input, batchApproved = false) {
     let guestId, record;
     try {
       const ctx = await context(event, input), plan = plans.get(input.nonce);
@@ -123,7 +123,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
       if (!Number.isInteger(input.index) || !plan.details.candidates[input.index]) throw new Error('请选择要执行的官方按钮');
       busy.add(ctx.guest.id); guestId = ctx.guest.id;
       const selected = plan.details.candidates[input.index];
-      const confirmation = await dialog.showMessageBox(ctx.win, { type: 'question', title: '确认提交官方表单', message: `${platforms[plan.platform].label} · ${ctx.nickname}：${selected.label}`, detail: `${plan.details.pageUrl}\n\n${plan.details.fields.filter(f => f.value.trim()).map(f => `${f.label}：${f.value.slice(0, 500)}`).join('\n\n')}\n\n素材：${plan.details.materials?.map(f => f.name).join('、') || '请在官方页面核对已上传的素材'}\n\n请核对官方页面中的对象、素材和可见范围。确认后将点击该提交按钮。`, buttons: ['返回核对', '确认提交'], defaultId: 0, cancelId: 0, noLink: true });
+      const confirmation = batchApproved ? { response: 1 } : await dialog.showMessageBox(ctx.win, { type: 'question', title: '确认提交官方表单', message: `${platforms[plan.platform].label} · ${ctx.nickname}：${selected.label}`, detail: `${plan.details.pageUrl}\n\n${plan.details.fields.filter(f => f.value.trim()).map(f => `${f.label}：${f.value.slice(0, 500)}`).join('\n\n')}\n\n素材：${plan.details.materials?.map(f => f.name).join('、') || '请在官方页面核对已上传的素材'}\n\n请核对官方页面中的对象、素材和可见范围。确认后将点击该提交按钮。`, buttons: ['返回核对', '确认提交'], defaultId: 0, cancelId: 0, noLink: true });
       if (confirmation.response !== 1) return { cancelled: true };
       if (plan.expires < Date.now()) throw new Error('核对信息已过期，请重新检查');
       const fresh = await context(event, input);
@@ -150,6 +150,36 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
       if (record) { record.status = 'unknown'; record.message = `提交状态需核对：${error.message}`; try { journal.write(record); } catch { /* Existing pre-submit record remains recoverable. */ } }
       return { error: error.message, mayHaveSubmitted: Boolean(record) };
     } finally { if (guestId !== undefined) busy.delete(guestId); }
+  }
+  ipcMain.handle('matrix:submit-page-action', (event, input) => submitPage(event, input));
+  let batchRunning = false;
+  ipcMain.handle('matrix:submit-publish-batch', async (event, input) => {
+    let acquired = false;
+    try {
+      const win = host(event), entries = input?.entries;
+      if (!Array.isArray(entries) || !entries.length || entries.length > 20 || new Set(entries.map(e => e.accountId)).size !== entries.length || new Set(entries.map(e => e.webContentsId)).size !== entries.length) throw new Error('请选择 1 至 20 个不同账号');
+      if (batchRunning) throw new Error('正在批量发布，请勿重复提交');
+      batchRunning = true; acquired = true;
+      const review = [];
+      let owner;
+      for (const entry of entries) {
+        const ctx = await context(event, entry), plan = plans.get(entry.nonce);
+        if (!plan || plan.kind !== 'publish' || plan.expires < Date.now() || plan.ownerId !== ctx.auth.userId || plan.accountId !== entry.accountId || plan.guestId !== ctx.guest.id || plan.nickname !== ctx.nickname || !Number.isInteger(entry.index) || !plan.details.candidates[entry.index]) throw new Error('账号发布表单已变化，请重新检查全部所选账号');
+        if (owner && owner !== ctx.auth.userId) throw new Error('不能跨矩效用户批量操作');
+        owner = ctx.auth.userId;
+        review.push(`${platforms[plan.platform].label} · ${ctx.nickname}\n${plan.details.fields.filter(f => f.value.trim()).map(f => `${f.label}：${f.value.slice(0, 300)}`).join('\n')}`);
+      }
+      const approval = await dialog.showMessageBox(win, { type: 'question', title: '确认批量发布', message: `向 ${entries.length} 个账号提交作品？`, detail: review.join('\n\n') + '\n\n请先在各官方页面核对素材、话题、封面、可见范围和必填项。逐个提交；失败或结果不明即停止，不自动重发。追评不会在作品未定位时自动发送。', buttons: ['返回核对', '确认发布到以上账号'], defaultId: 0, cancelId: 0, noLink: true });
+      if (approval.response !== 1) return { cancelled: true, results: [] };
+      const results = [];
+      for (const entry of entries) {
+        const result = await submitPage(event, entry, true);
+        results.push({ accountId: entry.accountId, ...result });
+        if (result.receipt?.status !== 'confirmed') break;
+      }
+      return { results, remaining: entries.slice(results.length).map(e => e.accountId) };
+    } catch (error) { return { error: error.message }; }
+    finally { if (acquired) batchRunning = false; }
   });
   ipcMain.handle('matrix:list-page-actions', async (event, input) => {
     try { host(event); const auth = await authenticate(input?.accessToken); return { items: journal.list(auth.userId) }; }

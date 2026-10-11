@@ -95,5 +95,13 @@ async function testIpc() {
   assert.ok((await invoke({ selectionId: media.id, mediaType: 'image' })).error);
   modified = 2; assert.ok((await invoke({ selectionId: media.id })).error); assert.equal(transfers, transferCount + 2);
   console.log('9 reusable-media checks passed: cancellation, ownership, opaque handles, repeat use without repicking, type and changed-file checks; no real uploads');
+  const drop = (changes = {}, sender = 11) => handlers['matrix:import-media']({ sender: { id: sender } }, { mediaType: 'video', paths: ['/test/drop.mp4'], ...changes });
+  assert.ok((await drop({}, 99)).error);
+  assert.ok((await drop({ paths: ['relative.mp4'] })).error);
+  assert.ok((await drop({ paths: [] })).error);
+  assert.ok((await drop({ paths: ['/test/file.exe'] })).error);
+  const dropped = await drop(); assert.equal(dropped.selection.files[0].name, 'drop.mp4'); assert.ok(!JSON.stringify(dropped).includes('/test/'));
+  assert.equal((await invoke({ selectionId: dropped.selection.id })).uploadStarted, true);
+  console.log('7 dropped-media assertions passed; no real platform upload');
 }
 testIpc().catch(error => { console.error(error); process.exitCode = 1; });

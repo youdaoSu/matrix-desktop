@@ -109,6 +109,15 @@ interface MatrixMediaSelection {
   mediaType: 'video' | 'image';
   files: { name: string; size: number; modified: number }[];
 }
+interface MatrixPublishForm {
+  title: string;
+  body: string;
+  topics: string[];
+  options: { category?: string; visibility?: string; originality?: string };
+}
+interface MatrixPublishSyncResult { error?: string; filled?: string[]; unresolved?: string[]; topics?: string[]; topicsAsText?: boolean; submitted?: false }
+type MatrixPublishEntry = MatrixPageActionInput & { nonce: string; index: number };
+interface MatrixPublishResult { accountId: string; error?: string; cancelled?: boolean; mayHaveSubmitted?: boolean; receipt?: MatrixPageActionReceipt }
 
 interface Window {
   matrixDesktop?: {
@@ -119,6 +128,9 @@ interface Window {
     insertDraft(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number; text: string }): Promise<{ error?: string; inserted?: boolean; sent?: false }>;
     uploadMedia(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number; mediaType: 'video' | 'image'; selectionId?: string }): Promise<{ error?: string; cancelled?: boolean; uploadStarted?: boolean; count?: number; filenames?: string[] }>;
     chooseMedia(mediaType: 'video' | 'image'): Promise<{ error?: string; cancelled?: boolean; selection?: MatrixMediaSelection }>;
+    importMedia(files: File[], mediaType: 'video' | 'image'): Promise<{ error?: string; selection?: MatrixMediaSelection }>;
+    syncPublishForm(input: MatrixPageActionInput & { command: 'fill' | 'topics'; form?: MatrixPublishForm }): Promise<MatrixPublishSyncResult>;
+    submitPublishBatch(entries: MatrixPublishEntry[]): Promise<{ error?: string; cancelled?: boolean; results?: MatrixPublishResult[]; remaining?: string[] }>;
     openPlatformLogin(platform: MatrixDesktopPlatform): Promise<MatrixDesktopLoginResult | MatrixDesktopCancelledResult | MatrixDesktopErrorResult>;
     openAccountSession(sessionId: string, platform: MatrixDesktopPlatform): Promise<void>;
     preparePlatformLogin(platform: MatrixDesktopPlatform, sessionId?: string): Promise<MatrixDesktopSession | MatrixDesktopErrorResult>;

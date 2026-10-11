@@ -269,6 +269,20 @@ button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .matrix-publish-account .is-prepared { color: var(--primary); }
 .matrix-publish-no-account { min-height: 300px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; color: var(--muted-foreground); font-size: 13px; }
 .matrix-publish-footer { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 8px; min-height: 48px; background: var(--card); border-radius: 5px; }
+.matrix-publish-editor > .matrix-publish-footer { flex-wrap: wrap; }
+.matrix-dropzone { transition: border-color .15s, background .15s; }
+.matrix-dropzone.is-dragging { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--card)); }
+.matrix-sync-fields, .matrix-topic-chips { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.matrix-sync-fields label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.matrix-topic-chips button { padding: 4px 8px; background: var(--muted); border-radius: 4px; font-size: 12px; }
+.matrix-sync-caption { display: block; margin-top: 8px; color: var(--muted-foreground); }
+.matrix-account-publish-config { border: 1px solid var(--border); border-radius: 5px; margin-bottom: 12px; }
+.matrix-account-publish-fields { padding: 12px; display: grid; gap: 10px; }
+.matrix-account-publish-fields label { display: grid; gap: 5px; font-size: 12px; }
+.matrix-account-publish-fields textarea { min-height: 56px; }
+.matrix-account-publish-fields p, .matrix-account-publish-fields small { font-size: 12px; overflow-wrap: anywhere; color: var(--muted-foreground); }
+.matrix-account-publish-fields summary { cursor: pointer; font-size: 12px; margin-bottom: 8px; }
+.matrix-publish-alert { padding: 8px 12px; color: var(--destructive); font-size: 12px; }
 .matrix-publish-footer > span { margin-left: auto; font-size: 11px; color: var(--muted-foreground); }
 .matrix-main-integrated > .matrix-page-content:has(.matrix-publish-editor) { width: 38%; min-width: 340px; padding: 8px; }
 .matrix-main-integrated .matrix-publish-columns { display: flex; flex-direction: column; overflow: auto; }

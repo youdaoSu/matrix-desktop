@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pageAction } = require('../desktop/page-actions.cjs');
+const { publishForm } = require('../desktop/publish-form.cjs');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-page-actions-qa-'));
 app.setPath('userData', profile);
 app.disableHardwareAcceleration();
@@ -34,6 +35,21 @@ app.whenReady().then(async () => {
     await fixture(); await run('inspect', { nonce: 'label', kind: 'publish' }); await js("document.querySelector('#send').textContent='投稿'"); await assert.rejects(run('submit', { nonce: 'label', index: 0 })); checks++;
     await fixture('发布', '未发布成功，请稍后再试'); await run('inspect', { nonce: 'negative', kind: 'publish' }); await run('submit', { nonce: 'negative', index: 0 }); await new Promise(r => setTimeout(r, 80)); assert.equal((await run('result', { nonce: 'negative' })).status, 'failed'); checks++;
     console.log(JSON.stringify({ realElectronFixtureChecks: checks, externalNetworkOrPlatformActions: false }));
+    let publishChecks = 0;
+    const sync = (command, config) => win.webContents.executeJavaScriptInIsolatedWorld(1002, [{ code: `(${publishForm.toString()})(${JSON.stringify(command)},${JSON.stringify(config)})` }]);
+    for (const platform of ['douyin', 'xiaohongshu', 'wechat', 'bilibili']) {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<input placeholder="标题"><textarea placeholder="简介"></textarea><input placeholder="验证码"><select aria-label="可见范围"><option value="private">仅自己可见</option><option value="public">公开</option></select><button onclick="window.didPublish=true">发布</button>'));
+      const result = await sync('fill', { platform, title: '我的标题', body: '我的简介', topics: platform === 'bilibili' ? [] : ['健身'], options: { visibility: '仅自己可见' } });
+      assert.deepEqual(result.filled, ['title', 'body', 'visibility']); assert.equal(result.submitted, false); assert.equal(await js('!!window.didPublish'), false); publishChecks += 3;
+      assert.equal(await js('document.querySelectorAll("input")[1].value'), ''); publishChecks++;
+    }
+    await js('document.querySelector("input").maxLength=2');
+    assert.ok((await sync('fill', { title: '不能截断的长标题', body: '', topics: [], options: {} })).unresolved.some(s => s.includes('限制'))); publishChecks++;
+    await js('document.body.insertAdjacentHTML("beforeend", "<input placeholder=标题>")');
+    assert.ok((await sync('fill', { title: '重复', topics: [], options: {} })).unresolved.some(s => s.includes('未唯一'))); publishChecks++;
+    await js('document.body.insertAdjacentHTML("beforeend", "<div class=topic-list><div role=option>#官方推荐</div><div role=option style=display:none>隐藏话题</div></div>")');
+    assert.deepEqual((await sync('topics', {})).topics, ['官方推荐']); publishChecks++;
+    console.log(JSON.stringify({ publishFormAssertions: publishChecks, localFixturesOnly: true }));
   } catch (error) { console.error(error); process.exitCode = 1; }
   finally { win.destroy(); app.exit(process.exitCode || 0); }
 });

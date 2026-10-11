@@ -30,7 +30,10 @@ interface WorkspaceContext {
   select(id: string): void;
   close(id: string): void;
   update(id: string, patch: Partial<WorkspaceTab>): void;
+  registerPublisher(accountId: string, publisher: Publisher): () => void;
+  publisher(accountId: string): Publisher | undefined;
 }
+type Publisher = { input(): MatrixPageActionInput; open(mediaType: 'video' | 'image'): Promise<void> };
 const Context = createContext<WorkspaceContext | null>(null);
 export function useOfficialWorkspace() {
   const value = useContext(Context);
@@ -46,6 +49,11 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [accountError, setAccountError] = useState('');
   const preferredIntent = useRef<Intent>('manage');
+  const publishers = useRef(new Map<string, Publisher>());
+  const registerPublisher = useCallback((accountId: string, publisher: Publisher) => {
+    publishers.current.set(accountId, publisher);
+    return () => { if (publishers.current.get(accountId) === publisher) publishers.current.delete(accountId); };
+  }, []);
   const refreshAccounts = useCallback(async () => {
     setLoadingAccounts(true);
     setAccountError('');
@@ -94,6 +102,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     if (activeId === id) setActiveId(remaining.at(-1)?.id || null);
   };
   return <Context.Provider value={{ tabs, activeId, visible, accounts, loadingAccounts, accountError, refreshAccounts, openAccount,
+    registerPublisher, publisher: id => publishers.current.get(id),
     bindAccount: async platform => { await prepare(platform, undefined, `登录${platformLabels[platform]}`, true, preferredIntent.current); },
     show: intent => {
       if (typeof intent === 'string' && intent in intentInfo) {
@@ -211,6 +220,25 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const [detectedAccount, setDetectedAccount] = useState('');
   const [bindingStatus, setBindingStatus] = useState('');
   const [domReady, setDomReady] = useState(false);
+  useEffect(() => {
+    if (!tab.accountId) return;
+    return workspace.registerPublisher(tab.accountId, {
+      input: () => {
+        const accessToken = getAuthToken();
+        if (!accessToken || tab.binding || !domReady || !view.current) throw new Error('官方页面尚未准备好或账号未登录');
+        return { platform: tab.platform, sessionId: tab.sessionId, accountId: tab.accountId!, accessToken, webContentsId: view.current.getWebContentsId() };
+      },
+      open: async mediaType => {
+        const current = view.current?.getURL() || '';
+        if (tab.binding) throw new Error('请先完成该账号的官方登录');
+        const desired = officialOperation(tab.platform, 'publish').url;
+        const target = tab.platform === 'xiaohongshu' && mediaType === 'image' ? desired.replace('target=video', 'target=image') : desired;
+        if (!/upload|publish|post\/video|post\/create/.test(new URL(current).pathname) || (tab.platform === 'xiaohongshu' && new URL(current).searchParams.get('target') !== (mediaType === 'image' ? 'image' : 'video'))) {
+          await view.current.loadURL(target);
+        }
+      },
+    });
+  }, [tab.accountId, tab.binding, tab.platform, tab.sessionId, domReady, workspace.registerPublisher]);
   const bindingRunner = useRef<ReturnType<typeof createAutoBinding<PlatformAccount>> | null>(null);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
