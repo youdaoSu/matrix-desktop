@@ -21,6 +21,7 @@ import MessagesPage from './pages/user/MessagesPage';
 import ContentRecordsPage from './pages/publish/ContentRecordsPage';
 import ContentCreateRealPage from './pages/publish/ContentCreateRealPage';
 import BatchDraftPage from './pages/publish/BatchDraftPage';
+import PublishStatsPage from './pages/publish/PublishStatsPage';
 import ReplyToolsPage from './pages/user/ReplyToolsPage';
 import PersonalTasksPage from './pages/user/PersonalTasksPage';
 import AccountHealthPage from './pages/user/AccountHealthPage';
@@ -78,7 +79,7 @@ const RoutesComponent = () => {
         <Route path="/publish/batch-video" element={<BatchDraftPage key="video" />} />
         <Route path="/publish/batch-image" element={<BatchDraftPage key="image" />} />
         <Route path="/publish/drafts" element={<ContentRecordsPage />} />
-        <Route path="/publish/stats" element={<AnalyticsPage />} />
+        <Route path="/publish/stats" element={<PublishStatsPage />} />
 
         <Route path="/engage/comments" element={<CommentsPage />} />
         <Route path="/engage/comments-agg" element={<CommentsPage />} />

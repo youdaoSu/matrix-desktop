@@ -75,10 +75,8 @@ try {
   await call('Page.navigate', { url: `${base}/app/#/dashboard` });
   await wait(() => evaluate("!!document.querySelector('.matrix-shell')"), 'Packaged dashboard did not render');
   await call('Page.navigate', { url: `${base}/app/#/accounts` });
-  await wait(() => evaluate("!![...document.querySelectorAll('button')].find(button => button.innerText === '绑定账号')"), 'Packaged account module missing');
-  await evaluate("[...document.querySelectorAll('button')].find(button=>button.innerText==='绑定账号').click(); true");
-  await wait(() => evaluate("!!document.querySelector('[role=dialog]')"), 'Platform picker missing');
-  await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(button=>button.innerText==='抖音').click(); true");
+  await wait(() => evaluate("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false"), 'Packaged unified account rail missing');
+  await evaluate("[...document.querySelectorAll('.matrix-add-platforms button')].find(button=>button.getClientRects().length && button.innerText.includes('抖音')).click(); true");
   await wait(() => evaluate("(async()=>{try{return await document.querySelector('webview')?.executeJavaScript(\"document.body.innerText.trim().length > 60\");}catch{return false;}})()"), 'Packaged official guest did not render content');
   // Guest DOM becomes ready before Chromium submits its first visible surface.
   await new Promise(resolve => setTimeout(resolve, 2000));

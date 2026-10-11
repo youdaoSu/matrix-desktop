@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { axiosForBackend } from '@/api';
 import type { PlatformAccount, PlatformType } from '@shared/api.interface';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Link } from 'react-router-dom';
 import { officialOperation } from '@shared/official-operations';
 
 export const platformLabels: Record<PlatformType, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
@@ -18,7 +20,7 @@ interface WorkspaceContext {
   loadingAccounts: boolean;
   accountError: string;
   refreshAccounts(): Promise<void>;
-  openAccount(account: PlatformAccount, intent?: Intent, reconnect?: boolean, draftText?: string): Promise<void>;
+  openAccount(account: PlatformAccount, intent?: Intent, reconnect?: boolean, draftText?: string): Promise<boolean>;
   bindAccount(platform: PlatformType): Promise<void>;
   show(intent?: Intent): void;
   hide(): void;
@@ -60,7 +62,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
   const prepare = async (platform: PlatformType, sessionId: string | undefined, nickname: string, binding: boolean, intent: Intent, accountId?: string, draftText?: string) => {
     if (!window.matrixDesktop?.isDesktop) {
       toast.info('请使用矩效桌面版打开内嵌账号操作面板');
-      return;
+      return false;
     }
     try {
       const prepared = await window.matrixDesktop.preparePlatformLogin(platform, sessionId);
@@ -72,14 +74,15 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
         : [...current, tab]);
       setActiveId(id);
       setVisible(true);
-    } catch (error) { toast.error(error instanceof Error ? error.message : '无法打开官方页面'); }
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : '无法打开官方页面'); return false; }
   };
   const openAccount = async (account: PlatformAccount, intent: Intent = preferredIntent.current, reconnect = false, draftText?: string) => {
     if (!account.connectorSessionId) {
       toast.info('该账号通过 API 授权绑定，请在官方页面另行登录后绑定本机工作区');
-      return;
+      return false;
     }
-    await prepare(account.platform, account.connectorSessionId, account.nickname || platformLabels[account.platform], reconnect, intent, account.id, draftText);
+    return prepare(account.platform, account.connectorSessionId, account.nickname || platformLabels[account.platform], reconnect, intent, account.id, draftText);
   };
   const close = (id: string) => {
     const remaining = tabs.filter(tab => tab.id !== id);
@@ -87,7 +90,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     if (activeId === id) setActiveId(remaining.at(-1)?.id || null);
   };
   return <Context.Provider value={{ tabs, activeId, visible, accounts, loadingAccounts, accountError, refreshAccounts, openAccount,
-    bindAccount: platform => prepare(platform, undefined, `登录${platformLabels[platform]}`, true, preferredIntent.current),
+    bindAccount: async platform => { await prepare(platform, undefined, `登录${platformLabels[platform]}`, true, preferredIntent.current); },
     show: intent => {
       if (typeof intent === 'string' && intent in intentInfo) {
         preferredIntent.current = intent;
@@ -132,7 +135,7 @@ export function OfficialWorkspaceDeck() {
   const groups = [...new Set(filtered.map(account => account.groupName || '默认分组'))];
   return <section className="matrix-official-deck" hidden={!workspace.visible} aria-label="账号操作面板">
     <aside className="matrix-account-rail">
-      <div className="matrix-rail-title"><div><strong>我的账号</strong><span>{workspace.accounts.length} 个已绑定账号</span></div><button title="刷新账号" onClick={() => void workspace.refreshAccounts()}><RefreshCw size={16} className={workspace.loadingAccounts ? 'animate-spin' : ''} /></button></div>
+      <div className="matrix-rail-actions"><DropdownMenu><DropdownMenuTrigger asChild><Button size="sm"><Plus size={15} />添加账号</Button></DropdownMenuTrigger><DropdownMenuContent>{(Object.keys(platformLabels) as PlatformType[]).map(platform => <DropdownMenuItem key={platform} onSelect={() => void workspace.bindAccount(platform)}>{platformLabels[platform]}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu><Button size="sm" variant="outline" onClick={workspace.hide}>管理面板</Button><button aria-label="刷新账号" title="刷新账号" onClick={() => void workspace.refreshAccounts()}><RefreshCw size={16} className={workspace.loadingAccounts ? 'animate-spin' : ''} /></button></div>
       <div className="matrix-account-search"><Search size={14} /><input aria-label="搜索账号" placeholder="搜索昵称 / 备注 / 分组" value={query} onChange={event => setQuery(event.target.value)} /></div>
       <div className="matrix-platform-filters"><button onClick={() => setFilter('all')} className={filter === 'all' ? 'is-active' : ''}>全部</button>{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => setFilter(platform)} className={filter === platform ? 'is-active' : ''}>{platformLabels[platform]}</button>)}</div>
       <div className="matrix-account-list">
@@ -141,8 +144,10 @@ export function OfficialWorkspaceDeck() {
         {!filtered.length && !workspace.loadingAccounts && !workspace.accountError && <div className="matrix-rail-empty">{workspace.accounts.length ? '没有匹配的账号' : '先添加账号，再在这里切换'}</div>}
       </div>
       <div className="matrix-add-platforms"><span>添加个人账号</span><div>{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><Plus size={12} />{platformLabels[platform]}</button>)}</div></div>
+      <Link className="matrix-rail-group-link" to="/accounts/groups" onClick={workspace.hide}>管理账号分组</Link>
     </aside>
     <div className="matrix-browser-area">
+      <WorkspaceTabs />
       <AccountPicker />
       {!workspace.activeId && <div className="matrix-workspace-welcome"><span className="matrix-welcome-icon"><Globe2 size={32} /></span><span className="matrix-eyebrow">OFFICIAL WORKSPACE</span><h1>账号与操作，都在一个工作区</h1><p>选择左侧账号，打开官方后台。发布内容、回复评论和发送私信，直接在官方页面中完成。</p><div className="matrix-welcome-features"><span><Users size={17} />账号分组切换</span><span><Send size={17} />官方页面发布</span><span><MessageCircle size={17} />评论与私信</span></div><div className="matrix-platform-cards">{(Object.keys(platformLabels) as PlatformType[]).map(platform => <button key={platform} onClick={() => void workspace.bindAccount(platform)}><PlatformMark platform={platform} /><strong>{platformLabels[platform]}</strong><small>{platform === "xiaohongshu" ? "官方短信登录" : "官方扫码登录"}</small><Plus size={15} /></button>)}</div><small>登录会话保存在本机，各账号独立。平台页面中提交的操作以官方结果为准。</small></div>}
       {workspace.tabs.map(tab => <OfficialBrowser key={tab.id} tab={tab} active={tab.id === workspace.activeId} />)}

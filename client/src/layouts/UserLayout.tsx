@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -45,11 +45,12 @@ import NotificationCenter from '@client/src/components/notification/Notification
 import PersonalTaskReminder from '@/components/notification/PersonalTaskReminder';
 import { clearAuthToken, getAuthToken, getUser } from '@client/src/api';
 import { Globe2 } from 'lucide-react';
-import { OfficialWorkspaceDeck, OfficialWorkspaceProvider, useOfficialWorkspace, WorkspaceTabs } from '@/components/workspace/OfficialWorkspace';
+import { OfficialWorkspaceDeck, OfficialWorkspaceProvider, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 
 interface SubMenuItem {
   to: string;
   label: string;
+  icon?: typeof LayoutDashboard;
 }
 
 interface MenuGroup {
@@ -89,17 +90,17 @@ const topMenuItems: TopMenuItem[] = [
       {
         label: '内容发布',
         items: [
-          { to: '/publish/create', label: '发条单视频' },
-          { to: '/publish/batch-video', label: '批量发视频' },
-          { to: '/publish/batch-image', label: '批量发图文' },
+          { to: '/publish/create', label: '发单条视频', icon: PlaySquare },
+          { to: '/publish/batch-video', label: '批量发视频', icon: ListVideo },
+          { to: '/publish/batch-image', label: '批量发图文', icon: FileText },
         ],
       },
       {
         label: '内容管理',
         items: [
-          { to: '/publish/drafts', label: '本地草稿箱' },
-          { to: '/publish/tasks', label: '任务记录' },
-          { to: '/publish/stats', label: '任务统计' },
+          { to: '/publish/drafts', label: '本地草稿箱', icon: Mail },
+          { to: '/publish/tasks', label: '任务记录', icon: ListOrdered },
+          { to: '/publish/stats', label: '任务统计', icon: BarChart3 },
         ],
       },
     ],
@@ -115,7 +116,7 @@ const topMenuItems: TopMenuItem[] = [
         items: [
           { to: '/engage/comments', label: '评论管理' },
           { to: '/engage/comments-agg', label: '评论聚合' },
-          { to: '/engage/auto-comment', label: '评论回复待办' },
+          { to: '/engage/auto-comment', label: '回复待办' },
           { to: '/engage/batch-tasks', label: '批量任务' },
         ],
       },
@@ -125,7 +126,7 @@ const topMenuItems: TopMenuItem[] = [
         items: [
           { to: '/engage/messages', label: '私信管理' },
           { to: '/engage/messages-agg', label: '私信聚合' },
-          { to: '/engage/auto-message', label: '私信回复待办' },
+          { to: '/engage/auto-message', label: '回复待办' },
         ],
       },
       {
@@ -144,7 +145,7 @@ const topMenuItems: TopMenuItem[] = [
           { to: '/automation/welcome', label: '欢迎语' },
           { to: '/automation/offline', label: '离线回复' },
           { to: '/automation/monitor', label: '监控任务' },
-          { to: '/automation/active-messages', label: '个人操作待办' },
+          { to: '/automation/active-messages', label: '操作待办' },
           { to: '/automation/templates', label: '消息模板' },
         ],
       },
@@ -222,6 +223,11 @@ const UserLayoutContent = () => {
   const location = useLocation();
   const workspace = useOfficialWorkspace();
   const user = getUser();
+  useEffect(() => {
+    if (location.pathname === '/accounts' && window.matrixDesktop?.isDesktop) workspace.show('manage');
+    // Route entry opens the unified account view; closing it must still expose the management panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   // 鉴权：未登录则跳转登录页
   if (!getAuthToken()) {
@@ -244,7 +250,7 @@ const UserLayoutContent = () => {
 
   const activeTopMenu = getActiveTopMenu();
   const activeMenu = topMenuItems.find((m) => m.basePath === activeTopMenu) || topMenuItems[0];
-  const showSidebar = activeMenu.groups.reduce((count, group) => count + group.items.length, 0) > 1;
+  const showSidebar = activeMenu.groups.reduce((count, group) => count + group.items.length, 0) > 1 && !(activeTopMenu === '/accounts' && location.pathname === '/accounts');
 
   const handleLogout = () => {
     clearAuthToken();
@@ -252,7 +258,7 @@ const UserLayoutContent = () => {
   };
 
   return (
-      <div className="matrix-shell h-screen bg-background flex flex-col overflow-hidden">
+      <div data-module={activeTopMenu.slice(1)} className="matrix-shell h-screen bg-background flex flex-col overflow-hidden">
       {/* Top navigation bar */}
       <header className="matrix-topbar h-14 bg-card border-b border-border flex items-center px-4 gap-2 z-30 shrink-0">
         {/* Logo */}
@@ -274,7 +280,7 @@ const UserLayoutContent = () => {
             return (
               <NavLink
                 key={item.basePath}
-                onClick={workspace.hide}
+                onClick={() => item.basePath === '/accounts' ? workspace.show('manage') : workspace.hide()}
                 to={item.groups[0]?.items[0]?.to || item.basePath}
                 end
                 className={({ isActive: linkActive }) =>
@@ -343,8 +349,6 @@ const UserLayoutContent = () => {
         </div>
       </header>
 
-      <WorkspaceTabs />
-
       {/* Main body: sidebar + content */}
       <div className="flex-1 flex min-h-0">
         {/* Left sidebar with groups */}
@@ -353,7 +357,7 @@ const UserLayoutContent = () => {
             <div className="py-3 px-2 space-y-4">
               {activeMenu.groups.map((group) => (
                 <div key={group.label}>
-                  <div className="px-3 mb-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="matrix-menu-group px-3 mb-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                     {group.icon && <group.icon className="w-3 h-3" />}
                     {group.label}
                   </div>
@@ -373,7 +377,8 @@ const UserLayoutContent = () => {
                           )
                         }
                       >
-                        <span className="truncate">{subItem.label}</span>
+                        {subItem.icon && <subItem.icon className="w-4 h-4 shrink-0" />}
+                        <span>{subItem.label}</span>
                       </NavLink>
                     ))}
                   </div>

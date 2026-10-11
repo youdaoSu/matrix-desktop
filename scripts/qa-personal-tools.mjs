@@ -64,6 +64,9 @@ try {
   }
   for (const suffix of ['batch-video', 'batch-image']) {
     await navigate(`/publish/${suffix}`, "document.querySelectorAll('.matrix-page-content [role=checkbox]').length === 4 && ![...document.querySelectorAll('button')].find(el=>el.innerText==='批量保存草稿')?.disabled");
+    await evaluate("[...document.querySelectorAll('.matrix-workspace-tabs > button')].find(el=>el.getClientRects().length&&el.innerText.includes('收起账号页面'))?.click();true");
+    await wait("!document.querySelector('.matrix-main-integrated') && !!document.querySelector('.matrix-batch-columns')", 'Native batch editor did not become visible');
+    assert.equal(await evaluate("(() => { const columns=document.querySelector('.matrix-batch-columns').getBoundingClientRect(); const common=document.querySelector('.matrix-batch-common').getBoundingClientRect(); const accounts=document.querySelector('.matrix-batch-accounts').getBoundingClientRect(); const footer=document.querySelector('.matrix-publish-footer').getBoundingClientRect(); return Math.abs(common.width/columns.width-.6)<.01 && Math.abs(accounts.width/columns.width-.4)<.01 && footer.bottom<=innerHeight+1 && footer.height>0; })()"), true); checks++;
     await evaluate("[...document.querySelectorAll('.matrix-page-content [role=checkbox]')].slice(0,2).forEach(el=>el.click());");
     const title = `${run}_${suffix}`;
     await fill('[aria-label="内容1标题"]', title); await click('新增内容');
@@ -75,6 +78,17 @@ try {
     await navigate(`/publish/${suffix}`, `document.querySelector('.matrix-page-content')?.innerText.includes(${JSON.stringify(title)})`); checks++;
     const capture = await call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(`logs/qa-${suffix}.png`, Buffer.from(capture.data, 'base64'));
   }
+  await navigate('/engage/batch-tasks', "!!document.querySelector('[data-matrix-personal-tasks]') && !document.querySelector('[role=status]')");
+  await navigate('/publish/stats', "!!document.querySelector('[data-matrix-publish-stats]') && !document.querySelector('[role=status]')");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.matrix-publish-stat-cards article strong')].slice(1).map(el=>el.innerText)"), ['3','75.0%']); checks++;
+  const statsCapture=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('logs/qa-publish-stats.png',Buffer.from(statsCapture.data,'base64'));
+  for (const route of ['comments-agg','messages-agg']) {
+    await navigate(`/engage/${route}`, `!!document.querySelector('.matrix-${route.startsWith('comments') ? 'comments' : 'messages'}-aggregate') && !document.querySelector('.matrix-interaction-accounts')`);
+    assert.equal(await evaluate("Math.abs(document.querySelector('.matrix-reply-template-pane').getBoundingClientRect().width-300)<1"), true); checks++;
+    if (route === 'messages-agg') { assert.equal(await evaluate("(() => { const panel=document.querySelector('.matrix-message-panel'), sessions=document.querySelector('.matrix-message-sessions'); return !!panel && !!sessions && Math.abs(sessions.getBoundingClientRect().width/panel.getBoundingClientRect().width-.35)<.01; })()"), true); checks++; }
+  }
+  await navigate('/engage/followers', "!!document.querySelector('.matrix-followers-layout') && !!document.querySelector('.matrix-interaction-accounts')");
+  assert.equal(await evaluate("Math.abs(document.querySelector('.matrix-interaction-accounts').getBoundingClientRect().width-280)<1"), true); checks++;
   await navigate('/engage/batch-tasks', "!!document.querySelector('[data-matrix-personal-tasks]') && !document.querySelector('[role=status]')");
   await click('新建待办'); await wait("document.querySelectorAll('[role=dialog] fieldset input[type=checkbox]').length === 4", 'Task account picker missing');
   await evaluate("[...document.querySelectorAll('[role=dialog] fieldset input[type=checkbox]')].slice(0,2).forEach(el=>el.click())");

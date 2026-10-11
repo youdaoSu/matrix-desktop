@@ -1285,7 +1285,7 @@ const AccountsPage = () => {
                         </div>
                         <div className="text-sm">
                           {detailAccount.healthStatus === 'normal' && (
-                            <span className="text-[hsl(130_54%_42%)]">账号运行正常，所有功能可用</span>
+                            <span className="text-[hsl(130_54%_42%)]">账号绑定状态正常；发布和互动能力以平台页面及获批权限为准</span>
                           )}
                           {detailAccount.healthStatus === 'warning' && (
                             <span className="text-[hsl(26_90%_49%)]">授权即将到期，请及时重新授权</span>

@@ -50,7 +50,7 @@ async function waitFor(expression, message, attempts = 120) {
 
 await call('Runtime.enable');
 await evaluate(`localStorage.setItem('matrix_token', ${JSON.stringify(login.token)}); localStorage.setItem('matrix_user', ${JSON.stringify(JSON.stringify(login.user))}); location.href = location.origin + '/app/#/accounts'; true`);
-await waitFor("document.body.innerText.includes('绑定账号')", '账号管理页未加载');
+await waitFor("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false", '统一账号列表未加载');
 const platforms = [
   { key: 'douyin', label: '抖音', host: 'creator.douyin.com' },
   { key: 'xiaohongshu', label: '小红书', host: 'creator.xiaohongshu.com' },
@@ -59,9 +59,7 @@ const platforms = [
 ];
 const results = [];
 for (const platform of platforms) {
-  await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find((item) => item.innerText.trim() === '绑定账号'); button.click(); return true; })()`);
-  await waitFor("!!document.querySelector('[role=dialog]')", `${platform.label}平台选择弹窗未打开`);
-  await evaluate(`(() => { const button = [...document.querySelector("[role=dialog]").querySelectorAll('button')].find((item) => item.innerText.trim() === ${JSON.stringify(platform.label)}); if (!button) return false; button.click(); return true; })()`);
+  await evaluate(`(() => { const button = [...document.querySelectorAll('.matrix-add-platforms button')].find(item => item.getClientRects().length && item.innerText.includes(${JSON.stringify(platform.label)})); if (!button) throw new Error('可见平台入口不存在'); button.click(); return true; })()`);
   await waitFor("!!document.querySelector('webview')", `${platform.label}内嵌官方授权 webview 未创建`);
   await waitFor("document.querySelector('.matrix-official-deck')?.hidden === false && document.body.innerText.includes('我已登录，完成绑定')", `${platform.label}内嵌工作区未显示`);
   const loginReady = platform.key === 'xiaohongshu'

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { InteractionAccountRail } from '@/components/workspace/InteractionPanels';
 import { RefreshCw, Search, Users } from 'lucide-react';
 import type { FollowerRecord, PlatformAccount, PlatformType } from '@shared/api.interface';
 import { axiosForBackend } from '@/api';
@@ -22,9 +23,12 @@ export default function FollowersPage() {
   const [platform, setPlatform] = useState('all');
   const [accountId, setAccountId] = useState('all');
   const [loading, setLoading] = useState(true);
+  const generation = useRef(0);
 
   const load = async () => {
+    const current = ++generation.current;
     setLoading(true);
+    setFollowers([]);
     try {
       const params: Record<string, string | number> = { page: 1, pageSize: 100 };
       if (search.trim()) params.keyword = search.trim();
@@ -34,17 +38,19 @@ export default function FollowersPage() {
         axiosForBackend.get('/api/platform/followers', { params }),
         axiosForBackend.get('/api/platform/accounts', { params: { page: 1, pageSize: 100 } }),
       ]);
-      setFollowers(followerResponse.data?.data?.items || []);
-      setAccounts(accountResponse.data?.data?.items || []);
+      if (current === generation.current) {
+        setFollowers(followerResponse.data?.data?.items || []);
+        setAccounts(accountResponse.data?.data?.items || []);
+      }
     } catch (error: any) {
-      toast.error(errorMessage(error, '加载粉丝记录失败'));
-    } finally { setLoading(false); }
+      if (current === generation.current) toast.error(errorMessage(error, '加载粉丝记录失败'));
+    } finally { if (current === generation.current) setLoading(false); }
   };
 
-  useEffect(() => { void load(); }, [platform, accountId]);
+  useEffect(() => { void load(); return () => { generation.current++; }; }, [platform, accountId]);
   const accountName = (id: string) => accounts.find((account) => account.id === id)?.nickname || '未知账号';
 
-  return <div className="space-y-5">
+  return <div className="matrix-interaction-layout matrix-followers-layout"><InteractionAccountRail platform={platform} selected={accountId === 'all' ? undefined : accountId} onSelect={a => setAccountId(a?.id || 'all')} /><section className="matrix-interaction-content space-y-3">
     <Alert className="border-primary/20 bg-primary/5"><Users className="h-4 w-4 text-primary" /><AlertDescription>仅显示已通过获批平台接口同步到本地的真实粉丝记录；网页登录本身不会自动获得完整粉丝名单。</AlertDescription></Alert>
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">粉丝管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {followers.length} 条已同步记录</p></div><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div>
     <Card><CardContent className="flex flex-wrap gap-3 p-4">
@@ -57,5 +63,5 @@ export default function FollowersPage() {
       {followers.map((follower) => <TableRow key={follower.id}><TableCell><div className="flex items-center gap-2"><Avatar className="h-8 w-8"><AvatarImage src={follower.avatarUrl} /><AvatarFallback>{(follower.nickname || '粉').slice(0, 1)}</AvatarFallback></Avatar><span>{follower.nickname || '未命名粉丝'}</span>{follower.isMutual && <Badge variant="secondary">互关</Badge>}</div></TableCell><TableCell>{platformLabels[follower.platform]}</TableCell><TableCell>{accountName(follower.accountId)}</TableCell><TableCell><div className="flex flex-wrap gap-1">{(follower.tags || []).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div></TableCell><TableCell>{follower.location || '—'}</TableCell><TableCell>{follower.followedAt ? new Date(follower.followedAt).toLocaleString('zh-CN') : '—'}</TableCell></TableRow>)}
       {!loading && followers.length === 0 && <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">暂无真实粉丝记录。平台接口获批并执行同步后会显示在这里。</TableCell></TableRow>}
     </TableBody></Table></CardContent></Card>
-  </div>;
+  </section></div>;
 }

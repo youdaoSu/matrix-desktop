@@ -89,6 +89,13 @@ try {
       VALUES(${user.id},${platform},${`desktop:${sessionId}`},${`QA ${platform}`},'QA 工作区','authorized','normal',${sql.json({ provider: 'desktop-connector', connectorSessionId: sessionId })})`;
   }
   await runScript('scripts/qa-personal-tasks.mjs', [base]);
+  // Synthetic records exist only inside this disposable QA database, never in the user's data.
+  const [qaDouyin] = await sql`SELECT id FROM platform_accounts WHERE user_id=${user.id} AND nickname='QA douyin'`;
+  const [qaBilibili] = await sql`SELECT id FROM platform_accounts WHERE user_id=${user.id} AND nickname='QA bilibili'`;
+  const [qaWork] = await sql`INSERT INTO content_posts(user_id,account_id,platform,title,media_type,status,published_at) VALUES(${user.id},${qaDouyin.id},'douyin','QA Published work A','video','published',CURRENT_TIMESTAMP) RETURNING id`;
+  const [qaWorkB] = await sql`INSERT INTO content_posts(user_id,account_id,platform,title,media_type,status,published_at) VALUES(${user.id},${qaDouyin.id},'douyin','QA Published work B','video','published',CURRENT_TIMESTAMP) RETURNING id`;
+  await sql`INSERT INTO content_posts(user_id,account_id,platform,title,media_type,status) VALUES(${user.id},${qaDouyin.id},'douyin','QA Hidden draft','video','draft'),(${user.id},${qaDouyin.id},'douyin','QA Failed work','video','failed'),(${user.id},${qaBilibili.id},'bilibili','QA Other account work','video','published')`;
+  await sql`INSERT INTO comment_items(user_id,account_id,post_id,platform,commenter_nickname,content) VALUES(${user.id},${qaDouyin.id},${qaWork.id},'douyin','QA commenter','QA Comment for work A'),(${user.id},${qaDouyin.id},${qaWorkB.id},'douyin','QA commenter','QA Comment for work B')`;
   desktop = launch(path.join(root, '.desktop-deps/node_modules/electron/dist/electron.exe'), [
     'desktop/main.cjs', `--remote-debugging-port=${debugPort}`, `--matrix-user-data-dir=${profile}`,
   ], { ...process.env, MATRIX_APP_URL: `${base}/app/#/login` });
@@ -119,7 +126,7 @@ try {
   }
   async function evaluate(expression) {
     const result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
     return result.result?.value;
   }
   async function click(selector, text) {
@@ -138,10 +145,17 @@ try {
   await waitUntil(() => evaluate("document.querySelectorAll('.matrix-home-platforms button').length === 4 && !document.querySelector('.matrix-dashboard')?.innerText.includes('加载中')"), 'Dashboard data did not finish loading');
   await screenshot('qa-workspace-dashboard.png');
   await click('.matrix-topbar nav a', '账号管理');
+  await waitUntil(() => evaluate("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false && document.querySelector('.matrix-account-rail')?.getBoundingClientRect().width>0"), 'Unified account rail did not render');
+  ensure(await evaluate("Math.abs(document.querySelector('.matrix-topbar').getBoundingClientRect().height-40)<1"), 'Measured reference topbar height is 40 CSS pixels');
+  ensure(await evaluate("Math.abs(document.querySelector('.matrix-account-rail').getBoundingClientRect().width-244)<1"), 'Reference frontend specifies a 244 CSS pixel account rail');
+  ensure(await evaluate("!document.querySelector('.matrix-module-sidebar')"), 'Account module has no redundant outer sidebar');
+  await click('button', '管理面板');
   await waitUntil(() => evaluate("document.body.innerText.includes('绑定账号')"), 'Account module did not render');
   await click('button', '绑定账号');
   await click('[role=dialog] button', '抖音');
   await waitUntil(() => evaluate("document.querySelectorAll('.matrix-rail-account').length === 4"), 'Account rail did not load fixtures');
+  await waitUntil(() => evaluate("!document.querySelector('[role=dialog]') && getComputedStyle(document.body).pointerEvents !== 'none'"), 'Binding dialog left an overlay blocking the official page');
+  ensure(await evaluate("!!document.querySelector('.matrix-browser-area .matrix-workspace-tabs')"), 'Account tabs live above the browser, not above the account rail');
   ensure(await evaluate("document.querySelector('.matrix-official-deck').getBoundingClientRect().height > 500"), 'Workspace uses the full content area');
   await screenshot('qa-workspace-empty.png');
   const platforms = [ ['douyin', '抖音'], ['xiaohongshu', '小红书'], ['wechat', '视频号'], ['bilibili', 'B站'] ];
@@ -170,6 +184,9 @@ try {
   await click('.matrix-workspace-tabs > button', '收起账号页面');
   await click('.matrix-topbar nav a', '一键发布');
   await waitUntil(() => evaluate("location.hash === '#/publish/create' && document.body.innerText.includes('进入官方发布页')"), 'Publishing page missing');
+  ensure(await evaluate("Math.abs(document.querySelector('.matrix-module-sidebar').getBoundingClientRect().width-128)<1"), 'Measured publishing sidebar width is 128 CSS pixels');
+  ensure(await evaluate("(() => {const a=document.querySelector('.matrix-publish-common').getBoundingClientRect(),b=document.querySelector('.matrix-publish-accounts').getBoundingClientRect(),f=document.querySelector('.matrix-publish-footer').getBoundingClientRect(); return b.left>a.left+a.width-1 && Math.abs(a.top-b.top)<1 && f.bottom<=innerHeight && f.top>=a.bottom-1;})()"), 'Publishing has side-by-side common/account panels and an unobscured bottom action bar');
+  await screenshot('qa-reference-publish.png');
   await click('button', '进入官方发布页');
   ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar button.is-active')].some(button=>button.innerText==='发布内容')"), 'Publishing opens the official publishing workflow');
   ensure(JSON.stringify(guestIds) === JSON.stringify(await evaluate("[...document.querySelectorAll('webview')].map(view=>view.getWebContentsId()).sort((a,b)=>a-b)")), 'Module switching preserves all official pages and sessions');
@@ -192,11 +209,30 @@ try {
   await click('.matrix-workspace-tabs > button', '收起账号页面');
   await click('.matrix-topbar nav a', '粉丝互动');
   await waitUntil(() => evaluate("location.hash === '#/engage/comments'"), 'Comments route did not open');
+  await waitUntil(() => evaluate("!!document.querySelector('.matrix-comments-layout .matrix-interaction-posts')"), 'Comments layout did not finish rendering');
+  await waitUntil(() => evaluate("document.querySelectorAll('.matrix-interaction-accounts > button').length===5"), 'Comment account rail did not load owned fixtures');
+  ensure(await evaluate("Math.abs(document.querySelector('.matrix-module-sidebar').getBoundingClientRect().width-114)<1 && !!document.querySelector('.matrix-reply-template-pane')"), 'Interaction uses the measured compact sidebar and real template pane');
+  ensure(await evaluate("(() => { const width=s=>document.querySelector(s).getBoundingClientRect().width; return Math.abs(width('.matrix-interaction-accounts')-180)<1 && Math.abs(width('.matrix-interaction-posts')-280)<1 && Math.abs(width('.matrix-reply-template-pane')-300)<1; })()"), 'Comment account, work and template rails match reference CSS geometry');
+  await evaluate("[...document.querySelectorAll('.matrix-interaction-accounts > button')].find(button=>button.innerText.includes('QA douyin')).click();true");
+  await waitUntil(() => evaluate("performance.getEntriesByType('resource').some(e=>{const u=new URL(e.name);return u.pathname==='/api/comments'&&!!u.searchParams.get('accountId')})"), 'Selected comment account was not applied to the real API filter');
+  await waitUntil(() => evaluate("document.querySelectorAll('[data-interaction-post-id]').length===2"), 'Selected account published work list did not load');
+  ensure(await evaluate("!document.querySelector('.matrix-interaction-posts').innerText.includes('QA Hidden draft') && !document.querySelector('.matrix-interaction-posts').innerText.includes('QA Other account work')"), 'Work rail excludes drafts and other account content');
+  await evaluate(`document.querySelector('[data-interaction-post-id="${qaWork.id}"]').click();true`);
+  await waitUntil(() => evaluate("document.querySelector('.matrix-interaction-content').innerText.includes('QA Comment for work A') && !document.querySelector('.matrix-interaction-content').innerText.includes('QA Comment for work B')"), 'Work-specific comment filter did not reach the actual API');
+  ensure(await evaluate(`performance.getEntriesByType('resource').some(e=>{const u=new URL(e.name);return u.pathname==='/api/comments'&&u.searchParams.get('postId')==='${qaWork.id}'})`), 'Selecting a work applies postId to the backend query');
+  await screenshot('qa-reference-comments.png');
   await click('button', '官方页面回复');
   ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar button.is-active')].some(button=>button.innerText==='评论回复')"), 'Comments open the official reply workflow');
   await click('.matrix-workspace-tabs > button', '收起账号页面');
   await click('.matrix-module-sidebar a', '私信管理');
   await waitUntil(() => evaluate("location.hash === '#/engage/messages'"), 'Messages route did not open');
+  await waitUntil(() => evaluate("!!document.querySelector('.matrix-messages-layout .matrix-message-sessions')"), 'Messages layout did not finish rendering');
+  await waitUntil(() => evaluate("document.querySelectorAll('.matrix-interaction-accounts > button').length===5"), 'Message account rail did not load owned fixtures');
+  ensure(await evaluate("!!document.querySelector('.matrix-reply-template-pane')"), 'Message workspace contains the actual local template library');
+  ensure(await evaluate("Math.abs(document.querySelector('.matrix-interaction-accounts').getBoundingClientRect().width-200)<1 && Math.abs(document.querySelector('.matrix-message-sessions').getBoundingClientRect().width-260)<1 && Math.abs(document.querySelector('.matrix-reply-template-pane').getBoundingClientRect().width-300)<1"), 'Message account, conversation and template rails match reference CSS geometry');
+  await evaluate("document.querySelectorAll('.matrix-interaction-accounts > button')[2].click();true");
+  await waitUntil(() => evaluate("performance.getEntriesByType('resource').some(e=>{const u=new URL(e.name);return u.pathname==='/api/messages/sessions'&&!!u.searchParams.get('accountId')})"), 'Selected message account was not applied to the real API filter');
+  await screenshot('qa-reference-messages.png');
   await click('button', '官方页面发私信');
   ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar button.is-active')].some(button=>button.innerText==='私信消息')"), 'Messages open the official messaging workflow');
   await evaluate("document.documentElement.classList.add('dark'); true");

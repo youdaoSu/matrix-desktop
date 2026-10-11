@@ -1,16 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Image, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ContentPost, PlatformAccount } from '@shared/api.interface';
 import { axiosForBackend } from '@/api';
 import { platformLabels, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 
 type Row = { id: string; title: string; content: string; saved: boolean; error?: string };
 const newRow = (): Row => ({ id: crypto.randomUUID(), title: '', content: '', saved: false });
@@ -27,26 +25,29 @@ export default function BatchDraftPage() {
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(false);
+  const lock = useRef(false);
+  const generation = useRef(0);
   const load = async () => {
+    const current = ++generation.current;
     setLoading(true); setLoadError('');
     try {
       const [a, d] = await Promise.all([
         axiosForBackend.get('/api/platform/accounts', { params: { page: 1, pageSize: 100 } }),
         axiosForBackend.get('/api/content/posts', { params: { status: 'draft', page: 1, pageSize: 100 } }),
       ]);
-      setAccounts(a.data.data.items); setDrafts(d.data.data.items);
-    } catch (error) { setLoadError(message(error)); }
-    finally { setLoading(false); }
+      if (current === generation.current) { setAccounts(a.data.data.items); setDrafts(d.data.data.items); }
+    } catch (error) { if (current === generation.current) setLoadError(message(error)); }
+    finally { if (current === generation.current) setLoading(false); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); return () => { generation.current++; }; }, []);
   const change = (id: string, patch: Partial<Row>) => setRows(items => items.map(row => row.id === id ? { ...row, ...patch } : row));
   const save = async () => {
-    if (busy) return;
+    if (lock.current) return;
     if (!selected.length) return toast.error('请先选择账号');
     const pending = rows.filter(row => !row.saved);
     if (!pending.length) return toast.info('当前所有内容已保存，请新增内容');
     if (pending.some(row => !row.title.trim() && !row.content.trim())) return toast.error('每条内容请至少填写标题或正文');
-    setBusy(true);
+    lock.current = true; setBusy(true);
     let saved = 0;
     for (const row of pending) {
       try {
@@ -54,7 +55,7 @@ export default function BatchDraftPage() {
         change(row.id, { saved: true, error: undefined }); saved++;
       } catch (error) { change(row.id, { error: message(error) }); }
     }
-    setBusy(false); await load();
+    lock.current = false; setBusy(false); await load();
     if (saved) toast.success(`已保存 ${saved} 条内容的账号草稿；尚未发布`);
     if (saved !== pending.length) toast.error('部分内容保存失败，可单独重试；已保存的内容不会重复提交');
   };
@@ -63,13 +64,31 @@ export default function BatchDraftPage() {
     if (!account?.connectorSessionId) return toast.error('请先通过本机官方登录绑定该账号');
     await workspace.openAccount(account, 'publish', false, [draft.title, draft.content].filter(Boolean).join('\n\n'));
   };
-  return <div className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-xl font-semibold">批量{mediaType === 'image' ? '图文' : '视频'}准备</h1><Button variant="outline" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={15} />刷新草稿</Button></div>
-    <Alert><AlertDescription>一次整理多条内容，为所选账号分别保存真实草稿，再逐账号上传素材、核对并发表。这里不会自动发布或把草稿标记成发布成功。未保存的编辑内容离开页面后会丢失。</AlertDescription></Alert>
-    {loadError && <div role="alert" className="text-destructive">{loadError}</div>}
-    <Card><CardHeader><CardTitle className="text-base">目标账号</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-3">{accounts.map(account => <label key={account.id} className="flex items-center gap-2 rounded-lg border p-3"><Checkbox disabled={busy} checked={selected.includes(account.id)} onCheckedChange={checked => setSelected(ids => checked ? [...ids, account.id] : ids.filter(id => id !== account.id))} />{platformLabels[account.platform]} · {account.nickname}</label>)}{!loading && !accounts.length && <p className="text-muted-foreground">请先绑定自己的账号</p>}</CardContent></Card>
-    {rows.map((row, index) => <Card key={row.id}><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="text-base">内容 {index + 1}{row.saved ? ' · 已保存为草稿' : ''}</CardTitle><Button aria-label={`移除内容${index + 1}`} variant="ghost" size="icon" disabled={busy || rows.length === 1} onClick={() => setRows(items => items.filter(item => item.id !== row.id))}><Trash2 size={16} /></Button></CardHeader><CardContent className="space-y-3"><Input aria-label={`内容${index + 1}标题`} maxLength={500} placeholder="标题" disabled={busy || row.saved} value={row.title} onChange={event => change(row.id, { title: event.target.value })} /><Textarea aria-label={`内容${index + 1}正文`} maxLength={20000} placeholder="正文" disabled={busy || row.saved} value={row.content} onChange={event => change(row.id, { content: event.target.value })} />{row.error && <p role="alert" className="text-destructive">{row.error}</p>}</CardContent></Card>)}
-    <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy || rows.length >= 50} onClick={() => setRows(items => [...items, newRow()])}><Plus size={15} />新增内容</Button><Button disabled={busy || loading} onClick={() => void save()}>{busy ? '保存中…' : '批量保存草稿'}</Button></div>
-    <Card><CardHeader><CardTitle className="text-base">待发表草稿（最近 100 条本地草稿中的{mediaType === 'image' ? '图文' : '视频'}）</CardTitle></CardHeader><CardContent className="space-y-2">{drafts.filter(item => item.mediaType === mediaType).map(draft => <div key={draft.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div><strong>{draft.title || '未命名内容'}</strong><p className="text-sm text-muted-foreground">{platformLabels[draft.platform]} · {draft.accountNickname} · 本地草稿，未发布</p></div><Button variant="outline" onClick={() => void open(draft)}>准备该账号发表</Button></div>)}{!loading && !drafts.some(item => item.mediaType === mediaType) && <p className="text-muted-foreground">暂无已保存草稿</p>}</CardContent></Card>
+  return <div className="matrix-batch-editor">
+    <div className="matrix-batch-columns">
+      <section className="matrix-batch-common">
+        <header><strong>批量{mediaType === 'image' ? '图文' : '视频'}通用配置</strong><span>{rows.length} 条内容</span></header>
+        <p className="matrix-batch-notice">为所选账号保存本地草稿，不会自动发表。离开页面会丢失尚未保存的编辑。上传素材、核对文案和正式发表仍需在内嵌账号页面完成。</p>
+        {loadError && <p role="alert" className="p-2 text-destructive">{loadError}</p>}
+        <div className="matrix-batch-row-list">
+          {rows.map((row, index) => <article className="matrix-batch-row" key={row.id}>
+            <span className="matrix-batch-row-number">{index + 1}</span>
+            <div className="matrix-batch-media">{mediaType === 'image' ? <Image size={26} /> : <Video size={26} />}<strong>{mediaType === 'image' ? '图文素材' : '视频素材'}</strong><small>素材在账号页面选择上传</small></div>
+            <div className="matrix-batch-fields"><div className="flex items-center justify-between"><strong>内容 {index + 1}{row.saved ? ' · 已保存为草稿' : ''}</strong><Button aria-label={`移除内容${index + 1}`} variant="ghost" size="icon" disabled={busy || rows.length === 1} onClick={() => setRows(items => items.filter(item => item.id !== row.id))}><Trash2 size={16} /></Button></div>
+              <Input aria-label={`内容${index + 1}标题`} maxLength={500} placeholder="作品标题" disabled={busy || row.saved} value={row.title} onChange={event => change(row.id, { title: event.target.value })} />
+              <Textarea aria-label={`内容${index + 1}正文`} maxLength={20000} placeholder="正文、简介或话题" disabled={busy || row.saved} value={row.content} onChange={event => change(row.id, { content: event.target.value })} />
+              {row.error && <p role="alert" className="text-destructive">{row.error}</p>}
+            </div>
+          </article>)}
+        </div>
+        <div className="matrix-batch-add"><Button variant="outline" disabled={busy || rows.length >= 50} onClick={() => setRows(items => [...items, newRow()])}><Plus size={15} />新增内容</Button></div>
+      </section>
+      <section className="matrix-batch-accounts">
+        <header><strong>平台和账号配置</strong><span>已选 {selected.length} 个账号</span></header>
+        <div className="matrix-publish-account-list">{accounts.map(account => <label key={account.id} className="matrix-publish-account"><Checkbox disabled={busy} checked={selected.includes(account.id)} onCheckedChange={checked => setSelected(ids => checked ? [...new Set([...ids, account.id])] : ids.filter(id => id !== account.id))} /><div><strong>{account.nickname || '未命名账号'}</strong><small>{platformLabels[account.platform]}</small></div><span>未发布</span></label>)}{loading && <p role="status">加载账号及草稿…</p>}{!loading && !accounts.length && <div className="matrix-publish-no-account"><Plus size={32} /><p>请先绑定自己的账号</p><Button variant="outline" onClick={() => workspace.show('manage')}>添加账号</Button></div>}</div>
+        <div className="matrix-batch-saved"><h2>待发表草稿</h2><p>最近 100 条本地草稿中的{mediaType === 'image' ? '图文' : '视频'}；不是平台发布记录。</p>{drafts.filter(item => item.mediaType === mediaType).map(draft => <article key={draft.id}><div><strong>{draft.title || '未命名内容'}</strong><small>{platformLabels[draft.platform]} · {draft.accountNickname} · 本地草稿，未发布</small></div><Button variant="outline" size="sm" disabled={busy} onClick={() => void open(draft)}>准备该账号发表</Button></article>)}{!loading && !drafts.some(item => item.mediaType === mediaType) && <p>暂无已保存草稿</p>}</div>
+      </section>
+    </div>
+    <footer className="matrix-publish-footer"><Button variant="outline" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={15} />刷新草稿</Button><span>草稿保存、素材上传 ≠ 作品已发表</span><Button disabled={busy || loading} onClick={() => void save()}>{busy ? '保存中…' : '批量保存草稿'}</Button></footer>
   </div>;
 }
