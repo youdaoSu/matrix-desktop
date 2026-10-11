@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 
-type Row = { id: string; title: string; content: string; saved: boolean; error?: string };
+type Row = { id: string; title: string; content: string; saved: boolean; error?: string; media?: MatrixMediaSelection };
 const newRow = (): Row => ({ id: crypto.randomUUID(), title: '', content: '', saved: false });
 const message = (error: any) => error?.response?.data?.message || error?.message || '操作失败，请重试';
 
@@ -41,6 +41,30 @@ export default function BatchDraftPage() {
   };
   useEffect(() => { void load(); return () => { generation.current++; }; }, []);
   const change = (id: string, patch: Partial<Row>) => setRows(items => items.map(row => row.id === id ? { ...row, ...patch } : row));
+  const choose = async (row: Row) => {
+    if (lock.current) return;
+    if (!window.matrixDesktop?.chooseMedia) return toast.info('请在最新版桌面端选择素材');
+    lock.current = true; setBusy(true);
+    try {
+      const result = await window.matrixDesktop.chooseMedia(mediaType);
+      if (result.error) throw new Error(result.error);
+      if (result.selection) change(row.id, { media: result.selection });
+    } catch (error) { toast.error(message(error)); }
+    finally { lock.current = false; setBusy(false); }
+  };
+  const prepareRow = async (row: Row) => {
+    if (lock.current) return;
+    const targets = accounts.filter(account => selected.includes(account.id));
+    if (!targets.length) return toast.error('请先选择账号');
+    if (targets.some(account => !account.connectorSessionId)) return toast.error('请先通过本机官方登录绑定所选账号');
+    if (!row.title.trim() && !row.content.trim()) return toast.error('请先填写本条内容的标题或正文');
+    lock.current = true; setBusy(true);
+    try {
+      let opened = 0;
+      for (const account of targets) if (await workspace.openAccount(account, 'publish', false, [row.title, row.content].filter(Boolean).join('\n\n'), { title: row.title, body: row.content, media: row.media?.mediaType === mediaType ? row.media : undefined })) opened++;
+      toast.info(`已准备 ${opened}/${targets.length} 个账号的本条内容；尚未上传或发表`);
+    } finally { lock.current = false; setBusy(false); }
+  };
   const save = async () => {
     if (lock.current) return;
     if (!selected.length) return toast.error('请先选择账号');
@@ -62,7 +86,7 @@ export default function BatchDraftPage() {
   const open = async (draft: ContentPost) => {
     const account = accounts.find(item => item.id === draft.accountId);
     if (!account?.connectorSessionId) return toast.error('请先通过本机官方登录绑定该账号');
-    await workspace.openAccount(account, 'publish', false, [draft.title, draft.content].filter(Boolean).join('\n\n'));
+    await workspace.openAccount(account, 'publish', false, [draft.title, draft.content].filter(Boolean).join('\n\n'), { title: draft.title || '', body: draft.content || '' });
   };
   return <div className="matrix-batch-editor">
     <div className="matrix-batch-columns">
@@ -73,11 +97,12 @@ export default function BatchDraftPage() {
         <div className="matrix-batch-row-list">
           {rows.map((row, index) => <article className="matrix-batch-row" key={row.id}>
             <span className="matrix-batch-row-number">{index + 1}</span>
-            <div className="matrix-batch-media">{mediaType === 'image' ? <Image size={26} /> : <Video size={26} />}<strong>{mediaType === 'image' ? '图文素材' : '视频素材'}</strong><small>素材在账号页面选择上传</small></div>
+            <div className="matrix-batch-media">{mediaType === 'image' ? <Image size={26} /> : <Video size={26} />}<strong>{mediaType === 'image' ? '图文素材' : '视频素材'}</strong><small className="break-all">{row.media?.mediaType === mediaType ? row.media.files.map(file => file.name).join('、') : '本条素材供所选账号复用'}</small><Button size="sm" variant="outline" disabled={busy} onClick={() => void choose(row)}>选择素材</Button><small>素材选择不随文案草稿保存</small></div>
             <div className="matrix-batch-fields"><div className="flex items-center justify-between"><strong>内容 {index + 1}{row.saved ? ' · 已保存为草稿' : ''}</strong><Button aria-label={`移除内容${index + 1}`} variant="ghost" size="icon" disabled={busy || rows.length === 1} onClick={() => setRows(items => items.filter(item => item.id !== row.id))}><Trash2 size={16} /></Button></div>
               <Input aria-label={`内容${index + 1}标题`} maxLength={500} placeholder="作品标题" disabled={busy || row.saved} value={row.title} onChange={event => change(row.id, { title: event.target.value })} />
               <Textarea aria-label={`内容${index + 1}正文`} maxLength={20000} placeholder="正文、简介或话题" disabled={busy || row.saved} value={row.content} onChange={event => change(row.id, { content: event.target.value })} />
               {row.error && <p role="alert" className="text-destructive">{row.error}</p>}
+              <Button size="sm" variant="outline" disabled={busy || loading} onClick={() => void prepareRow(row)}>为所选账号准备本条</Button>
             </div>
           </article>)}
         </div>

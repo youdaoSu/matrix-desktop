@@ -75,6 +75,11 @@ try {
     const getCount = () => evaluate(`(async()=>{const token=localStorage.getItem('matrix_token')||sessionStorage.getItem('matrix_token');const r=await fetch('/api/content/posts?status=draft&page=1&pageSize=100',{headers:{Authorization:'Bearer '+token,'x-suda-csrf-token':decodeURIComponent(document.cookie.split('; ').find(x=>x.startsWith('suda-csrf-token='))?.slice(16)||'')}}).then(r=>r.json());const items=r.data.items.filter(item=>item.title?.startsWith(${JSON.stringify(title)}));return {count:items.length,qaTitles:r.data.items.filter(item=>item.title?.startsWith('QA_tools_')).map(item=>item.title),draft:items.every(item=>item.status==='draft')};})()`);
     const first = await getCount(); assert.equal(first.count, 4, JSON.stringify(first)); assert.equal(first.draft, true); checks++;
     await click('批量保存草稿'); assert.equal((await getCount()).count, 4); checks++;
+    assert.equal(await evaluate("[...document.querySelectorAll('.matrix-batch-media button')].filter(el=>el.innerText==='选择素材').length"), 2); checks++;
+    await click('为所选账号准备本条');
+    await wait(`document.querySelectorAll('.matrix-prepared-text').length===2 && [...document.querySelectorAll('.matrix-draft-helper textarea')].filter(el=>el.value===${JSON.stringify(title)}).length===2`, 'Batch row did not hand off separate title/body preparation to both selected accounts'); checks++;
+    await click('收起账号页面');
+    await wait("!document.querySelector('.matrix-main-integrated')", 'Account pages did not collapse before native layout checks');
     await navigate(`/publish/${suffix}`, `document.querySelector('.matrix-page-content')?.innerText.includes(${JSON.stringify(title)})`); checks++;
     const capture = await call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(`logs/qa-${suffix}.png`, Buffer.from(capture.data, 'base64'));
   }

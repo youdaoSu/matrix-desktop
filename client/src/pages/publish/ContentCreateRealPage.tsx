@@ -25,6 +25,7 @@ export default function ContentCreateRealPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [prepared, setPrepared] = useState<string[]>([]);
+  const [media, setMedia] = useState<MatrixMediaSelection>();
   const lock = useRef(false);
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +36,17 @@ export default function ContentCreateRealPage() {
     return () => { cancelled = true; };
   }, []);
   const chosenAccounts = () => accounts.filter(account => selected.includes(account.id));
+  const chooseMedia = async () => {
+    if (lock.current || mediaType === 'text') return;
+    if (!window.matrixDesktop?.chooseMedia) return toast.info('请使用最新版矩效桌面端选择本机素材');
+    lock.current = true; setBusy(true);
+    try {
+      const result = await window.matrixDesktop.chooseMedia(mediaType);
+      if (result.error) throw new Error(result.error);
+      if (result.selection) { setMedia(result.selection); setPrepared([]); }
+    } catch (e) { toast.error(errorMessage(e, '选择素材失败')); }
+    finally { lock.current = false; setBusy(false); }
+  };
   const validate = () => {
     if (!chosenAccounts().length) { toast.error('请先选择账号'); return false; }
     if (!title.trim() && !content.trim()) { toast.error('请先填写标题或正文'); return false; }
@@ -48,7 +60,7 @@ export default function ContentCreateRealPage() {
     const opened: string[] = [];
     try {
       for (const account of chosen) {
-        if (await workspace.openAccount(account, 'publish', false, [title.trim(), content.trim()].filter(Boolean).join('\n\n'))) opened.push(account.id);
+        if (await workspace.openAccount(account, 'publish', false, [title.trim(), content.trim()].filter(Boolean).join('\n\n'), { title: title.trim(), body: content.trim(), media })) opened.push(account.id);
       }
       setPrepared(opened);
       if (opened.length === chosen.length) toast.info('已准备账号页面和文案；还需上传素材并在页面点击发表，尚未发布');
@@ -70,11 +82,11 @@ export default function ContentCreateRealPage() {
       <section className="matrix-publish-common">
         <header><strong>通用配置</strong><span>发单条视频 / 图文</span></header>
         <div className="matrix-publish-form">
-          <div className="matrix-media-guidance"><Video size={26} /><strong>选择视频或图片</strong><p>素材在右侧账号页面中选择上传。每个账号独立上传，完成后仍需点击官方“发表”。</p><OfficialActionButton intent="publish">进入官方发布页</OfficialActionButton></div>
-          <div className="matrix-publish-field"><Label htmlFor="publish-media-type">内容类型</Label><Select value={mediaType} disabled={busy} onValueChange={v => setMediaType(v as typeof mediaType)}><SelectTrigger id="publish-media-type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="video">视频</SelectItem><SelectItem value="image">图文</SelectItem><SelectItem value="text">文本草稿</SelectItem></SelectContent></Select></div>
+          <div className="matrix-media-guidance"><Video size={26} /><strong>{media ? media.files.map(file => file.name).join('、') : '选择视频或图片'}</strong><p>{media ? `共 ${media.files.length} 个文件 · ${(media.files.reduce((sum, file) => sum + file.size, 0) / 1048576).toFixed(1)} MB。所选账号复用同一份素材，点击上传后才会传给平台。` : '先选择一次本机素材，再为所选账号准备页面。选择素材不会上传。'}</p><div className="flex justify-center gap-2"><Button disabled={busy || mediaType === 'text'} onClick={() => void chooseMedia()}>{media ? '更换本机素材' : '选择本机素材'}</Button><OfficialActionButton intent="publish">进入官方发布页</OfficialActionButton></div>{media && <small>本次素材选择仅保留到软件退出；本地草稿目前保存文案，不包含素材。</small>}</div>
+          <div className="matrix-publish-field"><Label htmlFor="publish-media-type">内容类型</Label><Select value={mediaType} disabled={busy} onValueChange={v => { setMediaType(v as typeof mediaType); setMedia(undefined); setPrepared([]); }}><SelectTrigger id="publish-media-type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="video">视频</SelectItem><SelectItem value="image">图文</SelectItem><SelectItem value="text">文本草稿</SelectItem></SelectContent></Select></div>
           <div className="matrix-publish-field"><Label htmlFor="publish-title">通用标题</Label><div><Input id="publish-title" disabled={busy} value={title} onChange={e => { setTitle(e.target.value); setPrepared([]); }} maxLength={500} placeholder="请输入作品标题" /><small>{title.length}/500 · 发表时以平台标题限制为准</small></div></div>
           <div className="matrix-publish-field"><Label htmlFor="publish-content">通用简介</Label><div><Textarea id="publish-content" disabled={busy} value={content} onChange={e => { setContent(e.target.value); setPrepared([]); }} maxLength={20000} placeholder="请输入正文、话题或作品简介" /><small>{content.length}/20000 · 上传后在账号页面核对</small></div></div>
-          <div className="matrix-publication-steps" aria-label="发表流程"><strong>发表流程</strong><ol><li>选择目标账号，准备账号页面</li><li>打开发表入口，上传素材并填写文案</li><li>核对账号、封面、文案和可见范围</li><li>在官方页面点击发表，查看平台结果</li></ol><p>保存草稿、准备页面、上传完成都不等于发表成功。当前不会自动点击发表，也没有平台成功回执。</p></div>
+          <div className="matrix-publication-steps" aria-label="发表流程"><strong>发表流程</strong><ol><li>选择素材、目标账号，准备账号页面</li><li>上传通用素材，分别填入标题和简介</li><li>核对账号、封面、文案和可见范围</li><li>点击“检查可提交表单”，核对后提交并查看记录</li></ol><p>保存草稿、准备页面、上传完成都不等于发表成功。官方页面提示成功与审核通过也不同，请核对作品状态。</p></div>
         </div>
       </section>
       <section className="matrix-publish-accounts">

@@ -6,6 +6,7 @@ const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const net = require('node:net');
 const { registerPersonalAssist } = require('./personal-assist.cjs');
+const { registerPageActions, createJournal } = require('./page-actions.cjs');
 
 let appUrl = process.env.MATRIX_APP_URL || 'http://localhost:8080';
 let serverProcess = null;
@@ -536,6 +537,28 @@ ipcMain.handle('matrix:create-database-backup', () => createDatabaseBackup());
 ipcMain.handle('matrix:open-data-folder', () => openDataFolder());
 ipcMain.handle('matrix:restore-database-backup', () => restoreDatabaseBackup());
 registerPersonalAssist({ ipcMain, dialog, webContents, session, getWindow: () => mainWindow, platforms: PLATFORM, inspectPlatformSession });
+registerPageActions({ ipcMain, dialog, webContents, session, getWindow: () => mainWindow, platforms: PLATFORM, inspectPlatformSession,
+  journal: createJournal(path.join(app.getPath('userData'), 'operation-records')),
+  authenticate: async (accessToken, accountId) => {
+    if (typeof accessToken !== 'string' || accessToken.length > 8192 || !accessToken) throw new Error('请先登录矩效');
+    const origin = new URL(appUrl).origin;
+    if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname)) throw new Error('桌面操作记录需要本机服务');
+    const [csrf] = await mainWindow.webContents.session.cookies.get({ url: origin, name: 'suda-csrf-token' });
+    if (!csrf?.value) throw new Error('本机服务会话尚未就绪，请刷新矩效页面');
+    const read = async route => {
+      const response = await fetch(origin + route, { headers: { Authorization: `Bearer ${accessToken}`, Cookie: `suda-csrf-token=${csrf.value}`, 'x-suda-csrf-token': decodeURIComponent(csrf.value) }, redirect: 'error', signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error('登录已失效或账号不可访问，请重新登录矩效');
+      const body = await response.json(); return body.data;
+    };
+    const user = await read('/api/auth/me');
+    if (!user?.id) throw new Error('无法确认当前登录用户');
+    if (accountId === undefined) return { userId: user.id };
+    if (typeof accountId !== 'string' || !/^[a-f0-9-]{36}$/i.test(accountId)) throw new Error('账号标识不正确');
+    const account = await read(`/api/platform/accounts/${accountId}/detail`);
+    if (!account?.id || account.id !== accountId) throw new Error('账号不可访问');
+    return { userId: user.id, account };
+  },
+});
 
 app.whenReady().then(async () => {
   try {

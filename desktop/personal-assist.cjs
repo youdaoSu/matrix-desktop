@@ -1,5 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs');
+const { randomUUID } = require('node:crypto');
 
 // Self-contained so the same check can run in the guest renderer and unit tests.
 function isEditableTarget(el) {
@@ -24,6 +25,35 @@ function selectUploadInput(inputs, mediaType, count) {
 
 function registerPersonalAssist({ ipcMain, dialog, webContents, session, getWindow, platforms, inspectPlatformSession, statFile = fs.statSync }) {
   const busy = new Set();
+  const selections = new Map();
+  let choosing = false;
+  const extensionsFor = type => type === 'video' ? ['mp4', 'mov', 'webm', 'mkv'] : ['jpg', 'jpeg', 'png', 'webp'];
+  const describeFiles = (files, type) => {
+    if (!files.length || files.length > (type === 'video' ? 1 : 9)) throw new Error('请选择一个视频或最多 9 张图片');
+    return files.map(file => {
+      const stat = statFile(file);
+      if (!extensionsFor(type).includes(path.extname(file).slice(1).toLowerCase()) || !stat.isFile()) throw new Error('素材格式不支持');
+      return { name: path.basename(file), size: stat.size, modified: stat.mtimeMs };
+    });
+  };
+  ipcMain.handle('matrix:choose-media', async (event, input) => {
+    let acquired = false;
+    try {
+      const window = getWindow();
+      if (!window || event.sender.id !== window.webContents.id) throw new Error('仅允许矩效主窗口选择素材');
+      if (!['video', 'image'].includes(input?.mediaType)) throw new Error('请选择视频或图片类型');
+      if (choosing) throw new Error('素材选择窗口已经打开');
+      choosing = true; acquired = true;
+      const selected = await dialog.showOpenDialog(window, { title: '选择供所选账号复用的素材（此时不会上传）', filters: [{ name: input.mediaType === 'video' ? '视频' : '图片', extensions: extensionsFor(input.mediaType) }], properties: input.mediaType === 'image' ? ['openFile', 'multiSelections'] : ['openFile'] });
+      if (selected.canceled || !selected.filePaths.length) return { cancelled: true };
+      const files = describeFiles(selected.filePaths, input.mediaType), id = randomUUID();
+      // Only the opaque handle reaches the renderer. Paths remain in main-process memory.
+      selections.set(id, { owner: event.sender.id, mediaType: input.mediaType, paths: selected.filePaths, files });
+      if (selections.size > 32) selections.delete(selections.keys().next().value);
+      return { selection: { id, mediaType: input.mediaType, files } };
+    } catch (error) { return { error: error.message }; }
+    finally { if (acquired) choosing = false; }
+  });
   ipcMain.handle('matrix:insert-draft', async (event, input) => {
     let contents;
     let acquired = false;
@@ -73,13 +103,15 @@ function registerPersonalAssist({ ipcMain, dialog, webContents, session, getWind
         if (!(await inspectPlatformSession(input.platform, contents.session, contents)).authenticated) throw new Error('请先完成当前账号的官方登录');
       };
       await validatePage();
-      const extensions = input.mediaType === 'video' ? ['mp4', 'mov', 'webm', 'mkv'] : ['jpg', 'jpeg', 'png', 'webp'];
-      const selected = await dialog.showOpenDialog(window, { title: '选择上传到当前账号的素材', filters: [{ name: input.mediaType === 'video' ? '视频' : '图片', extensions }], properties: input.mediaType === 'image' ? ['openFile', 'multiSelections'] : ['openFile'] });
+      let selected;
+      if (input.selectionId) {
+        const saved = selections.get(input.selectionId);
+        if (!saved || saved.owner !== event.sender.id || saved.mediaType !== input.mediaType) throw new Error('素材选择已失效，请返回发布编辑页重新选择');
+        if (JSON.stringify(describeFiles(saved.paths, saved.mediaType)) !== JSON.stringify(saved.files)) throw new Error('本地素材已修改，请重新选择后上传');
+        selected = { filePaths: saved.paths, canceled: false };
+      } else selected = await dialog.showOpenDialog(window, { title: '选择上传到当前账号的素材', filters: [{ name: input.mediaType === 'video' ? '视频' : '图片', extensions: extensionsFor(input.mediaType) }], properties: input.mediaType === 'image' ? ['openFile', 'multiSelections'] : ['openFile'] });
       if (selected.canceled || !selected.filePaths.length) return { cancelled: true };
-      if (selected.filePaths.length > 9) throw new Error('一次最多选择 9 张图片');
-      for (const file of selected.filePaths) {
-        if (!extensions.includes(path.extname(file).slice(1).toLowerCase()) || !statFile(file).isFile()) throw new Error('素材格式不支持');
-      }
+      describeFiles(selected.filePaths, input.mediaType);
       await validatePage();
       if (contents.debugger.isAttached()) throw new Error('当前页面正在被调试，请改用官方上传按钮');
       contents.debugger.attach('1.3'); attached = true;

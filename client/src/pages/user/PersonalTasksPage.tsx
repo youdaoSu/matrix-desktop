@@ -4,6 +4,7 @@ import { ClipboardList, Copy, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { axiosForBackend } from '@/api';
 import { platformLabels, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
+import { PageActionHistory } from '@/components/workspace/PageActionPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -101,6 +102,7 @@ export default function PersonalTasksPage() {
     await workspace.openAccount(account, task.kind === 'comment' ? 'comments' : task.kind === 'message' ? 'messages' : task.kind === 'publish' ? 'publish' : 'manage', false, task.content);
   };
   return <div className="space-y-5" data-matrix-personal-tasks>
+    <PageActionHistory />
     <Alert><ClipboardList className="h-4 w-4" /><AlertDescription>个人账号人工待办：批量整理文案、设置提醒、打开内嵌账号页面处理。不会后台自动发布、群发或自动评论。完成状态来自你的确认，不是平台回执；提醒仅在矩效运行且已登录时显示。</AlertDescription></Alert>
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">个人操作待办</h1><p className="text-sm text-muted-foreground">共 {total} 条 · 每页 20 条</p></div><div className="flex gap-2"><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw size={15} />刷新</Button><Button onClick={() => open('new')}><Plus size={15} />新建待办</Button></div></div>
     <div className="flex flex-wrap gap-3 text-sm"><select aria-label="待办状态筛选" className="rounded-md border bg-background p-2" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="all">全部状态</option>{Object.entries(taskStatusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><select aria-label="待办类型筛选" className="rounded-md border bg-background p-2" value={filterKind} onChange={e => { setFilterKind(e.target.value); setPage(1); }}><option value="all">全部类型</option>{Object.entries(taskKindLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><label className="flex items-center gap-2"><input type="checkbox" checked={dueOnly} onChange={e => { setDueOnly(e.target.checked); setPage(1); }} />只看已到提醒时间的待办</label></div>

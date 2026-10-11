@@ -142,6 +142,8 @@ try {
   await call('Page.enable');
   await call('Page.navigate', { url: `${base}/app/#/dashboard` });
   await waitUntil(() => evaluate("!!document.querySelector('.matrix-shell')"), 'Desktop shell did not render');
+  ensure(await evaluate("(async()=>{const r=await window.matrixDesktop.listPageActions(localStorage.getItem('matrix_token'));return Array.isArray(r.items)&&!r.error})()"), 'Page action journal authenticates against the isolated local backend');
+  ensure(await evaluate("(async()=>{const r=await window.matrixDesktop.listPageActions('invalid-test-token');return !!r.error&&!r.items})()"), 'Invalid Matrix login cannot read page action records');
   await waitUntil(() => evaluate("document.querySelectorAll('.matrix-home-platforms button').length === 4 && !document.querySelector('.matrix-dashboard')?.innerText.includes('加载中')"), 'Dashboard data did not finish loading');
   await screenshot('qa-workspace-dashboard.png');
   await click('.matrix-topbar nav a', '账号管理');

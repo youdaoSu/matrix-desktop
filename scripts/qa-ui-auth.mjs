@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 const debugPort = process.argv[2] || '9333';
 const base = process.argv[3] || 'http://127.0.0.1:3210';
 
@@ -68,9 +69,13 @@ await call('Runtime.enable');
 await call('Page.enable');
 await navigate('/login');
 await evaluate("localStorage.clear(); true");
+if (!(await evaluate("Math.abs(document.querySelector('.matrix-auth-compact main').getBoundingClientRect().width-400)<1"))) throw new Error('Login form geometry does not match the compact 400px layout');
+fs.mkdirSync('logs', { recursive: true });
+const loginCapture = await call('Page.captureScreenshot', { format: 'png' });
+fs.writeFileSync('logs/qa-auth-login.png', Buffer.from(loginCapture.data, 'base64'));
 
 await submit('demo', 'wrong-password');
-await waitFor("document.body.innerText.includes('登录失败') || document.body.innerText.includes('密码')", '错误密码未显示提示');
+await waitFor("!!document.querySelector('[role=alert]') && !document.querySelector('button[type=submit]').disabled", '错误密码未显示提示或请求未结束');
 
 await submit('demo', 'user123456');
 await waitFor("location.hash === '#/dashboard' && localStorage.getItem('matrix_token')", '普通用户界面登录失败');
@@ -85,4 +90,4 @@ if (!adminPage) throw new Error('管理员登录后未显示后台');
 
 socket.close();
 if (errors.length) throw new Error(`浏览器运行错误：${JSON.stringify(errors)}`);
-console.log(JSON.stringify({ passed: 4, checks: ['错误密码提示', '普通用户登录', '普通用户工作区', '管理员登录'] }, null, 2));
+console.log(JSON.stringify({ passed: 5, checks: ['登录页400px布局', '错误密码提示', '普通用户登录', '普通用户工作区', '管理员登录'] }, null, 2));

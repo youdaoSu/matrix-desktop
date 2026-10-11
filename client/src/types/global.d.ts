@@ -72,11 +72,52 @@ interface MatrixDesktopSession {
   label: string;
 }
 
+interface MatrixPageActionInput {
+  platform: MatrixDesktopPlatform;
+  sessionId: string;
+  webContentsId: number;
+  accountId: string;
+  accessToken: string;
+}
+interface MatrixPageActionPlan {
+  nonce: string;
+  nickname: string;
+  expiresAt: string;
+  pageUrl: string;
+  fields: { label: string; value: string }[];
+  materials?: { name: string; size: number; modified: number }[];
+  candidates: { index: number; label: string; context: string }[];
+}
+interface MatrixPageActionReceipt {
+  id: string;
+  accountId: string;
+  platform: MatrixDesktopPlatform;
+  nickname: string;
+  kind: 'publish' | 'comments' | 'messages';
+  pageUrl: string;
+  button: string;
+  summary: string;
+  status: 'submitting' | 'confirmed' | 'failed' | 'unknown';
+  message: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+interface MatrixMediaSelection {
+  id: string;
+  mediaType: 'video' | 'image';
+  files: { name: string; size: number; modified: number }[];
+}
+
 interface Window {
   matrixDesktop?: {
     isDesktop: true;
+    inspectPageAction(input: MatrixPageActionInput & { kind: 'publish' | 'comments' | 'messages' }): Promise<MatrixPageActionPlan | MatrixDesktopErrorResult>;
+    submitPageAction(input: MatrixPageActionInput & { nonce: string; index: number }): Promise<{ error?: string; cancelled?: boolean; mayHaveSubmitted?: boolean; receipt?: MatrixPageActionReceipt }>;
+    listPageActions(accessToken: string): Promise<{ error?: string; items?: MatrixPageActionReceipt[] }>;
     insertDraft(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number; text: string }): Promise<{ error?: string; inserted?: boolean; sent?: false }>;
-    uploadMedia(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number; mediaType: 'video' | 'image' }): Promise<{ error?: string; cancelled?: boolean; uploadStarted?: boolean; count?: number; filenames?: string[] }>;
+    uploadMedia(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number; mediaType: 'video' | 'image'; selectionId?: string }): Promise<{ error?: string; cancelled?: boolean; uploadStarted?: boolean; count?: number; filenames?: string[] }>;
+    chooseMedia(mediaType: 'video' | 'image'): Promise<{ error?: string; cancelled?: boolean; selection?: MatrixMediaSelection }>;
     openPlatformLogin(platform: MatrixDesktopPlatform): Promise<MatrixDesktopLoginResult | MatrixDesktopCancelledResult | MatrixDesktopErrorResult>;
     openAccountSession(sessionId: string, platform: MatrixDesktopPlatform): Promise<void>;
     preparePlatformLogin(platform: MatrixDesktopPlatform, sessionId?: string): Promise<MatrixDesktopSession | MatrixDesktopErrorResult>;

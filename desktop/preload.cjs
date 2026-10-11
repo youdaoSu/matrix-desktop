@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
   isDesktop: true,
   insertDraft: (input) => ipcRenderer.invoke('matrix:insert-draft', input),
   uploadMedia: (input) => ipcRenderer.invoke('matrix:upload-media', input),
+  chooseMedia: (mediaType) => ipcRenderer.invoke('matrix:choose-media', { mediaType }),
+  inspectPageAction: (input) => ipcRenderer.invoke('matrix:inspect-page-action', input),
+  submitPageAction: (input) => ipcRenderer.invoke('matrix:submit-page-action', input),
+  listPageActions: (accessToken) => ipcRenderer.invoke('matrix:list-page-actions', { accessToken }),
   openPlatformLogin: (platform) => ipcRenderer.invoke('matrix:platform-login', platform),
   openAccountSession: async (sessionId, platform) => {
     const result = await ipcRenderer.invoke('matrix:open-account-session', { sessionId, platform });

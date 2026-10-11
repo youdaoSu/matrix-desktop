@@ -79,7 +79,7 @@ export default function LoginPage() {
         <AuthSubmit loading={loading}><LockKeyhole className="mr-2 h-4 w-4" />{loading ? '正在安全登录…' : '登录工作台'}</AuthSubmit>
         <div className="flex items-center justify-center gap-2 border-t border-slate-100 pt-4 text-xs text-slate-500">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
-          登录信息通过加密连接传输
+          本机账号密码验证 · 平台登录会话独立
         </div>
       </form>
       <div className="mt-5 text-center">

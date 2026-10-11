@@ -67,7 +67,7 @@ export default function ContentRecordsPage() {
   const continueDraft = async (item: ContentPost) => {
     const account = accounts.find(a => a.id === item.accountId);
     if (!account) { toast.error('该草稿的账号已解绑或不在当前账号列表中'); return; }
-    await workspace.openAccount(account, 'publish', false, [item.title, item.content].filter(Boolean).join('\n\n'));
+    await workspace.openAccount(account, 'publish', false, [item.title, item.content].filter(Boolean).join('\n\n'), { title: item.title || '', body: item.content || '' });
   };
   return <div className="space-y-5" data-matrix-content-records>
     <Alert><FileText className="h-4 w-4" /><AlertDescription>本地草稿可编辑、搜索和继续处理。素材上传及最终发表在内嵌官方页面完成；保存草稿不代表发布，草稿监控不读取平台云端草稿。</AlertDescription></Alert>

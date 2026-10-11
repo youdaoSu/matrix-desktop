@@ -40,6 +40,7 @@ async function testIpc() {
   let dialogs = 0;
   let attached = false;
   let transfers = 0;
+  let modified = 1, cancelled = false;
   const isolated = {};
   const guest = { id: 22, hostWebContents: { id: 11 }, session: isolated, isDestroyed: () => false, getURL: () => url,
     debugger: { isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; }, sendCommand: async method => {
@@ -50,7 +51,7 @@ async function testIpc() {
       if (method === 'DOM.setFileInputFiles') transfers++;
       return {};
     } } };
-  registerPersonalAssist({ ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } }, dialog: { showOpenDialog: async () => { dialogs++; return { canceled: false, filePaths: [file] }; } }, webContents: { fromId: id => id === 22 ? guest : undefined }, session: { fromPartition: partition => partition.endsWith('a'.repeat(16)) ? isolated : {} }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { bilibili: { domain: 'bilibili.com' } }, inspectPlatformSession: async () => ({ authenticated }), statFile: () => ({ isFile: () => true }) });
+  registerPersonalAssist({ ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } }, dialog: { showOpenDialog: async () => { dialogs++; return { canceled: cancelled, filePaths: [file] }; } }, webContents: { fromId: id => id === 22 ? guest : undefined }, session: { fromPartition: partition => partition.endsWith('a'.repeat(16)) ? isolated : {} }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { bilibili: { domain: 'bilibili.com' } }, inspectPlatformSession: async () => ({ authenticated }), statFile: () => ({ isFile: () => true, size: 1024, mtimeMs: modified }) });
   const handler = handlers['matrix:upload-media'];
   const input = { platform: 'bilibili', sessionId: 'a'.repeat(16), webContentsId: 22, mediaType: 'video' };
   const invoke = changes => handler({ sender: { id: 11 } }, { ...input, ...changes });
@@ -80,5 +81,19 @@ async function testIpc() {
   authenticated = true; editable = false; assert.ok((await fill()).error); assert.equal(inserted, '');
   editable = true; const filled = await fill(); assert.equal(filled.inserted, true); assert.equal(filled.sent, false); assert.equal(inserted, 'test draft');
   console.log('9 mocked text insertion guard checks passed; no real platform input or messages sent');
+  const choose = (mediaType = 'video', sender = 11) => handlers['matrix:choose-media']({ sender: { id: sender } }, { mediaType });
+  assert.ok((await choose('video', 99)).error);
+  assert.ok((await choose('exe')).error);
+  cancelled = true; assert.equal((await choose()).cancelled, true); cancelled = false;
+  const media = (await choose()).selection;
+  assert.ok(media.id); assert.equal(media.files[0].name, 'video.mp4'); assert.ok(!JSON.stringify(media).includes('/test/'));
+  const dialogCount = dialogs, transferCount = transfers;
+  assert.equal((await invoke({ selectionId: media.id })).uploadStarted, true);
+  assert.equal((await invoke({ selectionId: media.id })).uploadStarted, true);
+  assert.equal(dialogs, dialogCount); assert.equal(transfers, transferCount + 2);
+  assert.ok((await invoke({ selectionId: 'missing' })).error);
+  assert.ok((await invoke({ selectionId: media.id, mediaType: 'image' })).error);
+  modified = 2; assert.ok((await invoke({ selectionId: media.id })).error); assert.equal(transfers, transferCount + 2);
+  console.log('9 reusable-media checks passed: cancellation, ownership, opaque handles, repeat use without repicking, type and changed-file checks; no real uploads');
 }
 testIpc().catch(error => { console.error(error); process.exitCode = 1; });
