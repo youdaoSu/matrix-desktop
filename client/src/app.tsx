@@ -34,7 +34,7 @@ import SettingsThemePage from './pages/user/SettingsThemePage';
 import SettingsDataPage from './pages/user/SettingsDataPage';
 
 import AdminLoginPage from './pages/admin/LoginPage';
-import AdminCodesPage from './pages/admin/CodesPage';
+import AdminCodesPage from './pages/admin/RealCodesPage';
 import AdminRealDashboardPage from './pages/admin/RealDashboardPage';
 import AdminRealLogsPage from './pages/admin/RealLogsPage';
 import AdminRealUsersPage from './pages/admin/RealUsersPage';

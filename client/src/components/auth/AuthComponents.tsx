@@ -127,6 +127,6 @@ export function AuthSubmit({ children, loading = false }: { children: ReactNode;
 }
 
 export function getAuthError(error: any, fallback: string) {
-  const message = error?.response?.data?.message;
+  const message = error?.response?.data?.error?.message || error?.response?.data?.message;
   return Array.isArray(message) ? message.join('；') : message || fallback;
 }

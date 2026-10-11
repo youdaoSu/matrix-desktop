@@ -36,7 +36,10 @@ async function navigate(route, ready) { await call('Page.navigate', { url: `${ba
 async function fill(selector, value) {
   await evaluate(`(() => {const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Input missing'); Object.getOwnPropertyDescriptor(el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
 }
-async function click(text) { await evaluate(`(() => { const el=[...document.querySelectorAll('.matrix-page-content button')].find(el => el.innerText === ${JSON.stringify(text)}); if(!el || el.disabled) throw new Error('Button unavailable'); el.click();})()`); }
+async function click(text) { await evaluate(`(() => { const el=[...document.querySelectorAll('button')].find(el => el.getClientRects().length && el.innerText === ${JSON.stringify(text)}); if(!el || el.disabled) throw new Error('Button unavailable'); el.click();})()`); }
+async function api(method, path, body, admin = false) {
+  return evaluate(`(async()=>{const token=localStorage.getItem(${JSON.stringify(admin ? 'matrix_admin_token' : 'matrix_token')})||sessionStorage.getItem('matrix_token');const csrf=decodeURIComponent(document.cookie.split('; ').find(x=>x.startsWith('suda-csrf-token='))?.slice(16)||'');const r=await fetch(${JSON.stringify(path)},{method:${JSON.stringify(method)},headers:{Authorization:'Bearer '+token,'x-suda-csrf-token':csrf,'content-type':'application/json'},${body === undefined ? '' : `body:${JSON.stringify(JSON.stringify(body))},`}});return {status:r.status,body:await r.json()};})()`);
+}
 const run = `QA_tools_${Date.now()}`;
 let checks = 0;
 try {
@@ -72,5 +75,34 @@ try {
     await navigate(`/publish/${suffix}`, `document.querySelector('.matrix-page-content')?.innerText.includes(${JSON.stringify(title)})`); checks++;
     const capture = await call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(`logs/qa-${suffix}.png`, Buffer.from(capture.data, 'base64'));
   }
-  console.log(JSON.stringify({ personalTools: checks, isolatedDatabase: true, platformActionsPerformed: false }));
+  await navigate('/admin/codes', "!!document.querySelector('[data-matrix-real-codes]') && !![...document.querySelectorAll('button')].find(el=>el.innerText==='批量生成' && !el.disabled)");
+  assert.equal(await evaluate("document.body.innerText.includes('张三') || document.body.innerText.includes('B20250901')"), false); checks++;
+  await click('批量生成'); await wait("!!document.querySelector('#code-count')", 'Code generation form missing');
+  await fill('#code-count', '2'); await fill('#code-prefix', 'UIQA'); await click('生成并保存正式授权码');
+  await wait("document.querySelectorAll('[role=dialog] code').length === 2", 'Real codes not generated');
+  const generated = await evaluate("[...document.querySelectorAll('[role=dialog] code')].map(el=>el.innerText)");
+  const stored = (await api('GET', '/api/admin/codes?page=1&pageSize=100', undefined, true)).body.data.items;
+  assert.ok(generated.every(code => stored.some(item => item.code === code && item.status === 'unused'))); checks++;
+  const newUser = `qa_activation_${Date.now()}`;
+  assert.equal((await api('POST', '/api/auth/register', { username: newUser, password: 'QaActivate123!', email: `${newUser}@local.test` })).status, 201);
+  const login = (await api('POST', '/api/auth/login', { username: newUser, password: 'QaActivate123!' })).body.data;
+  await evaluate(`localStorage.setItem('matrix_token',${JSON.stringify(login.token)});localStorage.setItem('matrix_user',${JSON.stringify(JSON.stringify(login.user))});`);
+  await navigate('/activate', "!!document.querySelector('#activation-code')");
+  await fill('#activation-code', 'NOT-A-REAL-CODE'); await click('验证并激活');
+  await wait("document.querySelector('[role=alert]')?.innerText.includes('激活码不存在')", 'Missing code cause was hidden'); checks++;
+  await fill('#activation-code', generated[0]); await click('验证并激活');
+  await wait("document.body.innerText.includes('激活成功')", 'Admin-generated code could not activate'); checks++;
+  const activated = (await api('GET', '/api/auth/me')).body.data;
+  assert.equal(activated.vipStatus, 'active');
+  const after = (await api('GET', '/api/admin/codes?page=1&pageSize=100', undefined, true)).body.data.items;
+  assert.equal(after.find(item => item.code === generated[0]).status, 'used'); checks++;
+  await call('Page.reload'); await wait("!!document.querySelector('#activation-code')", 'Activation reload failed');
+  await fill('#activation-code', generated[0]); await click('验证并激活');
+  await wait("document.querySelector('[role=alert]')?.innerText.includes('激活码已被使用')", 'Used code cause was hidden');
+  assert.equal((await api('GET', '/api/auth/me')).body.data.vipExpiresAt, activated.vipExpiresAt); checks++;
+  const unused = after.find(item => item.code === generated[1]);
+  await api('POST', `/api/admin/codes/${unused.id}/disable`, {}, true);
+  await fill('#activation-code', generated[1]); await click('验证并激活');
+  await wait("document.querySelector('[role=alert]')?.innerText.includes('激活码已作废')", 'Disabled code cause was hidden'); checks++;
+  console.log(JSON.stringify({ personalTools: checks, activationLifecycleChecks: 7, isolatedDatabase: true, platformActionsPerformed: false }));
 } finally { socket.close(); }
