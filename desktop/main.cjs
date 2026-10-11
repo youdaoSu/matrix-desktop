@@ -8,6 +8,7 @@ const net = require('node:net');
 const { registerPersonalAssist } = require('./personal-assist.cjs');
 const { registerPageActions, createJournal } = require('./page-actions.cjs');
 const { classifySession } = require('./platform-session.cjs');
+const { readPlatformProfile, bindingProfile } = require('./platform-profile.cjs');
 
 let appUrl = process.env.MATRIX_APP_URL || 'http://localhost:8080';
 let serverProcess = null;
@@ -251,39 +252,6 @@ function safeSessionId(value) {
   return typeof value === 'string' && /^[a-z0-9-]{16,80}$/i.test(value);
 }
 
-function platformProfileScript() {
-  return `(() => {
-    const text = (el) => el && (el.getAttribute('title') || el.getAttribute('alt') || el.textContent || '').trim();
-    const nicknameSelectors = [
-      '[class*=nickname]', '[class*=user-name]', '[class*=username]',
-      '[class*=account-name]', '[class*=userName]',
-      '[class*=user-info] [class*=name]', '[class*=userInfo] [class*=name]',
-      'header [class*=name]'
-    ];
-    const avatarSelectors = [
-      'img[class*=avatar]', '[class*=avatar] img', 'img[class*=user]', 'header img'
-    ];
-    let nickname = '';
-    for (const selector of nicknameSelectors) {
-      const el = [...document.querySelectorAll(selector)].find(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
-      const candidate = text(el);
-      if (candidate && candidate.length <= 80 && !/登录|扫码|创作服务平台|账号管理|手机号|验证码/i.test(candidate)) { nickname = candidate; break; }
-    }
-    let avatarUrl = '';
-    for (const selector of avatarSelectors) {
-      const src = document.querySelector(selector)?.src;
-      if (src && /^https?:/.test(src)) { avatarUrl = src; break; }
-    }
-    return {
-      nickname,
-      avatarUrl,
-      pageUrl: location.href,
-      title: document.title.trim(),
-      loginVisible: [...document.querySelectorAll('input')].some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && /密码|验证码|手机号|password|one-time-code/.test([el.type,el.placeholder,el.autocomplete].join(' ')))
-    };
-  })()`;
-}
-
 async function inspectPlatformSession(platform, isolatedSession, contents) {
   const config = PLATFORM[platform];
   const pageUrlBefore = contents && !contents.isDestroyed() ? contents.getURL() : config.home;
@@ -292,7 +260,7 @@ async function inspectPlatformSession(platform, isolatedSession, contents) {
   const cookies = await isolatedSession.cookies.get({ url: pageUrlBefore });
   let profile = { nickname: '', avatarUrl: '', pageUrl: config.home, title: '' };
   if (contents && !contents.isDestroyed()) {
-    profile = await contents.executeJavaScript(platformProfileScript(), true);
+    profile = await contents.executeJavaScript(`(${readPlatformProfile.toString()})(${JSON.stringify(platform)})`, true);
   }
   const pageUrl = profile.pageUrl || contents?.getURL() || config.home;
   if (contents && contents.getURL() !== pageUrlBefore) return { authenticated: false, hasSessionCookie: false, profile };
@@ -421,9 +389,10 @@ async function openPlatformWindow(platform, existingSessionId) {
       try {
         const state = await inspectPlatformSession(platform, isolatedSession, win.webContents);
         if (!state.authenticated) throw new Error(`尚未检测到${config.label}登录状态，请先完成扫码或账号登录`);
-        const profile = state.profile;
+        const profile = bindingProfile(state.profile, config.label);
+        if ('error' in profile) throw new Error(profile.error);
         completed = true;
-        resolve({ platform, sessionId, ...profile, nickname: profile.nickname || `${config.label}账号` });
+        resolve({ platform, sessionId, ...profile });
         win.close();
       } catch (error) {
         dialog.showErrorBox('无法读取账号信息', error instanceof Error ? error.message : String(error));
@@ -493,8 +462,9 @@ async function completeEmbeddedPlatformLogin(input) {
     if (!state.authenticated) {
       return { error: `尚未检测到${config.label}登录状态，请先在上方官方页面完成扫码或账号登录` };
     }
-    const profile = state.profile;
-    return { platform: input.platform, sessionId: input.sessionId, ...profile, nickname: profile.nickname || `${config.label}账号` };
+    const profile = bindingProfile(state.profile, config.label);
+    if ('error' in profile) return profile;
+    return { platform: input.platform, sessionId: input.sessionId, ...profile };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

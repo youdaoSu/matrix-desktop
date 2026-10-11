@@ -85,7 +85,8 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
       toast.info('该账号通过 API 授权绑定，请在官方页面另行登录后绑定本机工作区');
       return false;
     }
-    return prepare(account.platform, account.connectorSessionId, account.nickname || platformLabels[account.platform], reconnect, intent, account.id, draftText, preparation);
+    const missingNickname = !account.nickname || account.nickname === `${platformLabels[account.platform]}账号` || account.nickname === '未命名账号';
+    return prepare(account.platform, account.connectorSessionId, account.nickname || platformLabels[account.platform], reconnect || missingNickname, intent, account.id, draftText, preparation);
   };
   const close = (id: string) => {
     const remaining = tabs.filter(tab => tab.id !== id);
@@ -208,6 +209,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   };
   const [zoom, setZoom] = useState(100);
   const [detectedAccount, setDetectedAccount] = useState('');
+  const [bindingStatus, setBindingStatus] = useState('');
   const [domReady, setDomReady] = useState(false);
   const bindingRunner = useRef<ReturnType<typeof createAutoBinding<PlatformAccount>> | null>(null);
   const workspaceRef = useRef(workspace);
@@ -230,6 +232,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
         toast.success(`已自动绑定 ${result.nickname}`);
       },
       failed: message => setError(message),
+      waiting: setBindingStatus,
       saving: setBusy,
     });
     bindingRunner.current = runner;
@@ -293,6 +296,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
     <div className="matrix-browser-toolbar"><button title="后退" aria-label="后退" disabled={!back} onClick={() => operate(() => view.current.goBack())}><ArrowLeft size={16} /></button><button title="前进" aria-label="前进" disabled={!forward} onClick={() => operate(() => view.current.goForward())}><ArrowRight size={16} /></button><button title="刷新官方页面" aria-label="刷新官方页面" onClick={() => operate(() => view.current.reload())}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button><button title="平台首页" aria-label="平台首页" onClick={() => operate(() => view.current.loadURL(tab.url))}><Home size={16} /></button><div className="matrix-address"><Globe2 size={14} /><span>{url}</span></div><div className="matrix-zoom-controls"><button aria-label="缩小官方页面" onClick={() => changeZoom(zoom - 10)}>−</button><button aria-label="重置页面缩放" onClick={() => changeZoom(100)}>{zoom}%</button><button aria-label="放大官方页面" onClick={() => changeZoom(zoom + 10)}>+</button></div><button className={helperOpen ? 'is-active' : ''} onClick={() => setHelperOpen(!helperOpen)}><Copy size={15} />文案辅助</button></div>
     <div className="matrix-intent-bar"><div>{(Object.keys(intentInfo) as Intent[]).map(intent => <button key={intent} className={tab.intent === intent ? 'is-active' : ''} onClick={() => workspace.update(tab.id, { intent })}>{intentInfo[intent].label}</button>)}</div><span>{tab.binding ? '请先完成官方登录' : `${platformLabels[tab.platform]} · ${tab.nickname}`}</span></div>
     {tab.binding ? <div className={"matrix-binding-banner " + (detectedAccount ? "is-ready" : "")}><div><strong>{detectedAccount ? `已检测到登录：${detectedAccount}` : tab.platform === "xiaohongshu" ? "小红书官方登录" : `用${tab.platform === "wechat" ? "微信" : platformLabels[tab.platform]} APP 扫描下方官方二维码`}</strong><small>{detectedAccount ? "正在自动保存账号，登录会话仅保存于本机。" : tab.platform === "xiaohongshu" ? "在下方官方页面扫码或使用其提供的登录方式；登录成功后会自动识别并绑定，无需再次点击确认。" : "手机确认登录后自动识别并绑定；二维码过期请刷新。此处是官方网页登录，不是开放平台 API 授权。"}</small></div><div><Button variant="outline" size="sm" disabled={busy} onClick={() => operate(() => view.current.reload())}><RefreshCw size={14} />刷新登录页</Button><Button size="sm" disabled={loading || busy} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? "正在绑定" : detectedAccount ? "重试绑定该账号" : "我已登录，完成绑定"}</Button><button className="matrix-cancel-binding" onClick={() => workspace.close(tab.id)}>取消绑定</button></div></div> : <div className="matrix-browser-hint"><span>{operation.instruction}</span><Button variant="outline" size="sm" disabled={loading || busy} onClick={() => void openOperation()}>打开{intentInfo[tab.intent].label}页面</Button>{tab.intent !== 'manage' && <Button variant="outline" size="sm" onClick={() => setHelperOpen(true)}>文案与提交</Button>}</div>}
+    {tab.binding && bindingStatus && !error && <div role="status" className="matrix-browser-hint">{bindingStatus}</div>}
     {error && <div role="alert" className="matrix-browser-error">{error}<button onClick={() => operate(() => view.current.reload())}>重试</button></div>}
     <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.initialUrl || tab.url, partition: tab.partition, className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
       {loading && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" onClick={() => operate(() => view.current.reload())}>重新加载</Button>}</div>}

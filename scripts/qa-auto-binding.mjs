@@ -15,7 +15,7 @@ async function connect(url) {
   socket.addEventListener('message', async event => {
     const result = JSON.parse(event.data), item = pending.get(result.id);
     if (item) { clearTimeout(item.timer); pending.delete(result.id); result.error ? item.reject(Error(result.error.message)) : item.resolve(result.result); }
-    if (result.method === 'Fetch.requestPaused') await call('Fetch.fulfillRequest', { requestId: result.params.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }], body: Buffer.from('<meta charset="utf-8"><header><span class="user-name">QA_AUTO_XHS</span></header><main>本地测试登录后页面，不是平台真实登录</main>').toString('base64') });
+    if (result.method === 'Fetch.requestPaused') await call('Fetch.fulfillRequest', { requestId: result.params.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }], body: Buffer.from('<meta charset="utf-8"><header><div class="user"><span class="name"></span></div></header><main>本地测试登录后页面，不是平台真实登录</main>').toString('base64') });
   });
   return { call, async evaluate(expression) { const r = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text); return r.result.value; } };
 }
@@ -35,11 +35,40 @@ try {
   await view.call('Network.enable');
   await view.call('Network.setCookie', { name: 'access-token-creator.xiaohongshu.com', value: 'fixture-only-not-a-real-token', domain: '.xiaohongshu.com', path: '/', secure: true });
   await view.call('Page.navigate', { url: 'https://creator.xiaohongshu.com/home' });
+  await wait(() => main.evaluate("document.querySelector('.matrix-official-deck').innerText.includes('正在读取账号昵称')"), 'Missing nickname must show a waiting message, not bind a placeholder');
+  await new Promise(r => setTimeout(r, 2500));
+  assert.equal(await main.evaluate("!![...document.querySelectorAll('.matrix-official-browser')].find(b=>!b.hidden)?.querySelector('.matrix-binding-banner')"), true);
+  await view.evaluate("document.querySelector('.user .name').textContent='QA_AUTO_XHS';true");
   await wait(() => main.evaluate("document.querySelector('.matrix-account-tab.is-active')?.innerText.includes('QA_AUTO_XHS') && ![...document.querySelectorAll('.matrix-official-browser')].find(b=>!b.hidden)?.querySelector('.matrix-binding-banner')"), 'Recognized creator session was not automatically bound');
   const count = () => main.evaluate("(async()=>{const token=localStorage.getItem('matrix_token')||sessionStorage.getItem('matrix_token');const csrf=decodeURIComponent(document.cookie.split('; ').find(v=>v.startsWith('suda-csrf-token='))?.slice(16)||'');const r=await fetch('/api/platform/accounts?pageSize=100',{headers:{Authorization:'Bearer '+token,'x-suda-csrf-token':csrf}}).then(r=>r.json());return r.data.items.filter(a=>a.nickname==='QA_AUTO_XHS').length})()");
   assert.equal(await count(), 1);
   await new Promise(r => setTimeout(r, 4500));
   assert.equal(await count(), 1);
   assert.equal(await main.evaluate("[...document.querySelectorAll('.matrix-rail-account')].filter(b=>b.innerText.includes('QA_AUTO_XHS')).length"), 1);
-  console.log(JSON.stringify({ automaticBindingIntegrationChecks: 4, page: 'local synthetic fixture', realPlatformLoginClaimed: false, realUserDataTouched: false }));
+  const api = (method, url, body) => main.evaluate(`(async()=>{const token=localStorage.getItem('matrix_token')||sessionStorage.getItem('matrix_token');const csrf=decodeURIComponent(document.cookie.split('; ').find(v=>v.startsWith('suda-csrf-token='))?.slice(16)||'');const response=await fetch(${JSON.stringify(url)},{method:${JSON.stringify(method)},headers:{Authorization:'Bearer '+token,'x-suda-csrf-token':csrf,'Content-Type':'application/json'},body:${body ? JSON.stringify(JSON.stringify(body)) : 'undefined'}});const r=await response.json();if(!response.ok)throw Error(JSON.stringify(r));return r.data})()`);
+  const before = (await api('GET', '/api/platform/accounts?pageSize=100')).items.find(a => a.nickname === 'QA_AUTO_XHS');
+  const group = await api('POST', '/api/platform/groups', { groupName: 'QA自动识别昵称分组' });
+  await api('POST', '/api/platform/groups/move-accounts', { accountIds: [before.id], groupId: group.id });
+  await api('PUT', '/api/platform/accounts/' + before.id, { accountRemark: 'QA保留我的备注' });
+  await api('POST', '/api/platform/accounts/desktop', { platform: before.platform, connectorSessionId: before.connectorSessionId, nickname: '小红书账号' });
+  await main.evaluate("document.querySelector('.matrix-account-tab.is-active .matrix-tab-close').click();window.dispatchEvent(new Event('matrix:accounts-updated'));true");
+  await wait(() => main.evaluate("[...document.querySelectorAll('.matrix-rail-account')].some(b=>b.innerText.includes('小红书账号'))"), 'Legacy placeholder account not shown');
+  const previousIds = new Set((await targets()).map(t => t.id));
+  await main.evaluate("[...document.querySelectorAll('.matrix-rail-account')].find(b=>b.innerText.includes('小红书账号')).click();true");
+  let replacement;
+  await wait(async () => { replacement = (await targets()).find(t => t.type === 'webview' && !previousIds.has(t.id)); return !!replacement; }, 'Legacy account guest not attached');
+  const reopened = await connect(replacement.webSocketDebuggerUrl);
+  await reopened.call('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+  await reopened.call('Page.navigate', { url: 'https://creator.xiaohongshu.com/home' });
+  await wait(() => reopened.evaluate("!!document.querySelector('.user .name')"), 'Local profile fixture not ready');
+  await reopened.evaluate("document.querySelector('.user .name').textContent='QA昵称已补全';true");
+  await wait(() => main.evaluate("[...document.querySelectorAll('.matrix-rail-account')].some(b=>b.innerText.includes('QA昵称已补全'))"), 'Legacy nickname not repaired automatically');
+  const after = (await api('GET', '/api/platform/accounts?pageSize=100')).items.filter(a => a.connectorSessionId === before.connectorSessionId);
+  assert.equal(after.length, 1);
+  assert.equal(after[0].id, before.id);
+  assert.equal((await api('GET', '/api/platform/accounts/' + before.id + '/detail')).groupId, group.id);
+  assert.equal(after[0].groupName, 'QA自动识别昵称分组');
+  assert.equal(after[0].accountRemark, 'QA保留我的备注');
+  assert.equal(after[0].nickname, 'QA昵称已补全');
+  console.log(JSON.stringify({ automaticBindingIntegrationChecks: 12, page: 'local synthetic fixture', realPlatformLoginClaimed: false, realUserDataTouched: false }));
 } finally { for (const socket of connections) socket.close(); }

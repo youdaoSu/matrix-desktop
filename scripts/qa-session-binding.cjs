@@ -38,5 +38,12 @@ for (const patch of [{ value: '' }, { expirationDate: 1 }]) { assert.equal(class
   runner = createAutoBinding(options); current = false; await runner.run(); assert.equal(saves, failedCount + 1); checks++;
   current = true; gate = new Promise(resolve => { release = resolve; }); const changing = runner.run(); current = false; release(); await changing; gate = null; assert.equal(saves, failedCount + 1); checks++;
   current = true; runner = createAutoBinding(options); runner.dispose(); await runner.run(); assert.equal(saves, failedCount + 1); checks++;
+  let waiting = '', profileReady = false;
+  const profileRunner = createAutoBinding({ ...options, waiting: message => { waiting = message; }, detect: async () => profileReady ? login : { error: '正在读取昵称', pendingProfile: true } });
+  const beforeProfile = saves;
+  await profileRunner.run(); assert.equal(saves, beforeProfile); assert.equal(waiting, '正在读取昵称'); checks++;
+  profileReady = true; await profileRunner.run(); assert.equal(saves, beforeProfile + 1); assert.equal(waiting, ''); checks++;
+  const emptyName = createAutoBinding({ ...options, detect: async () => ({ ...login, nickname: '  ' }) });
+  await emptyName.run(); assert.equal(saves, beforeProfile + 1); checks++;
   console.log(JSON.stringify({ sessionAndAutoBindingChecks: checks, realAccountsModified: false }));
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -7,6 +7,7 @@ export function createAutoBinding<T>(options: {
   saved(login: MatrixDesktopLoginResult, account: T): void;
   failed(message: string): void;
   saving(value: boolean): void;
+  waiting?(message: string): void;
 }) {
   let inFlight = false, completed = false, paused = false, disposed = false;
   return {
@@ -18,7 +19,13 @@ export function createAutoBinding<T>(options: {
       try {
         const result = await options.detect();
         if (disposed || !options.isCurrent()) return;
-        if ('error' in result) { if (!automatic) options.failed(result.error); return; }
+        if ('error' in result) {
+          options.waiting?.(result.pendingProfile ? result.error : '');
+          if (!automatic) options.failed(result.error);
+          return;
+        }
+        if (!result.nickname?.trim()) { options.waiting?.('已登录，正在读取账号昵称…'); return; }
+        options.waiting?.('');
         options.detected(result);
         saving = true; options.saving(true);
         const account = await options.persist(result);

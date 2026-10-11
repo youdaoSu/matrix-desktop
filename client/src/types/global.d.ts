@@ -62,6 +62,7 @@ interface MatrixDesktopCancelledResult {
 
 interface MatrixDesktopErrorResult {
   error: string;
+  pendingProfile?: boolean;
 }
 
 interface MatrixDesktopSession {
