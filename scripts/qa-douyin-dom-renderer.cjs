@@ -1,0 +1,46 @@
+const {app,BrowserWindow}=require('electron');
+const assert=require('node:assert/strict');
+const {script}=require('../desktop/douyin-interaction.cjs');
+const {pageAction}=require('../desktop/page-actions.cjs');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+app.setPath('userData',fs.mkdtempSync(path.join(os.tmpdir(),'matrix-douyin-dom-qa-')));
+app.disableHardwareAcceleration();
+app.whenReady().then(async()=>{
+  const win=new BrowserWindow({show:false,width:1000,height:800,webPreferences:{sandbox:true,contextIsolation:true}});
+  let html='',checks=0;
+  await win.webContents.session.protocol.handle('https',()=>new Response('<meta charset=utf-8>'+html,{headers:{'content-type':'text/html;charset=utf-8'}}));
+  const fixture=async(content,url='https://www.douyin.com/video/123456')=>{html=content;await win.loadURL(url);};
+  const run=(command,input={})=>win.webContents.executeJavaScriptInIsolatedWorld(1004,[{code:script(command,input)}]);
+  const js=code=>win.webContents.executeJavaScript(code);
+  const values={author:'QA recipient',authorProfileUrl:'https://www.douyin.com/user/MS4wQA',comment:'求资料',message:'测试消息',reply:'发了',videoUrl:'https://www.douyin.com/video/123456',baseline:0};
+  const row='<div data-e2e=comment-item><a href="/user/MS4wQA">QA recipient</a><div class=FduGc_lz><span class=Sh1Da424>求资料</span></div><div class=VAQA49VP>2分钟前·上海</div><span onclick="this.parentElement.insertAdjacentHTML(\'beforeend\',\'<div class=comment-input-inner-container><div contenteditable=true></div><div class=commentInput-right-ct><span class=wchsYBpK onclick=window.sentReply=true>发送图标</span></div></div>\')">回复</span></div>';
+  try{
+    await fixture('<div data-e2e=comment-list>'+row+'<p>暂时没有更多评论</p></div>');
+    let result=await run('comments');assert.equal(result.records.length,1);assert.equal(result.records[0].displayTime,'2分钟前·上海');assert.equal(result.ended,true);checks+=3;
+    await run('open-reply',values);assert.equal((await run('fill-reply',values)).filled,true);checks++;
+    await run('send-reply',values);assert.equal(await js('!!window.sentReply'),true);checks++;
+    await js("document.querySelector('[contenteditable]').innerText='changed'");assert.ok((await run('send-reply',values)).error);checks++;
+    await js("document.querySelector('.comment-input-inner-container').remove();document.querySelector('[data-e2e=comment-item]').insertAdjacentHTML('beforeend','<div data-e2e=comment-item><a href=/user/MS4wOTHER>Another user</a><div class=FduGc_lz><span class=Sh1Da424>发了</span></div></div>')");
+    assert.equal((await run('reply-result',{...values,ownNickname:'QA sender'})).confirmed,false);checks++;
+    await js("document.querySelector('[data-e2e=comment-item] [data-e2e=comment-item] a').innerText='QA sender'");
+    assert.equal((await run('reply-result',{...values,ownNickname:'QA sender'})).confirmed,true);checks++;
+    await fixture('<div data-e2e=comment-list>'+row+row+'</div>');assert.ok((await run('open-reply',values)).error);checks++;
+    await fixture('<input placeholder="请输入验证码"><div data-e2e=comment-list>'+row+'</div>');assert.equal((await run('verification')).required,true);assert.ok((await run('open-reply',values)).error);checks+=2;
+    await fixture('<h1>QA source</h1><ul data-e2e=scroll-list><li><a href="/video/123456">Own work</a></li></ul><a href="/video/987654">Unrelated SEO link</a>','https://www.douyin.com/user/self');assert.deepEqual((await run('works')).urls,['https://www.douyin.com/video/123456']);checks++;
+    await fixture('<h1>QA recipient</h1><button data-e2e=user-info-follow-btn onclick="this.innerText=this.innerText===\'回关\'?\'相互关注\':\'回关\'">回关</button>','https://www.douyin.com/user/MS4wQA');
+    assert.equal((await run('profile',values)).following,false);await run('follow',values);assert.equal((await run('profile',values)).following,true);await run('unfollow',values);assert.equal((await run('profile',values)).following,false);checks+=3;
+    assert.ok((await run('follow',{...values,author:'wrong'})).error);checks++;
+    const chat='<h1>QA recipient</h1><div class=StackLayoutStackChatHeadertitle>QA recipient</div><div class=messageMessageListlist></div><div data-e2e=msg-input><div class=messageEditorinputArea contenteditable=true></div><svg class=e2e-send-msg-btn width=40 height=40 onclick="document.querySelector(\'.messageMessageListlist\').innerHTML+=\'<div class=messageMessageBoxmessageBox><div class=MessageBoxContentisFromMe><span class=TextMessageTextpureText>测试消息</span></div></div>\';document.querySelector(\'.messageEditorinputArea\').innerText=\'\'"><rect width=40 height=40 /></svg></div>';
+    await fixture(chat,'https://www.douyin.com/user/MS4wQA');assert.equal((await run('fill-message',values)).filled,true);await run('send-message',values);assert.equal((await run('message-result',values)).status,'confirmed');checks+=2;
+    await js("document.querySelector('.messageMessageBoxmessageBox').insertAdjacentHTML('beforeend','<span class=sendError>失败</span>')");assert.equal((await run('message-result',values)).status,'failed');checks++;
+    assert.equal((await run('message-result',{...values,baseline:1})).status,'unknown');checks++;
+    await js("document.querySelector('.StackLayoutStackChatHeadertitle').innerText='Other recipient'");assert.ok((await run('fill-message',values)).error);checks++;
+    await fixture('<div class=comment-input-inner-container><div contenteditable=true>求资料</div><div class=commentInput-right-ct><span class=wchsYBpK onclick="window.iconClicked=true">↑</span></div></div>');
+    const generic=(command,input)=>win.webContents.executeJavaScriptInIsolatedWorld(1001,[{code:`(${pageAction.toString()})(${JSON.stringify(command)},${JSON.stringify(input)})`}]);
+    result=await generic('inspect',{nonce:'fixture',kind:'comments',ownNickname:'QA recipient'});assert.equal(result.candidates.length,1);assert.equal(result.candidates[0].label,'发送评论');checks+=2;
+    await generic('submit',{nonce:'fixture',index:0});assert.equal(await js('!!window.iconClicked'),true);checks++;
+    await fixture('<div class=comment-input-inner-container><div contenteditable=true></div><div class=commentInput-right-ct><span class=wchsYBpK>↑</span></div></div>');assert.equal((await generic('inspect',{nonce:'empty',kind:'comments'})).candidates.length,0);checks++;
+    await fixture(chat,'https://example.com/user/MS4wQA');assert.ok((await run('fill-message',values)).error);checks++;
+    console.log(JSON.stringify({douyinRealElectronDomChecks:checks,syntheticFixturesOnly:true,externalNetworkOrPlatformWrites:false}));app.exit(0);
+  }catch(error){console.error({checks},error);app.exit(1);}
+});

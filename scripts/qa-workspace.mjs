@@ -126,7 +126,9 @@ try {
     });
   }
   async function evaluate(expression) {
-    const result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    let result;
+    try { result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); }
+    catch (error) { throw new Error(`${error.message}; check: ${expression.slice(0, 220)}`); }
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
     return result.result?.value;
   }
@@ -179,6 +181,9 @@ try {
   const guestIds = await evaluate("[...document.querySelectorAll('webview')].map(view=>view.getWebContentsId()).sort((a,b)=>a-b)");
   for (let index = 0; index < platforms.length; index++) {
     const [platform, label] = platforms[index];
+    // Hidden webviews may defer executeJavaScript until selected on Windows.
+    // Inspect each real page as a user does, rather than await a hidden guest indefinitely.
+    await evaluate(`document.querySelectorAll('.matrix-account-tab > button[role="tab"]')[${index}].click();true`);
     await waitUntil(() => evaluate(`(async () => { const view=document.querySelectorAll('webview')[${index}]; try { return await view.executeJavaScript("document.readyState !== 'loading' && document.body.innerText.trim().length > 60"); } catch { return false; } })()`), `${label} official page did not render readable content`, 45000);
     const loaded = await evaluate(`document.querySelectorAll('webview')[${index}].executeJavaScript("({url:location.href,title:document.title,characters:document.body.innerText.trim().length})")`);
     report.officialPages[index].loaded = loaded;

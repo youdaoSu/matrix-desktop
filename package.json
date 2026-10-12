@@ -1,6 +1,6 @@
 {
   "name": "fullstack-nestjs-template",
-  "version": "2.10.0-rc.12",
+  "version": "2.10.0-rc.13",
   "main": "desktop/main.cjs",
   "private": true,
   "flags": {
@@ -30,6 +30,7 @@
     "qa:profile": "node scripts/qa-profile.cjs",
     "qa:publish": "node scripts/qa-publish-batch.cjs && node scripts/qa-page-actions-runner.cjs",
     "qa:actions": "node scripts/qa-page-actions.cjs && node scripts/qa-page-actions-runner.cjs",
+    "qa:douyin": "node scripts/qa-douyin-workflow.cjs && node scripts/qa-douyin-dom-runner.cjs && node scripts/qa-douyin-monitor.cjs",
     "package:desktop": "electron-builder --win nsis",
     "start": "NODE_ENV=production node main.js",
     "eslint": "eslint . --quiet",

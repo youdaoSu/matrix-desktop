@@ -9,16 +9,17 @@ function pageAction(command, input) {
     const r = el.getBoundingClientRect(), s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
   };
-  const text = el => (el.innerText || el.getAttribute('aria-label') || el.value || '').trim();
+  const officialIcon = el => location.hostname === 'www.douyin.com' && (/^\/video\/\d+$/.test(location.pathname) && el.matches('.comment-input-inner-container .commentInput-right-ct span.wchsYBpK') ? '发送评论' : el.matches('[data-e2e="msg-input"] .e2e-send-msg-btn') ? '发送消息' : '');
+  const text = el => officialIcon(el) || (el.innerText || el.getAttribute('aria-label') || el.value || '').replaceAll(String.fromCharCode(8203), '').trim();
   const fields = () => [...document.querySelectorAll('input,textarea,[contenteditable="true"]')].filter(el => {
     const label = [el.type, el.name, el.id, el.autocomplete, el.placeholder, el.getAttribute('aria-label')].join(' ');
     return visible(el) && !el.readOnly && !/password|one-time-code|username|email|tel|search|hidden|file|checkbox|radio|token|secret|密码|验证码|手机号|邮箱|搜索|身份证|密钥/i.test(label) &&
       (el.tagName === 'TEXTAREA' || el.isContentEditable || (el.tagName === 'INPUT' && ['text', ''].includes(el.type)));
   }).slice(0, 30).map(el => ({ label: (el.getAttribute('aria-label') || el.placeholder || '表单内容').slice(0, 100), value: (el.value ?? el.innerText ?? '').slice(0, 20000) }));
-  const labels = { publish: /^(发布|发表|投稿|立即发布|确认发布|发布笔记|发布视频|发表视频|立即投稿)$/, comments: /^(回复|发送|发布评论|发表评论|发送回复)$/, messages: /^(发送|发送消息)$/, withdraw: /^(下架|确认下架|取消发布|设为私密|转为私密)$/ };
+  const labels = { publish: /^(发布|发表|投稿|立即发布|确认发布|发布笔记|发布视频|发表视频|立即投稿)$/, comments: /^(回复|发送|发送评论|发布评论|发表评论|发送回复)$/, messages: /^(发送|发送消息)$/, withdraw: /^(下架|确认下架|取消发布|设为私密|转为私密)$/ };
   const materials = () => [...document.querySelectorAll('input[type="file"]')].flatMap(el => [...(el.files || [])].map(file => ({ name: file.name, size: file.size, modified: file.lastModified })));
   const mediaState = () => [...document.querySelectorAll('video,audio')].map(el => el.currentSrc || el.src || '');
-  const contextText = el => (el.closest('form,[role="dialog"],article')?.innerText || el.parentElement?.innerText || '').trim().slice(0, 2000);
+  const contextText = el => (el.closest('[data-e2e="comment-item"],form,[role="dialog"],article')?.innerText || (officialIcon(el) === '发送消息' ? document.querySelector('.StackLayoutStackChatHeadertitle')?.innerText : '') || el.closest('.comment-input-inner-container')?.innerText || el.parentElement?.innerText || '').trim().slice(0, 2000);
   const choices = () => [...document.querySelectorAll('select,input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[aria-selected="true"],h1,h2,h3')].filter(visible).map(el => ({ text: text(el).slice(0, 200), value: el.tagName === 'SELECT' ? [...el.selectedOptions].map(option => option.textContent).join(',') : el.checked ?? el.getAttribute('aria-checked') ?? '' }));
   const signals = () => [...document.querySelectorAll('[role="alert"],[role="status"],[class*="toast"],[class*="message-notice"],[class*="Message-notice"],[class*="message-success"],[class*="message-error"],[class*="publish-success"],[class*="publishSuccess"]')].filter(visible).map(text).filter(s => s && s.length < 400);
   const classify = (kind, message) => {
@@ -33,14 +34,15 @@ function pageAction(command, input) {
   const state = window.__matrixPageAction;
   if (command === 'inspect') {
     if (!labels[input.kind]) throw new Error('不支持的操作类型');
-    const buttons = [...document.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(el => visible(el) && labels[input.kind].test(text(el))).slice(0, 20);
+    const selector = 'button,[role="button"],input[type="submit"]' + (input.kind === 'comments' ? ',.comment-input-inner-container .commentInput-right-ct span.wchsYBpK' : input.kind === 'messages' ? ',[data-e2e="msg-input"] .e2e-send-msg-btn' : '');
+    const buttons = [...document.querySelectorAll(selector)].filter(el => visible(el) && labels[input.kind].test(text(el)) && (!officialIcon(el) || (officialIcon(el) === '发送评论' ? text(el.closest('.comment-input-inner-container')?.querySelector('[contenteditable="true"]') || document.createElement('div')) : text(document.querySelector('[data-e2e="msg-input"] .messageEditorinputArea') || document.createElement('div'))))).slice(0, 20);
     if (input.kind === 'withdraw') {
       if (!input.expectedTitle?.trim()) throw new Error('缺少作品标题，请在官方页面自行核对操作');
       if (buttons.length !== 1 || !contextText(buttons[0]).includes(input.expectedTitle.trim())) throw new Error('未唯一定位到该作品的下架控件，请打开作品详情或对应操作面板后重试；不会猜测或删除作品');
     }
     const values = fields();
     const files = materials();
-    window.__matrixPageAction = { nonce: input.nonce, kind: input.kind, url: location.href, buttons, labels: buttons.map(text), contexts: buttons.map(contextText), choices: choices(), values, files, media: mediaState(), used: false };
+    window.__matrixPageAction = { nonce: input.nonce, kind: input.kind, ownNickname: input.ownNickname, url: location.href, buttons, labels: buttons.map(text), contexts: buttons.map(contextText), choices: choices(), values, files, media: mediaState(), used: false };
     return { pageUrl: location.protocol === 'https:' ? location.origin + location.pathname : location.protocol + '//test-fixture', fields: values, materials: files, candidates: buttons.map((el, index) => ({ index, label: text(el), context: (el.closest('form,[role="dialog"],article')?.innerText || el.parentElement?.innerText || '').trim().slice(0, 200) })) };
   }
   if (!state || state.nonce !== input.nonce || state.url !== location.href) throw new Error('页面已切换，请重新检查表单');
@@ -56,10 +58,23 @@ function pageAction(command, input) {
     if (!hit || (hit !== button && !button.contains(hit))) throw new Error('提交按钮被弹窗遮挡，请先处理官方页面提示');
     state.used = true;
     const baseline = new Set(signals());
+    const icon = officialIcon(button);
+    const draft = icon === '发送评论' ? text(button.closest('.comment-input-inner-container').querySelector('[contenteditable="true"]')) : icon === '发送消息' ? text(document.querySelector('.messageEditorinputArea')) : '';
+    const replyRow = icon === '发送评论' ? button.closest('[data-e2e="comment-item"]') : null;
+    const publishedMatches = () => icon === '发送消息' ? [...document.querySelectorAll('.MessageBoxContentisFromMe .TextMessageTextpureText')].filter(e => text(e) === draft) : [...(replyRow || document).querySelectorAll('[data-e2e="comment-item"]')].filter(e => text(e.querySelector('.FduGc_lz .Sh1Da424')) === draft && [...e.querySelectorAll('a[href*="/user/"]')].some(a => (a.innerText || '').trim().split('\n')[0] === state.ownNickname));
+    const publishedBefore = icon ? publishedMatches().length : 0;
     state.result = { status: 'unknown', message: '已点击官方提交按钮，尚未观察到明确结果。请核对页面，避免重复提交。' };
     let done = false;
     const observer = new MutationObserver(() => {
       if (done) return;
+      if (icon && [...document.querySelectorAll('input')].some(el => visible(el) && /验证码|one-time-code|captcha/.test([el.placeholder,el.autocomplete,el.name].join(' ')))) {
+        state.result = { status: 'unknown', needsUserAction: true, message: '抖音要求本人验证。请在当前官方窗口完成，再核对原操作结果；不要重复提交。' };
+      }
+      if (icon && publishedMatches().length > publishedBefore) {
+        const editable = icon === '发送消息' ? document.querySelector('.messageEditorinputArea') : button.closest('.comment-input-inner-container')?.querySelector('[contenteditable="true"]');
+        const matches = publishedMatches(), failed = icon === '发送消息' && matches.at(-1)?.closest('.messageMessageBoxmessageBox')?.querySelector('[class*="error"],[class*="Error"],[class*="fail"],[class*="Fail"]');
+        if (!text(editable || document.createElement('div')) && !failed) { state.result = { status: 'confirmed', message: icon === '发送消息' ? '官方聊天框已显示新的本人消息' : '官方评论列表已显示新的本人评论或回复' }; done = true; observer.disconnect(); return; }
+      }
       for (const message of signals()) {
         if (baseline.has(message)) continue;
         const status = classify(state.kind, message);
@@ -68,7 +83,8 @@ function pageAction(command, input) {
     });
     observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
     setTimeout(() => { done = true; observer.disconnect(); }, 20000);
-    button.click();
+    if (typeof button.click === 'function') button.click();
+    else button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     return { clicked: true };
   }
   if (command === 'result') return state.result || { status: 'unknown', message: '尚未提交' };
@@ -93,6 +109,7 @@ function createJournal(directory) {
 function registerPageActions({ ipcMain, dialog, webContents, session, getWindow, platforms, inspectPlatformSession, authenticate, journal, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
   require('./official-data.cjs').registerOfficialData({ ipcMain, context });
   const plans = new Map(), busy = new Set();
+  require('./douyin-interaction.cjs').registerDouyinInteraction({ ipcMain, context, journal, dialog, busy });
   const script = (command, input) => `(${pageAction.toString()})(${JSON.stringify(command)},${JSON.stringify(input)})`;
   const run = (guest, command, input) => guest.executeJavaScriptInIsolatedWorld(1001, [{ code: script(command, input) }]);
   function host(event) { const win = getWindow(); if (!win || event.sender.id !== win.webContents.id) throw new Error('仅允许矩效主窗口操作'); return win; }
@@ -116,7 +133,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
       const ctx = await context(event, input);
       if (busy.has(ctx.guest.id)) throw new Error('当前账号正在提交，请等待结果');
       for (const [key, plan] of plans) if (plan.expires < Date.now() || plan.guestId === ctx.guest.id) plans.delete(key);
-      const nonce = randomUUID(), details = await run(ctx.guest, 'inspect', { kind: input.kind, nonce, expectedTitle: typeof input.expectedTitle === 'string' ? input.expectedTitle.slice(0, 500) : '' });
+      const nonce = randomUUID(), details = await run(ctx.guest, 'inspect', { kind: input.kind, nonce, ownNickname: ctx.auth.account.nickname, expectedTitle: typeof input.expectedTitle === 'string' ? input.expectedTitle.slice(0, 500) : '' });
       if (!details.candidates.length) throw new Error('当前页面没有可用的提交按钮，请先完成上传、填写内容或选择会话');
       if (input.kind !== 'withdraw' && !details.fields.some(field => field.value.trim())) throw new Error('未识别到已填写的表单，请在官方页面填写内容后重试');
       const plan = { nonce, guestId: ctx.guest.id, ownerId: ctx.auth.userId, accountId: input.accountId, platform: input.platform, sessionId: input.sessionId, nickname: ctx.nickname, kind: input.kind, taskId: input.taskId, details, expires: Date.now() + 120000 };
@@ -150,6 +167,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
         if (ctx.guest.isDestroyed()) break;
         try {
           const observed = await run(ctx.guest, 'result', { nonce: input.nonce });
+          if (observed?.needsUserAction) { record.message = observed.message; break; }
           if (['confirmed', 'failed'].includes(observed?.status)) { record.status = observed.status; record.message = observed.message; break; }
         } catch { break; } // Navigation is not proof of a successful post.
       }

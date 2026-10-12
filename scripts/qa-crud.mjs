@@ -73,6 +73,10 @@ await check('内容草稿新增→修改→阻止伪发布/伪定时→删除', 
   await call('DELETE', `/api/content/posts/${item.id}`, undefined, userToken);
 });
 
+await check('未接通的批量评论回复不得伪报成功', async () => {
+  await call('POST', '/api/comments/batch-reply', { commentIds: ['00000000-0000-4000-8000-000000000001'], replyContent: 'QA reply', replyAccountId: account.id }, userToken, [501]);
+});
+
 await check('自动回复规则新增→测试→开关→修改→删除', async () => {
   const item = await call('POST', '/api/auto-reply/rules', { ruleType: 'keyword', ruleName: `QA规则_${runId}`, platform: 'douyin', accountId: account.id, keywords: ['你好'], matchMode: 'contains', replyContent: '您好', replyType: 'text', priority: 1 }, userToken);
   await call('GET', `/api/auto-reply/rules/${item.id}`, undefined, userToken);

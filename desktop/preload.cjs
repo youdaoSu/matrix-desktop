@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
   },
   syncPublishForm: (input) => ipcRenderer.invoke('matrix:sync-publish-form', input),
   officialData: (input) => ipcRenderer.invoke('matrix:official-data', input),
+  douyinCommentWorkflow: input => ipcRenderer.invoke('matrix:douyin-comment-workflow', input),
+  douyinCommentScan: input => ipcRenderer.invoke('matrix:douyin-comment-scan', input),
+  onDouyinWorkflowProgress: listener => { const handler = (_event, progress) => listener(progress); ipcRenderer.on('matrix:douyin-workflow-progress', handler); return () => ipcRenderer.removeListener('matrix:douyin-workflow-progress', handler); },
   submitPublishBatch: (entries, batchId) => ipcRenderer.invoke('matrix:submit-publish-batch', { entries, batchId }),
   cancelPublishBatch: (batchId, accessToken) => ipcRenderer.invoke('matrix:cancel-publish-batch', { batchId, accessToken }),
   onPublishProgress: listener => {

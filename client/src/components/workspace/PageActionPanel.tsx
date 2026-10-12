@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, RefreshCw, Send } from 'lucide-react';
 import { getAuthToken } from '@/api';
 import { Button } from '@/components/ui/button';
+import { useOfficialWorkspace } from './OfficialWorkspace';
+import { loadPublishAccounts } from './publish-preferences';
 
 export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl, getGuestId, task }: {
   platform: MatrixDesktopPlatform; sessionId: string; accountId?: string;
@@ -51,6 +53,7 @@ export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl,
 }
 
 export function PageActionHistory() {
+  const workspace = useOfficialWorkspace();
   const [items, setItems] = useState<MatrixPageActionReceipt[]>([]);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
@@ -65,6 +68,17 @@ export function PageActionHistory() {
     void load(); window.addEventListener('matrix:page-actions-updated', load);
     return () => { cancelled = true; window.removeEventListener('matrix:page-actions-updated', load); };
   }, [refresh]);
+  const recover = async (item: MatrixPageActionReceipt) => {
+    try {
+      const accounts = await loadPublishAccounts(), account = accounts.find(a=>a.id===item.accountId);
+      if (!account || !await workspace.openAccount(account,'manage')) throw Error('账号无法打开，请重新登录');
+      let page: (()=>MatrixPageActionInput)|undefined;
+      for(let attempt=0;attempt<40&&!page;attempt++){page=workspace.page(item.accountId);if(!page)await new Promise(r=>setTimeout(r,250));}
+      if(!page)throw Error('账号页面尚未加载，请稍后重试');
+      const result=await window.matrixDesktop!.douyinCommentWorkflow({...page(),operation:'cleanup',recordId:item.id});
+      if(result.error)throw Error(result.error);setRefresh(n=>n+1);
+    }catch(e){setError(e instanceof Error?e.message:'取消关注待处理');}
+  };
   if (!window.matrixDesktop?.isDesktop) return null;
-  return <section className="matrix-action-history"><header><h2>官方页面提交记录</h2><Button size="sm" variant="outline" onClick={() => setRefresh(n => n + 1)}>刷新提交记录</Button></header>{error && <p role="alert">{error}</p>}{!items.length && !error && <p>暂无通过矩效提交的记录。</p>}{items.map(item => <article key={item.id}><div><strong>{item.nickname} · {item.button}</strong><time>{new Date(item.createdAt).toLocaleString('zh-CN')}</time></div><p>{item.summary}</p><small>{item.status === 'confirmed' ? '页面提示成功' : item.status === 'failed' ? '页面提示失败' : '结果待核对'} · {item.message}</small></article>)}</section>;
+  return <section className="matrix-action-history"><header><h2>官方页面提交记录</h2><Button size="sm" variant="outline" onClick={() => setRefresh(n => n + 1)}>刷新提交记录</Button></header>{error && <p role="alert">{error}</p>}{!items.length && !error && <p>暂无通过矩效提交的记录。</p>}{items.map(item => <article key={item.id}><div><strong>{item.nickname} · {item.button}</strong><time>{new Date(item.createdAt).toLocaleString('zh-CN')}</time></div><p>{item.summary}</p><small>{item.status === 'confirmed' ? '页面提示成功' : item.status === 'failed' ? '页面提示失败' : '结果待核对'} · {item.message}</small>{item.followCleanup&&<p>私信：{item.messageStatus||'待核对'} · 回复：{item.replyStatus||'待核对'} · 取消关注：{item.followCleanup==='confirmed'?'已确认':'待处理'}</p>}{item.followCleanup==='pending'&&<Button size="sm" variant="destructive" onClick={()=>void recover(item)}>恢复取消关注</Button>}</article>)}</section>;
 }

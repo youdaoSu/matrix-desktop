@@ -411,22 +411,7 @@ export class CommentsService {
       throw new BadRequestException('回复内容不能为空');
     }
 
-    const result = await this.db
-      .update(commentItems)
-      .set({
-        isReplied: true,
-        replyContent,
-        replyAccountId: replyAccountId ?? null,
-        repliedAt: new Date(),
-      })
-      .where(and(eq(commentItems.userId, userId), inArray(commentItems.id, commentIds)))
-      .returning({ id: commentItems.id });
-
-    return {
-      success: result.length,
-      failed: commentIds.length - result.length,
-      total: commentIds.length,
-    };
+    throw new NotImplementedException('批量评论回复尚未接通平台发送，请通过已登录的官方页面提交；不会仅修改本地状态冒充已回复');
   }
 
   async batchMarkRead(

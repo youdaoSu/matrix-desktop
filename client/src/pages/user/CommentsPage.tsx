@@ -1,5 +1,6 @@
 import { useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 import { OfficialInteractionManager } from '@/components/workspace/OfficialInteractionManager';
+import { DouyinCommentMonitorPanel } from '@/components/workspace/DouyinCommentMonitor';
 import { InteractionAccountRail, InteractionPostRail, ReplyTemplatePane } from '@/components/workspace/InteractionPanels';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -51,6 +52,7 @@ export default function CommentsPage() {
   useEffect(() => { void load(); return () => { generation.current++; }; }, [platform, replyStatus, account, postId]);
 
   return <div className={aggregate ? 'matrix-interaction-layout matrix-comments-aggregate' : 'matrix-interaction-layout matrix-comments-layout'}>{!aggregate && <><InteractionAccountRail platform={platform} selected={account?.id} onSelect={value => { setAccount(value); setPostId(''); }} /><InteractionPostRail account={account} selected={postId} onSelect={setPostId} /></>}<section className="matrix-interaction-content space-y-3">
+    <DouyinCommentMonitorPanel />
     <OfficialInteractionManager account={account} kind="comments" />
     <Alert className="border-primary/20 bg-primary/5"><MessageCircle className="h-4 w-4 text-primary" /><AlertDescription>在账号操作面板查看和回复评论。下方列表保留已同步的评论记录。</AlertDescription></Alert>
 <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">评论管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {items.length} 条已同步评论</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => account ? void workspace.openAccount(account, 'comments') : workspace.show('comments')}>官方页面回复</Button><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div></div>

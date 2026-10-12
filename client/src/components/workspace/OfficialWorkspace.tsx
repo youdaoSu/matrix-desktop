@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { officialOperation } from '@shared/official-operations';
 import { PageActionPanel } from './PageActionPanel';
 import { createAutoBinding } from './auto-binding';
+import { DouyinCommentMonitorProvider } from './DouyinCommentMonitor';
 
 export const platformLabels: Record<PlatformType, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
 const platformColors: Record<PlatformType, string> = { douyin: '#24242b', xiaohongshu: '#f04462', wechat: '#38a46a', bilibili: '#3ea9e4' };
@@ -65,6 +66,11 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     return () => { if (pages.current.get(id) === input) pages.current.delete(id); };
   }, []);
   const rememberedPages = useRef(new Map<string, string>());
+  useEffect(() => window.matrixDesktop?.onDouyinWorkflowProgress?.(progress => {
+    const page = [...pages.current].find(([, input]) => { try { return input().webContentsId === progress.webContentsId; } catch { return false; } });
+    if (page) { setActiveId(page[0]); setVisible(true); }
+    toast.info(progress.message);
+  }), []);
   const [jobsLocked, lockJobs] = useState(false);
   const registerPublisher = useCallback((accountId: string, publisher: Publisher, background = false) => {
     const key = accountId + (background ? ':job' : '');
@@ -154,7 +160,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     }, hide: () => setVisible(false),
     select, selectAccount: id => select(rememberedPages.current.get(id) || id), openPage, close,
     update: (id, patch) => setTabs(current => current.map(tab => tab.id === id ? { ...tab, ...patch } : tab.parentId === id && patch.accountId ? { ...tab, accountId: patch.accountId, nickname: patch.nickname || tab.nickname } : tab)),
-  }}>{children}<BackgroundPublishPages /></Context.Provider>;
+  }}><DouyinCommentMonitorProvider>{children}<BackgroundPublishPages /></DouyinCommentMonitorProvider></Context.Provider>;
 }
 
 // Keep guests mounted and laid out even when the user visits another module (including docs).

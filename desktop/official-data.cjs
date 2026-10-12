@@ -58,6 +58,12 @@ function officialData(command, input = {}) {
     followers: '[data-follower-id],.fans-item,[class*=follower-item],[class*=fansItem]',
   };
   if (!selectors[input.kind]) throw Error('记录类型无效');
+  if (input.kind === 'comments' && location.hostname === 'www.douyin.com' && /^\/video\/\d+$/.test(location.pathname)) {
+    const rows = [...document.querySelectorAll('[data-e2e="comment-item"]')].filter(el => visible(el) && !el.parentElement.closest('[data-e2e="comment-item"]'));
+    const records = rows.map(el => { const author = [...el.querySelectorAll('a[href*="/user/"]')].find(a => visible(a) && text(a)); const content = text(el.querySelector('.FduGc_lz .Sh1Da424,.FduGc_lz')); let authorProfileUrl = ''; try { const u = new URL(author?.href); if (u.hostname === 'www.douyin.com' && /^\/user\/MS4w[a-zA-Z0-9_-]+$/.test(u.pathname)) authorProfileUrl = u.origin + u.pathname; } catch {} return { platformId: '', author: text(author), content, authorProfileUrl }; }).filter(row => row.author && row.content).slice(0,100);
+    if (!records.length) throw Error('当前视频没有可识别的评论，请确认官方评论区已展开');
+    return { records, capturedAt: new Date().toISOString(), source: location.origin + location.pathname, partial: true };
+  }
   const douyinMessages = input.kind === 'messages' && location.hostname === 'www.douyin.com';
   const candidates = [...document.querySelectorAll(selectors[input.kind] + (douyinMessages ? ',[data-e2e="im-dialog"] [data-e2e="conversation-item"]' : ''))].filter(visible);
   const rows = candidates.filter(el => !candidates.some(other => other !== el && el.contains(other)));

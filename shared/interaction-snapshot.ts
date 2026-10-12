@@ -1,5 +1,5 @@
 export type InteractionKind = 'comments' | 'messages' | 'followers';
-export interface VisibleInteraction { platformId: string; author: string; content: string }
+export interface VisibleInteraction { platformId: string; author: string; content: string; authorProfileUrl?: string }
 export interface InteractionSnapshot {
   source: string; capturedAt: string;
   records: (VisibleInteraction & { id: string; note: string; handled: boolean })[];
@@ -18,6 +18,8 @@ export function createInteractionSnapshot(records: VisibleInteraction[], source:
   return { source, capturedAt, records: records.slice(0, 100).map((row, index) => {
     const matches = previous?.source === source && row.platformId && counts.get(row.platformId) === 1 ? previous.records.filter(item => item.platformId === row.platformId) : [];
     const old = matches.length === 1 ? matches[0] : undefined;
-    return { platformId: String(row.platformId || '').slice(0, 200), author: String(row.author || '').slice(0, 200), content: String(row.content || '').slice(0, 4000), id: `${capturedAt}:${index}`, note: old?.note || '', handled: old?.handled || false };
+    let authorProfileUrl: string | undefined;
+    try { const profile = new URL(row.authorProfileUrl || ''); if (profile.protocol === 'https:' && profile.hostname === 'www.douyin.com' && /^\/user\/MS4w[a-zA-Z0-9_-]+$/.test(profile.pathname) && !profile.search && !profile.hash) authorProfileUrl = profile.href; } catch {}
+    return { platformId: String(row.platformId || '').slice(0, 200), author: String(row.author || '').slice(0, 200), content: String(row.content || '').slice(0, 4000), ...(authorProfileUrl ? { authorProfileUrl } : {}), id: `${capturedAt}:${index}`, note: old?.note || '', handled: old?.handled || false };
   }) };
 }
