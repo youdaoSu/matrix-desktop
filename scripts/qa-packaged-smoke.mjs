@@ -14,7 +14,8 @@ const executable = path.join(packageRoot, '矩效 Matrix.exe');
 if (!fs.existsSync(executable)) throw new Error('Build the desktop package first');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-packaged-qa-'));
 const debugPort = 9392;
-const desktop = spawn(executable, [`--matrix-user-data-dir=${profile}`, `--remote-debugging-port=${debugPort}`], { windowsHide: true, stdio: 'ignore' });
+const desktop = spawn(executable, [`--matrix-user-data-dir=${profile}`, `--remote-debugging-port=${debugPort}`,
+  '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'], { windowsHide: true, stdio: 'ignore' });
 let socket;
 let failed = true;
 async function wait(fn, label, timeout = 60000) {
@@ -80,6 +81,7 @@ try {
   await wait(() => evaluate("(async()=>{try{return await document.querySelector('webview')?.executeJavaScript(\"document.body.innerText.trim().length > 60\");}catch{return false;}})()"), 'Packaged official guest did not render content');
   // Guest DOM becomes ready before Chromium submits its first visible surface.
   await new Promise(resolve => setTimeout(resolve, 2000));
+  await call('Page.bringToFront');
   const screenshot = await call('Page.captureScreenshot', { format: 'png' });
   fs.mkdirSync('logs', { recursive: true });
   fs.writeFileSync('logs/qa-packaged-workspace.png', Buffer.from(screenshot.data, 'base64'));
