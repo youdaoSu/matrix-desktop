@@ -5,6 +5,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useLocation } from 'react-router-dom';
+import { getUser } from '@/api';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -17,6 +19,8 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = 'matrix-theme';
+const themeKey = () => getUser()?.id ? `${STORAGE_KEY}:${encodeURIComponent(getUser()!.id)}` : STORAGE_KEY;
+function readTheme(): Theme { try { const stored=localStorage.getItem(themeKey())||localStorage.getItem(STORAGE_KEY); return stored==='dark'||stored==='system'?stored:'light'; } catch { return 'light'; } }
 
 function getSystemTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'light';
@@ -26,11 +30,13 @@ function getSystemTheme(): 'light' | 'dark' {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  useLocation();
+  const owner = getUser()?.id;
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
-    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-    return stored || 'light';
+    return readTheme();
   });
+  useEffect(() => { setThemeState(readTheme()); }, [owner]);
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(() =>
     getSystemTheme()
   );
@@ -56,8 +62,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [resolvedTheme]);
 
   const setTheme = (newTheme: Theme) => {
+    if (!['light','dark','system'].includes(newTheme)) throw Error('主题无效');
+    localStorage.setItem(themeKey(), newTheme);
     setThemeState(newTheme);
-    localStorage.setItem(STORAGE_KEY, newTheme);
   };
 
   return (

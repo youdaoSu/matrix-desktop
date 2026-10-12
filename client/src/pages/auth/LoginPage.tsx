@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AtSign, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { readAppPreferences } from '@/contexts/AppPreferences';
 import { axiosForBackend, logger, setAuthToken, setSessionAuthToken, setUser } from '@client/src/api';
 import type { AppUser } from '@shared/api.interface';
 import { AuthCard, AuthError, AuthField, AuthPasswordField, AuthSubmit, getAuthError } from '@/components/auth/AuthComponents';
@@ -29,7 +30,7 @@ export default function LoginPage() {
       else setSessionAuthToken(result.token);
       setUser(result.user, remember);
       logger.info('用户登录成功', username.trim());
-      navigate('/dashboard');
+      navigate(readAppPreferences().startupPage);
     } catch (requestError: unknown) {
       setError(getAuthError(requestError, '登录失败，请检查账号和密码后重试'));
     } finally {

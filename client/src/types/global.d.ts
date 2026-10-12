@@ -1,5 +1,7 @@
 declare module '*.css';
 
+interface MatrixSystemSettings { error?: string; version?: string; electron?: string; node?: string; platform?: string; arch?: string; packaged?: boolean; zoom?: number; autoStart?: boolean; notificationsSupported?: boolean; opened?: boolean; requested?: boolean }
+
 // Type declarations for importing static assets
 declare module '*.png' {
   const value: string;
@@ -129,6 +131,7 @@ interface MatrixPublishResult { accountId: string; error?: string; cancelled?: b
 interface Window {
   matrixDesktop?: {
     isDesktop: true;
+    systemSettings(input: { command: 'read' | 'zoom' | 'auto-start' | 'releases' | 'notify'; zoom?: number; enabled?: boolean; category?: 'test' | 'publish' | 'reminder' }): Promise<MatrixSystemSettings>;
     douyinCommentWorkflow(input: MatrixPageActionInput & { operation?: 'cleanup'; recordId?: string; author?: string; authorProfileUrl?: string; comment?: string; message?: string; successReply?: string; failedReply?: string }): Promise<{ error?: string; cancelled?: boolean; receipt?: MatrixPageActionReceipt & { followCleanup?: 'pending' | 'confirmed'; messageStatus?: string; replyStatus?: string; cleanupError?: string } }>;
     douyinCommentScan(input: MatrixPageActionInput & { operation: 'inventory' | 'scan'; videoUrl?: string }): Promise<{ error?: string; nickname?: string; urls?: string[]; capped?: boolean; records?: { platformId: string; author: string; content: string; authorProfileUrl?: string; displayTime?: string; replies?: { author: string; content: string }[] }[]; source?: string; capturedAt?: string; partial?: boolean }>;
     onDouyinWorkflowProgress(listener: (progress: { webContentsId: number; stage: string; message: string }) => void): () => void;

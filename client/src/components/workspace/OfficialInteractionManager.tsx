@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useOfficialWorkspace, platformLabels } from './OfficialWorkspace';
 import { loadPublishAccounts } from './publish-preferences';
 import { DouyinCommentAction } from './DouyinCommentAction';
+import { useAppPreferences } from '@/contexts/AppPreferences';
 
 const names = { comments: '评论', messages: '私信会话', followers: '粉丝' };
 export function OfficialInteractionManager({ account, kind }: { account?: PlatformAccount | null; kind: InteractionKind }) {
@@ -26,6 +27,7 @@ export function OfficialInteractionManager({ account, kind }: { account?: Platfo
 }
 
 function AccountInteractions({ account, owner, kind }: { account: PlatformAccount; owner: string; kind: InteractionKind }) {
+  const preferences = useAppPreferences();
   const workspace = useOfficialWorkspace();
   const [snapshot, setSnapshot] = useState<InteractionSnapshot>();
   const [clearOpen, setClearOpen] = useState(false);
@@ -33,6 +35,12 @@ function AccountInteractions({ account, owner, kind }: { account: PlatformAccoun
   const generation = useRef(0);
   const storageKey = interactionStorageKey(owner, account.id, kind);
   useEffect(() => {
+    const cleared = () => { if (!localStorage.getItem(storageKey)) setSnapshot(undefined); };
+    window.addEventListener('matrix:interaction-snapshots-cleared', cleared);
+    return () => window.removeEventListener('matrix:interaction-snapshots-cleared', cleared);
+  }, [storageKey]);
+  useEffect(() => {
+    if (!preferences.retainInteractionSnapshots) { setSnapshot(undefined); return () => { generation.current++; }; }
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
@@ -44,7 +52,7 @@ function AccountInteractions({ account, owner, kind }: { account: PlatformAccoun
       }
     } catch { setMessage('本地快照无法读取，请重新读取官方页面。'); }
     return () => { generation.current++; };
-  }, [storageKey]);
+  }, [storageKey, preferences.retainInteractionSnapshots]);
   const read = async () => {
     const version = ++generation.current; setBusy(true); setMessage('');
     try {
@@ -62,7 +70,7 @@ function AccountInteractions({ account, owner, kind }: { account: PlatformAccoun
   const patch = (id: string, value: { note?: string; handled?: boolean }) => setSnapshot(current => current && ({ ...current, records: current.records.map(row => row.id === id ? { ...row, ...value } : row) }));
   return <>
     {account.platform === 'douyin' && kind !== 'followers' && <p className="text-xs text-muted-foreground">{kind === 'comments' ? '抖音：先在官方内容管理中点击某条作品的评论入口，待评论显示后返回这里读取。每次只读取当前作品页面。' : '抖音：先在官方抖音网页点击“消息”，展开会话列表后返回这里读取。仅包含当前加载的会话名称和最近消息预览，不是完整聊天记录。'}</p>}
-    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void workspace.openAccount(account, kind === 'followers' ? 'manage' : kind)}>打开账号页面 · {names[kind]}</Button><Button disabled={busy} onClick={() => void read()}>{busy ? '读取中…' : '读取当前可见记录'}</Button><Button variant="outline" disabled={!snapshot || busy} onClick={() => { try { if (getUser()?.id !== owner) throw Error('登录用户已变化'); localStorage.setItem(storageKey, JSON.stringify(snapshot)); setMessage('当前快照及备注已保存到本机，按矩效用户和平台账号区分。'); } catch { setMessage('本地保存失败，请检查可用存储空间和登录状态'); } }}>保存本地快照</Button><Button variant="outline" disabled={busy} onClick={() => setClearOpen(true)}>清除本地快照</Button></div>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void workspace.openAccount(account, kind === 'followers' ? 'manage' : kind)}>打开账号页面 · {names[kind]}</Button><Button disabled={busy} onClick={() => void read()}>{busy ? '读取中…' : '读取当前可见记录'}</Button><Button variant="outline" disabled={!snapshot || busy || !preferences.retainInteractionSnapshots} onClick={() => { try { if (!preferences.retainInteractionSnapshots) throw Error('本地互动快照保存已关闭'); if (getUser()?.id !== owner) throw Error('登录用户已变化'); localStorage.setItem(storageKey, JSON.stringify(snapshot)); setMessage('当前快照及备注已保存到本机，按矩效用户和平台账号区分。'); } catch { setMessage('本地保存失败，请检查可用存储空间和登录状态'); } }}>保存本地快照</Button><Button variant="outline" disabled={busy} onClick={() => setClearOpen(true)}>清除本地快照</Button></div>
     <Dialog open={clearOpen} onOpenChange={setClearOpen}><DialogContent><DialogHeader><DialogTitle>清除本地快照？</DialogTitle><DialogDescription>仅清除此账号此模块的本地快照和备注，无法恢复。不会删除平台评论、私信或粉丝。</DialogDescription></DialogHeader><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setClearOpen(false)}>取消</Button><Button variant="destructive" onClick={() => { try { if (getUser()?.id !== owner) throw Error('登录用户已变化'); localStorage.removeItem(storageKey); setSnapshot(undefined); setClearOpen(false); setMessage('已清除本地快照，官方数据未修改。'); } catch { setMessage('清除失败'); } }}>确认清除本地快照</Button></div></DialogContent></Dialog>
     {message && <p role="status" className="text-sm text-orange-700">{message}</p>}
     {snapshot && <><small className="block break-all text-muted-foreground">{snapshot.source} · {new Date(snapshot.capturedAt).toLocaleString()} · 当前快照 {snapshot.records.length} 条（非全部）</small><div className="flex gap-3 items-center"><Input aria-label="搜索本地互动记录" placeholder="搜索昵称、内容、备注" value={query} onChange={event => setQuery(event.target.value)} /><label className="whitespace-nowrap text-sm"><input type="checkbox" checked={pendingOnly} onChange={event => setPendingOnly(event.target.checked)} />仅待处理</label></div><div className="max-h-96 overflow-auto divide-y">{snapshot.records.filter(row => (!pendingOnly || !row.handled) && `${row.author} ${row.content} ${row.note}`.includes(query)).map(row => <article key={row.id} className="space-y-2 py-3"><div className="flex justify-between gap-2"><strong>{row.author}</strong><label className="text-sm"><input type="checkbox" checked={row.handled} onChange={event => patch(row.id, { handled: event.target.checked })} />本地已处理</label></div>{row.content && <p className="text-sm whitespace-pre-wrap break-words">{row.content}</p>}<small className="text-muted-foreground">{row.platformId ? `平台记录 ID：${row.platformId}` : '未识别唯一 ID，重新读取不会继承备注'}</small><Input aria-label={`备注-${row.id}`} placeholder="本地备注 / 标签（保存后保留）" maxLength={500} value={row.note} onChange={event => patch(row.id, { note: event.target.value })}/>{kind==='comments'&&account.platform==='douyin'&&row.authorProfileUrl&&/^https:\/\/www\.douyin\.com\/video\/\d+$/.test(snapshot.source)&&<DouyinCommentAction accountId={account.id} author={row.author} authorProfileUrl={row.authorProfileUrl} comment={row.content}/>}</article>)}</div></>}

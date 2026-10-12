@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useAppPreferences } from '@/contexts/AppPreferences';
 import { Outlet, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -210,11 +211,13 @@ const topMenuItems: TopMenuItem[] = [
           { to: '/settings/password', label: '修改密码' },
           { to: '/settings/vip', label: 'VIP 状态' },
           { to: '/settings/logins', label: '登录记录' },
-          { to: '/settings/notify', label: '消息通知' },
-          { to: '/settings/theme', label: '主题偏好' },
           { to: '/settings/data', label: '数据与备份' },
         ],
       },
+      { label: '系统设置', items: [
+        { to: '/settings/general', label: '通用' }, { to: '/settings/privacy', label: '隐私' },
+        { to: '/settings/notify', label: '通知' }, { to: '/settings/about', label: '关于矩效' },
+      ] },
     ],
   },
 ];
@@ -224,6 +227,13 @@ const UserLayoutContent = () => {
   const location = useLocation();
   const workspace = useOfficialWorkspace();
   const user = getUser();
+  const preferences = useAppPreferences(), startupApplied = useRef(false);
+  useEffect(() => {
+    if (!startupApplied.current && getAuthToken()) {
+      startupApplied.current = true;
+      if (location.pathname === '/') navigate(preferences.startupPage, { replace: true });
+    }
+  }, [location.pathname, navigate, preferences.startupPage]);
   useEffect(() => {
     if (location.pathname === '/accounts' && window.matrixDesktop?.isDesktop) workspace.show('manage');
     else workspace.hide();
@@ -260,7 +270,7 @@ const UserLayoutContent = () => {
   };
 
   return (
-      <div data-module={activeTopMenu.slice(1)} className="matrix-shell h-screen bg-background flex flex-col overflow-hidden">
+      <div data-account-privacy={preferences.maskAccountDetails ? 'masked' : 'visible'} data-module={activeTopMenu.slice(1)} className="matrix-shell h-screen bg-background flex flex-col overflow-hidden">
       {/* Top navigation bar */}
       <header className="matrix-topbar h-14 bg-card border-b border-border flex items-center px-4 gap-2 z-30 shrink-0">
         {/* Logo */}

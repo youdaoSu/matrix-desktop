@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const [port,base]=process.argv.slice(2);
+if(base!=='http://127.0.0.1:3291')throw Error('Disposable QA origin required');
+const target=(await fetch(`http://127.0.0.1:${port}/json/list`).then(r=>r.json())).find(t=>t.type==='page'&&t.url.startsWith(base));
+const socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise(resolve=>socket.addEventListener('open',resolve,{once:true}));
+let sequence=0,checks=0;const pending=new Map();
+socket.addEventListener('message',event=>{const message=JSON.parse(event.data),item=pending.get(message.id);if(item){clearTimeout(item.timer);pending.delete(message.id);message.error?item.reject(Error(message.error.message)):item.resolve(message.result);}});
+const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>reject(Error(method+' timeout')),20000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
+const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description);return r.result.value;};
+const pause=()=>new Promise(resolve=>setTimeout(resolve,180));
+const wait=async expression=>{for(let i=0;i<120;i++){if(await evaluate(expression))return;await pause();}throw Error('Not ready: '+expression);};
+const expect=async(expression,value)=>{assert.deepEqual(await evaluate(expression),value,expression);checks++;};
+const route=async section=>{await evaluate(`location.hash='#/settings/${section}';true`);await wait(`!!document.querySelector('[data-system-settings="${section}"]')`);if(section==='general')await wait("!!document.querySelector('[aria-label=矩效界面缩放]:not([disabled])')");await pause();};
+const reload=async()=>{await evaluate("sessionStorage.setItem('qa-system-settings-state',JSON.stringify(window.__settingsQA));true");const previous=await evaluate('performance.timeOrigin');await call('Page.reload');await wait(`performance.timeOrigin!==${previous}&&document.readyState==='complete'&&!!document.querySelector('.matrix-shell')`);await evaluate("window.__settingsQA=JSON.parse(sessionStorage.getItem('qa-system-settings-state'));true");};
+const select=async(label,value)=>{await evaluate(`(()=>{const s=document.querySelector('[aria-label="${label}"]');s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);await pause();};
+const click=async text=>{await evaluate(`(()=>{const button=[...document.querySelectorAll('button')].find(e=>e.getClientRects().length&&e.innerText===${JSON.stringify(text)});if(!button||button.disabled)throw Error('Button unavailable');button.click();return true})()`);await pause();};
+try{
+  await evaluate("(()=>{const user=JSON.parse(localStorage.getItem('matrix_user'));window.__settingsQA={owner:user.id,key:'matrix-app-preferences-v1:'+encodeURIComponent(user.id),themeKey:'matrix-theme:'+encodeURIComponent(user.id)};window.__settingsQA.original=localStorage.getItem(window.__settingsQA.key);window.__settingsQA.originalTheme=localStorage.getItem(window.__settingsQA.themeKey);return true})()");
+  await route('general');await wait("!!document.querySelector('[aria-label=矩效界面缩放]:not([disabled])')");
+  await select('界面主题','dark');await expect("document.documentElement.classList.contains('dark')",true);
+  await expect("localStorage.getItem(window.__settingsQA.themeKey)",'dark');
+  await select('默认首页','/accounts');await expect("JSON.parse(localStorage.getItem(window.__settingsQA.key)).startupPage",'/accounts');
+  await select('矩效界面缩放','0.9');await wait("document.querySelector('[aria-label=矩效界面缩放]').value==='0.9'");
+  await expect("(async()=>{const r=await window.matrixDesktop.systemSettings({command:'read'});return r.zoom})()",0.9);
+  await reload();await route('general');await expect("document.querySelector('[aria-label=界面主题]').value",'dark');
+  await expect("document.querySelector('[aria-label=矩效界面缩放]').value",'0.9');
+  await select('矩效界面缩放','1');await wait("document.querySelector('[aria-label=矩效界面缩放]').value==='1'");
+  await route('privacy');await expect("location.hash",'#/settings/privacy');
+  await evaluate("location.hash='';true");await reload();await wait("location.hash==='#/accounts'");checks++;
+  await route('general');await select('默认首页','/dashboard');await select('界面主题','light');
+  await route('notify');await evaluate("document.querySelector('[aria-label=dueReminders]').click();true");await pause();
+  await expect("!!document.querySelector('[aria-label=\"查看个人待办提醒\"]')",false);
+  await route('notify');await expect("document.querySelector('[aria-label=dueReminders]').checked",false);
+  await expect("JSON.parse(localStorage.getItem(window.__settingsQA.key)).desktopAlerts",false);
+  await evaluate("document.querySelector('[aria-label=dueReminders]').click();true");await pause();await expect("!!document.querySelector('[aria-label=\"查看个人待办提醒\"]')",true);
+  await route('privacy');await evaluate("(()=>{const key='matrix-interaction-v1:'+encodeURIComponent(window.__settingsQA.owner)+':qa-settings:comments';localStorage.setItem(key,'QA local snapshot');localStorage.setItem('matrix-interaction-v1:another-user:qa-settings:comments','QA other user');localStorage.setItem('matrix-publish-progress:settings-guard','QA tasks');window.__settingsQA.token=localStorage.getItem('matrix_token');return true})()");
+  await evaluate("window.dispatchEvent(new Event('matrix:preferences-updated'));true");await pause();
+  await route('privacy');await click('清除互动快照');await wait("!!document.querySelector('[role=dialog]')");await expect("document.querySelector('[role=dialog]').innerText.includes('草稿不会删除')",true);await click('取消');
+  await expect("localStorage.getItem('matrix-interaction-v1:'+encodeURIComponent(window.__settingsQA.owner)+':qa-settings:comments')",'QA local snapshot');
+  await click('清除互动快照');await click('确认清除互动快照');
+  await expect("localStorage.getItem('matrix-interaction-v1:'+encodeURIComponent(window.__settingsQA.owner)+':qa-settings:comments')",null);
+  await expect("localStorage.getItem('matrix-interaction-v1:another-user:qa-settings:comments')",'QA other user');
+  await expect("localStorage.getItem('matrix-publish-progress:settings-guard')",'QA tasks');
+  await expect("localStorage.getItem('matrix_token')===window.__settingsQA.token",true);
+  await evaluate("document.querySelector('[aria-label=maskAccountDetails]').click();true");await pause();await expect("document.querySelector('.matrix-shell').dataset.accountPrivacy",'masked');
+  await route('about');await wait("document.querySelector('[data-system-settings=about]').innerText.includes('v2.10.0-rc.14')");checks++;
+  await new Promise(resolve=>setTimeout(resolve,4500));
+  for(const section of ['general','privacy','notify','about']){await route(section);await pause();await call('Page.bringToFront');const shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('logs/qa-system-'+section+'.png',Buffer.from(shot.data,'base64'));}
+  console.log(JSON.stringify({systemSettingsUIAssertions:checks,screenshots:4,realWindowsStartupOrNotificationsChanged:false,isolatedProfile:true}));
+}finally{
+  await evaluate("(()=>{const q=window.__settingsQA;if(!q)return;for(const [key,value] of [[q.key,q.original],[q.themeKey,q.originalTheme]])value===null?localStorage.removeItem(key):localStorage.setItem(key,value);localStorage.removeItem('matrix-interaction-v1:another-user:qa-settings:comments');localStorage.removeItem('matrix-publish-progress:settings-guard');delete window.__settingsQA;return true})()").catch(()=>{});
+  await evaluate("sessionStorage.removeItem('qa-system-settings-state');true").catch(()=>{});
+  socket.close();
+}

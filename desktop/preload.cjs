@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
   isDesktop: true,
+  systemSettings: input => ipcRenderer.invoke('matrix:system-settings', input),
   onOfficialPageOpen: listener => {
     const handler = (_event, page) => listener(page);
     ipcRenderer.on('matrix:official-page-open', handler);

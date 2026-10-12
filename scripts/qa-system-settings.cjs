@@ -1,0 +1,34 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),ts=require('typescript');
+const {registerDesktopSettings}=require('../desktop/settings.cjs');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'matrix-settings-qa-'));
+let checks=0,zoom=1,autoStart=false,page='http://127.0.0.1:3210/app/',notifications=0,external='';
+const expect=(actual,expected)=>{assert.deepEqual(actual,expected);checks++;};
+const app={isPackaged:true,getVersion:()=> 'fixture-rc.14',getPath:key=>key==='exe'?'C:\\QA\\matrix.exe':temp,getLoginItemSettings:()=>({openAtLogin:autoStart}),setLoginItemSettings:value=>{autoStart=value.openAtLogin;}};
+const win={webContents:{id:1,getURL:()=>page,setZoomFactor:value=>{zoom=value;}}};
+class Notice {static isSupported(){return true;}show(){notifications++;}}
+let handler;
+const options={app,ipcMain:{handle:(_name,fn)=>{handler=fn;}},shell:{openExternal:async url=>{external=url;}},Notification:Notice,getWindow:()=>win,getAppUrl:()=> 'http://127.0.0.1:3210/app/'};
+const read=input=>handler({sender:{id:1}},input);
+(async()=>{try{
+  registerDesktopSettings(options)(win);expect(zoom,1);
+  expect((await read({command:'read'})).version,'fixture-rc.14');expect(autoStart,false);
+  expect(fs.existsSync(path.join(temp,'desktop-settings.json')),false);
+  expect(!!(await handler({sender:{id:2}},{command:'zoom',zoom:0.9})).error,true);
+  page='https://example.com/';expect(!!(await read({command:'zoom',zoom:0.9})).error,true);page='http://127.0.0.1:3210/app/';
+  expect(!!(await read({command:'zoom',zoom:2})).error,true);expect(zoom,1);
+  expect((await read({command:'zoom',zoom:0.9})).zoom,0.9);expect(zoom,0.9);
+  registerDesktopSettings(options)(win);expect(zoom,0.9);
+  expect((await read({command:'auto-start',enabled:true})).autoStart,true);
+  expect((await read({command:'auto-start',enabled:false})).autoStart,false);
+  app.isPackaged=false;expect(!!(await read({command:'auto-start',enabled:true})).error,true);expect(autoStart,false);
+  await read({command:'notify',category:'test'});expect(notifications,1);
+  expect(!!(await read({command:'notify',category:'other'})).error,true);expect(notifications,1);
+  await read({command:'releases',url:'https://example.com'});expect(external,'https://github.com/youdaoSu/matrix-desktop/releases');
+  const exportsObject={};new Function('exports',ts.transpile(fs.readFileSync('shared/app-preferences.ts','utf8'),{module:ts.ModuleKind.CommonJS}))(exportsObject);
+  expect(exportsObject.normalizePreferences({desktopAlerts:'true',startupPage:'https://example.com',maskAccountDetails:true}).desktopAlerts,false);
+  expect(exportsObject.normalizePreferences({startupPage:'https://example.com'}).startupPage,'/dashboard');
+  expect(exportsObject.preferenceKey('a')===exportsObject.preferenceKey('b'),false);
+  expect(exportsObject.interactionSnapshotKeys(['matrix-interaction-v1:a:acc:comments','matrix-interaction-v1:b:acc:comments','matrix_token','matrix-publish-progress:a','matrix-interaction-v1:a:acc:unknown'],'a'),['matrix-interaction-v1:a:acc:comments']);
+  expect(exportsObject.interactionSnapshotKeys(['matrix-interaction-v1::acc:comments'],''),[]);
+  console.log(JSON.stringify({systemSettingsAssertions:checks,windowsStartupOrRealNotificationsChanged:false,isolatedProfile:true}));
+}finally{if(path.dirname(temp)===os.tmpdir()&&path.basename(temp).startsWith('matrix-settings-qa-'))fs.rmSync(temp,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});

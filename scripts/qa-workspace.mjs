@@ -103,6 +103,10 @@ try {
   await waitUntil(async () => { try { return (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).ok; } catch { return false; } }, 'QA desktop did not start');
   await runScript('scripts/qa-ui-auth.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-routes.mjs', [String(debugPort), base]);
+  if (process.argv.includes('--settings-only')) {
+    await runScript('scripts/qa-system-settings-ui.mjs', [String(debugPort), base]);
+    console.log(JSON.stringify({settingsOnly:true,isolatedDatabase:true}));
+  } else {
   const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then(response => response.json());
   const target = targets.find(item => item.type === 'page' && item.url.startsWith(base));
   if (!target) throw new Error('QA desktop target missing');
@@ -184,6 +188,8 @@ try {
     // Hidden webviews may defer executeJavaScript until selected on Windows.
     // Inspect each real page as a user does, rather than await a hidden guest indefinitely.
     await evaluate(`document.querySelectorAll('.matrix-account-tab > button[role="tab"]')[${index}].click();true`);
+    await call('Page.bringToFront');
+    await new Promise(resolve => setTimeout(resolve, 500));
     await waitUntil(() => evaluate(`(async () => { const view=document.querySelectorAll('webview')[${index}]; try { return await view.executeJavaScript("document.readyState !== 'loading' && document.body.innerText.trim().length > 60"); } catch { return false; } })()`), `${label} official page did not render readable content`, 45000);
     const loaded = await evaluate(`document.querySelectorAll('webview')[${index}].executeJavaScript("({url:location.href,title:document.title,characters:document.body.innerText.trim().length})")`);
     report.officialPages[index].loaded = loaded;
@@ -265,8 +271,10 @@ try {
   await runScript('scripts/qa-publish-flow.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-background-publish.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-publish-visuals.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-system-settings-ui.mjs', [String(debugPort), base]);
   fs.writeFileSync('logs/qa-workspace-results.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ passed: report.checks.length, officialPlatforms: report.officialPages.length, isolatedDatabase: true }, null, 2));
+  }
 } catch (error) {
   failure = error;
   console.error(error.message);

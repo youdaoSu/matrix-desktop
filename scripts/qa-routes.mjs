@@ -54,6 +54,7 @@ const routes = [
   '/automation/keywords', '/automation/welcome', '/automation/offline', '/automation/active-messages', '/automation/monitor', '/automation/templates', '/automation/logs',
   '/analytics', '/analytics/flow', '/analytics/account-monitor', '/analytics/notify-monitor', '/analytics/violation', '/analytics/drafts', '/analytics/data-screen',
   '/settings/profile', '/settings/password', '/settings/vip', '/settings/logins', '/settings/notify', '/settings/theme', '/settings/data',
+  '/settings', '/settings/general', '/settings/privacy', '/settings/about',
   '/admin', '/admin/dashboard', '/admin/users', '/admin/codes', '/admin/plans', '/admin/logs', '/admin/settings',
   '/docs', '/docs/overview', '/docs/requirements', '/docs/non-functional', '/docs/roadmap', '/docs/testing', '/docs/platforms',
 ];

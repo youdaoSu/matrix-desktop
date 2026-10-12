@@ -61,7 +61,7 @@ export default function SettingsDataPage() {
 
       <Alert className="bg-primary/5 border-primary/20">
         <ShieldCheck className="w-4 h-4" />
-        <AlertDescription>备份文件由您自行保存，平台登录 Cookie 不会写入数据库备份。</AlertDescription>
+        <AlertDescription>备份文件由您自行保存。数据库备份不包含平台登录 Cookie、本机互动快照、发布队列或界面与设备偏好；这些保存在本机数据目录，恢复数据库不会自动还原它们。</AlertDescription>
       </Alert>
 
       <div className="grid gap-4 md:grid-cols-3">

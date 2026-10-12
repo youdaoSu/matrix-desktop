@@ -8,6 +8,7 @@ import { OfficialWorkspaceProvider, platformLabels, useOfficialWorkspace } from 
 import { activePublishStages, createPublishQueue, publishStageLabels, recoverPublishJobs, type PublishJob } from './publish-queue';
 import { draftPreferences, removeLocalDraft } from './local-publish-drafts';
 import { filterPublishJobs, type TaskFilter } from './publish-report';
+import { readAppPreferences } from '@/contexts/AppPreferences';
 
 type Queue = ReturnType<typeof createPublishQueue>;
 const Context = createContext<{ queue: Queue; jobs: PublishJob[]; stop(): void } | null>(null);
@@ -28,10 +29,18 @@ function PublishQueueProvider({ children }: { children: ReactNode }) {
     const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
     let initial: PublishJob[] = [];
     try { initial = recoverPublishJobs(JSON.parse(localStorage.getItem(key) || '[]')); } catch { /* Corrupt display history is not executable. */ }
+    const previousStages = new Map(initial.map(job => [job.id, job.stage]));
     const runner = createPublishQueue({
       current, sleep,
       changed: next => {
         if (disposed) return;
+        const changed = next.filter(job => previousStages.has(job.id) && previousStages.get(job.id) !== job.stage && ['confirmed','failed','unknown','attention'].includes(job.stage));
+        for (const job of next) previousStages.set(job.id, job.stage);
+        const preferences = readAppPreferences();
+        if (changed.length && current() && preferences.publishAlerts) {
+          toast.info(`${changed.length} 条发布任务有新结果，请查看任务记录`);
+          if (preferences.desktopAlerts) void window.matrixDesktop?.systemSettings?.({ command:'notify', category:'publish' });
+        }
         setJobs(next); workspaceRef.current.lockJobs(runner.running);
         try { localStorage.setItem(key, JSON.stringify(next)); } catch { if (!storageWarning) { storageWarning = true; toast.error('任务进度保存失败，当前会话仍可查看；请勿关闭软件，并核对操作回执。'); } }
       },

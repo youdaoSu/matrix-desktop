@@ -34,9 +34,8 @@ import SettingsProfilePage from './pages/user/SettingsProfilePage';
 import SettingsPasswordPage from './pages/user/SettingsPasswordPage';
 import SettingsVipPage from './pages/user/SettingsVipPage';
 import SettingsLoginsPage from './pages/user/SettingsLoginsPage';
-import SettingsNotifyPage from './pages/user/SettingsNotifyPage';
-import SettingsThemePage from './pages/user/SettingsThemePage';
 import SettingsDataPage from './pages/user/SettingsDataPage';
+import SystemSettingsPage from './pages/user/SystemSettingsPage';
 
 import AdminLoginPage from './pages/admin/LoginPage';
 import AdminCodesPage from './pages/admin/RealCodesPage';
@@ -114,8 +113,12 @@ const RoutesComponent = () => {
         <Route path="/settings/password" element={<SettingsPasswordPage />} />
         <Route path="/settings/vip" element={<SettingsVipPage />} />
         <Route path="/settings/logins" element={<SettingsLoginsPage />} />
-        <Route path="/settings/notify" element={<SettingsNotifyPage />} />
-        <Route path="/settings/theme" element={<SettingsThemePage />} />
+        <Route path="/settings" element={<SystemSettingsPage section="general" />} />
+        <Route path="/settings/general" element={<SystemSettingsPage section="general" />} />
+        <Route path="/settings/privacy" element={<SystemSettingsPage section="privacy" />} />
+        <Route path="/settings/notify" element={<SystemSettingsPage section="notify" />} />
+        <Route path="/settings/about" element={<SystemSettingsPage section="about" />} />
+        <Route path="/settings/theme" element={<SystemSettingsPage section="general" />} />
         <Route path="/settings/data" element={<SettingsDataPage />} />
       </Route>
 

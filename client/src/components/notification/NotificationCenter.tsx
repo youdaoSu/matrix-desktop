@@ -29,6 +29,7 @@ import {
 } from '@client/src/pages/user/dashboard-data';
 import type { Notification, NotificationType } from '@shared/api.interface';
 import { cn } from '@/lib/utils';
+import { useAppPreferences } from '@/contexts/AppPreferences';
 
 interface NotificationCenterProps {
   className?: string;
@@ -36,6 +37,7 @@ interface NotificationCenterProps {
 
 const NotificationCenter = ({ className }: NotificationCenterProps) => {
   const navigate = useNavigate();
+  const preferences = useAppPreferences();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loadError, setLoadError] = useState(false);
@@ -120,7 +122,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
           aria-label="通知"
         >
           <Bell className="w-5 h-5" />
-          {unreadCount > 0 && (
+          {preferences.unreadBadges && unreadCount > 0 && (
             <Badge
               variant="default"
               className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 text-[10px] rounded-full bg-destructive text-white border-0 justify-center items-center flex font-medium"

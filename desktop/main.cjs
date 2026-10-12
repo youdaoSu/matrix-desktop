@@ -22,6 +22,7 @@ const PLATFORM = Object.freeze({
 });
 
 let mainWindow;
+const applyDesktopSettings = require('./settings.cjs').registerDesktopSettings({ app, ipcMain, shell, Notification: require('electron').Notification, getWindow: () => mainWindow, getAppUrl: () => appUrl });
 const testUserDataArg = process.argv.find((value) => value.startsWith('--matrix-user-data-dir='));
 if (testUserDataArg) app.setPath('userData', testUserDataArg.slice('--matrix-user-data-dir='.length));
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -214,6 +215,7 @@ function createMainWindow() {
       webviewTag: true,
     },
   });
+  applyDesktopSettings(win);
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;
