@@ -30,11 +30,13 @@ interface WorkspaceContext {
   hide(): void;
   select(id: string): void;
   selectAccount(id: string): void;
-  openPage(sourceId: string, url: string): void;
+  openPage(sourceId: string, url: string, draftText?: string): void;
   close(id: string): void;
   update(id: string, patch: Partial<WorkspaceTab>): void;
   registerPublisher(accountId: string, publisher: Publisher, background?: boolean): () => void;
   publisher(accountId: string, background?: boolean): Publisher | undefined;
+  registerPage(id: string, input: () => MatrixPageActionInput): () => void;
+  page(accountId: string): (() => MatrixPageActionInput) | undefined;
   lockJobs(locked: boolean): void;
   jobsLocked: boolean;
   linkTask(accountId: string, task: TaskLink): void;
@@ -57,6 +59,11 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
   const [accountError, setAccountError] = useState('');
   const preferredIntent = useRef<Intent>('manage');
   const publishers = useRef(new Map<string, Publisher>());
+  const pages = useRef(new Map<string, () => MatrixPageActionInput>());
+  const registerPage = useCallback((id: string, input: () => MatrixPageActionInput) => {
+    pages.current.set(id, input);
+    return () => { if (pages.current.get(id) === input) pages.current.delete(id); };
+  }, []);
   const rememberedPages = useRef(new Map<string, string>());
   const [jobsLocked, lockJobs] = useState(false);
   const registerPublisher = useCallback((accountId: string, publisher: Publisher, background = false) => {
@@ -115,7 +122,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     if (activeId === id || tabs.find(tab => tab.id === activeId)?.parentId === id) setActiveId(closing?.parentId || remaining.filter(tab => !tab.background).at(-1)?.id || null);
   };
   const select = (id: string) => { const tab = tabs.find(item => item.id === id); if (!tab) return; rememberedPages.current.set(tab.parentId || tab.id, tab.id); setActiveId(id); setVisible(true); };
-  const openPage = (sourceId: string, url: string) => {
+  const openPage = (sourceId: string, url: string, draftText?: string) => {
     const current = tabsRef.current, source = current.find(tab => tab.id === sourceId); if (!source) return;
     if (source.background) { toast.info('后台发布页请求打开新页面，请先处理当前任务；原发布页保持不变'); return; }
     const parentId = source.parentId || source.id;
@@ -123,12 +130,18 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     if (current.filter(tab => tab.id === parentId || tab.parentId === parentId).length >= 12) { toast.info('该账号最多同时打开 12 个页面，请先关闭不用的页面'); return; }
     const id = `${parentId}-page-${crypto.randomUUID()}`;
     // Reserve the page immediately: multiple popup events in one render cannot exceed the cap.
-    tabsRef.current = [...current, { ...source, id, parentId, initialUrl: url, pageTitle: '新页面', binding: false, draftText: undefined, preparation: undefined, task: undefined }];
+    tabsRef.current = [...current, { ...source, id, parentId, initialUrl: url, pageTitle: '新页面', binding: false, draftText, preparation: undefined, task: undefined }];
     setTabs(tabsRef.current);
     rememberedPages.current.set(parentId, id); setActiveId(id); setVisible(true);
   };
   return <Context.Provider value={{ tabs, activeId, visible, accounts, loadingAccounts, accountError, refreshAccounts, openAccount,
     registerPublisher, publisher: (id, background = false) => publishers.current.get(id + (background ? ':job' : '')), lockJobs, jobsLocked,
+    registerPage, page: accountId => {
+      const owned = tabsRef.current.filter(tab => tab.accountId === accountId && !tab.background && !tab.binding);
+      const root = owned.find(tab => !tab.parentId);
+      const page = owned.find(tab => tab.id === activeId) || owned.find(tab => tab.id === rememberedPages.current.get(root?.id || '')) || root;
+      return page ? pages.current.get(page.id) : undefined;
+    },
     linkTask: (accountId, task) => setTabs(current => current.map(tab => tab.accountId === accountId && !tab.background && !tab.parentId ? { ...tab, task } : tab)),
     bindAccount: async platform => { await prepare(platform, undefined, `登录${platformLabels[platform]}`, true, preferredIntent.current); },
     show: intent => {
@@ -242,7 +255,7 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const operation = officialOperation(tab.platform, tab.intent);
   const openOperation = async (intent = tab.intent) => {
     if (tab.binding || loading || busy) return;
-    if (!tab.background) { workspace.openPage(tab.id, officialOperation(tab.platform, intent).url); return; }
+    if (!tab.background) { workspace.openPage(tab.id, officialOperation(tab.platform, intent).url, intent === tab.intent && (intent === 'comments' || intent === 'messages') ? draft : undefined); return; }
     if (!window.confirm('将切换当前官方页面，官方页面中尚未保存的内容可能丢失。矩效已保存的草稿和待办不受影响。继续打开吗？')) return;
     await operate(() => view.current.loadURL(officialOperation(tab.platform, intent).url));
   };
@@ -272,6 +285,14 @@ function OfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: boolean }
   const [detectedAccount, setDetectedAccount] = useState('');
   const [bindingStatus, setBindingStatus] = useState('');
   const [domReady, setDomReady] = useState(false);
+  useEffect(() => {
+    if (!tab.accountId || tab.background || tab.binding) return;
+    return workspace.registerPage(tab.id, () => {
+      const accessToken = getAuthToken();
+      if (!accessToken || !domReady || !view.current) throw Error('官方页面尚未准备好，请等待页面加载');
+      return { platform: tab.platform, sessionId: tab.sessionId, accountId: tab.accountId!, accessToken, webContentsId: view.current.getWebContentsId() };
+    });
+  }, [tab.id, tab.accountId, tab.background, tab.binding, tab.platform, tab.sessionId, domReady, workspace.registerPage]);
   useEffect(() => {
     if (!tab.accountId || tab.parentId) return;
     return workspace.registerPublisher(tab.accountId, {

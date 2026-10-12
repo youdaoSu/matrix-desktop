@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
     } catch (error) { return { error: error.message }; }
   },
   syncPublishForm: (input) => ipcRenderer.invoke('matrix:sync-publish-form', input),
+  officialData: (input) => ipcRenderer.invoke('matrix:official-data', input),
   submitPublishBatch: (entries, batchId) => ipcRenderer.invoke('matrix:submit-publish-batch', { entries, batchId }),
   cancelPublishBatch: (batchId, accessToken) => ipcRenderer.invoke('matrix:cancel-publish-batch', { batchId, accessToken }),
   onPublishProgress: listener => {

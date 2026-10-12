@@ -126,6 +126,7 @@ interface MatrixPublishResult { accountId: string; error?: string; cancelled?: b
 interface Window {
   matrixDesktop?: {
     isDesktop: true;
+    officialData(input: MatrixPageActionInput & { command: 'options' | 'open-options' | 'select-option' | 'read-interactions'; field?: '音乐' | '商品' | '合集'; kind?: 'comments' | 'messages' | 'followers'; nonce?: string; index?: number }): Promise<{ error?: string; nonce?: string; items?: { index: number; label: string }[]; records?: { platformId: string; author: string; content: string }[]; source?: string; capturedAt?: string; applied?: boolean; requiresReview?: boolean; opened?: boolean }>;
     onOfficialPageOpen(listener: (event: { webContentsId: number; url: string; blocked: boolean }) => void): () => void;
     inspectPageAction(input: MatrixPageActionInput & { kind: 'publish' | 'comments' | 'messages' | 'withdraw' }): Promise<MatrixPageActionPlan | MatrixDesktopErrorResult>;
     submitPageAction(input: MatrixPageActionInput & { nonce: string; index: number }): Promise<{ error?: string; cancelled?: boolean; mayHaveSubmitted?: boolean; receipt?: MatrixPageActionReceipt }>;

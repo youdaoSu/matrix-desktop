@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { InteractionAccountRail } from '@/components/workspace/InteractionPanels';
+import { OfficialInteractionManager } from '@/components/workspace/OfficialInteractionManager';
 import { RefreshCw, Search, Users } from 'lucide-react';
 import type { FollowerRecord, PlatformAccount, PlatformType } from '@shared/api.interface';
 import { axiosForBackend } from '@/api';
@@ -51,7 +52,8 @@ export default function FollowersPage() {
   const accountName = (id: string) => accounts.find((account) => account.id === id)?.nickname || '未知账号';
 
   return <div className="matrix-interaction-layout matrix-followers-layout"><InteractionAccountRail platform={platform} selected={accountId === 'all' ? undefined : accountId} onSelect={a => setAccountId(a?.id || 'all')} /><section className="matrix-interaction-content space-y-3">
-    <Alert className="border-primary/20 bg-primary/5"><Users className="h-4 w-4 text-primary" /><AlertDescription>仅显示已通过获批平台接口同步到本地的真实粉丝记录；网页登录本身不会自动获得完整粉丝名单。</AlertDescription></Alert>
+    <OfficialInteractionManager account={accounts.find(item => item.id === accountId)} kind="followers" />
+    <Alert className="border-primary/20 bg-primary/5"><Users className="h-4 w-4 text-primary" /><AlertDescription>下方仅显示已通过获批平台接口同步的粉丝；上方工作台可读取可识别的官方页面快照，不代表完整粉丝名单。</AlertDescription></Alert>
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">粉丝管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {followers.length} 条已同步记录</p></div><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div>
     <Card><CardContent className="flex flex-wrap gap-3 p-4">
       <div className="relative min-w-56 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void load()} placeholder="搜索昵称或标签，回车查询" /></div>

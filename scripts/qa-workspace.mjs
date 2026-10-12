@@ -98,6 +98,7 @@ try {
   await sql`INSERT INTO comment_items(user_id,account_id,post_id,platform,commenter_nickname,content) VALUES(${user.id},${qaDouyin.id},${qaWork.id},'douyin','QA commenter','QA Comment for work A'),(${user.id},${qaDouyin.id},${qaWorkB.id},'douyin','QA commenter','QA Comment for work B')`;
   desktop = launch(path.join(root, '.desktop-deps/node_modules/electron/dist/electron.exe'), [
     'desktop/main.cjs', `--remote-debugging-port=${debugPort}`, `--matrix-user-data-dir=${profile}`,
+    '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
   ], { ...process.env, MATRIX_APP_URL: `${base}/app/#/login` });
   await waitUntil(async () => { try { return (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).ok; } catch { return false; } }, 'QA desktop did not start');
   await runScript('scripts/qa-ui-auth.mjs', [String(debugPort), base]);
@@ -253,6 +254,7 @@ try {
   await runScript('scripts/qa-account-pages.mjs', [String(debugPort), base]);
   await sql`UPDATE platform_accounts SET tags=ARRAY['QA 发布']::text[] WHERE user_id=${user.id} AND nickname LIKE 'QA %'`;
   await runScript('scripts/qa-publish-config-ui.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-official-data-ui.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-personal-tools.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-auto-binding.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-publish-flow.mjs', [String(debugPort), base]);

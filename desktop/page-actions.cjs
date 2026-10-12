@@ -91,6 +91,7 @@ function createJournal(directory) {
 }
 
 function registerPageActions({ ipcMain, dialog, webContents, session, getWindow, platforms, inspectPlatformSession, authenticate, journal, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
+  require('./official-data.cjs').registerOfficialData({ ipcMain, context });
   const plans = new Map(), busy = new Set();
   const script = (command, input) => `(${pageAction.toString()})(${JSON.stringify(command)},${JSON.stringify(input)})`;
   const run = (guest, command, input) => guest.executeJavaScriptInIsolatedWorld(1001, [{ code: script(command, input) }]);

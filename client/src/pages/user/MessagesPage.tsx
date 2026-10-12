@@ -1,4 +1,5 @@
 import { useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
+import { OfficialInteractionManager } from '@/components/workspace/OfficialInteractionManager';
 import { InteractionAccountRail, ReplyTemplatePane } from '@/components/workspace/InteractionPanels';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -62,6 +63,7 @@ export default function MessagesPage() {
   const selected = sessions.find((session) => session.id === selectedId);
 
   return <div className={aggregate ? 'matrix-interaction-layout matrix-messages-aggregate' : 'matrix-interaction-layout matrix-messages-layout'}>{!aggregate && <InteractionAccountRail platform={platform} selected={account?.id} onSelect={setAccount} />}<section className="matrix-interaction-content space-y-3">
+    <OfficialInteractionManager account={account} kind="messages" />
     <Alert className="border-primary/20 bg-primary/5"><Inbox className="h-4 w-4 text-primary" /><AlertDescription>通过账号操作面板查看和发送私信。下方展示已同步的会话记录。</AlertDescription></Alert>
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">私信管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {sessions.length} 个真实会话</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => account ? void workspace.openAccount(account, 'messages') : workspace.show('messages')}>官方页面发私信</Button><Button variant="outline" disabled={loading} onClick={() => void loadSessions()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div></div>
     <Card className="matrix-message-panel flex overflow-hidden">

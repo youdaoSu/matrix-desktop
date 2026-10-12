@@ -83,8 +83,8 @@ try {
   const screenshot = await call('Page.captureScreenshot', { format: 'png' });
   fs.mkdirSync('logs', { recursive: true });
   fs.writeFileSync('logs/qa-packaged-workspace.png', Buffer.from(screenshot.data, 'base64'));
-  fs.writeFileSync('logs/qa-packaged-results.json', JSON.stringify({ firstRun: true, embeddedDatabase: true, authenticationChecks: 4, routes: 60, officialGuestRendered: true }, null, 2));
-  console.log('Packaged first-run, built-in database, 4 authentication checks, 60 routes, and official guest rendering passed');
+  fs.writeFileSync('logs/qa-packaged-results.json', JSON.stringify({ firstRun: true, embeddedDatabase: true, authenticationChecks: 5, routes: 60, officialGuestRendered: true }, null, 2));
+  console.log('Packaged first-run, built-in database, 5 authentication checks, 60 routes, and official guest rendering passed');
   await evaluate('window.close(); true').catch(() => {});
   await wait(() => desktop.exitCode !== null, 'Package did not shut down cleanly', 20000);
   failed = false;
