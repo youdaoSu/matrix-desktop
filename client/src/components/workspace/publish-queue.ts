@@ -117,7 +117,16 @@ export function createPublishQueue(deps: Dependencies, initial: PublishJob[] = [
           }
           const review = [request.config.covers?.length ? '请核对封面上传及裁剪结果' : '', request.config.schedule?.mode === 'official' ? `请在官方页面设置定时发布时间：${request.config.schedule.at}` : ''].filter(Boolean);
           if (review.length) throw Error(review.join('；'));
-        } catch (error) { guard(); update(job.id, 'attention', error instanceof Error ? error.message : '需要查看官方页面'); }
+        } catch (error) {
+          guard();
+          // Early form failures must not hide cover/time requests: resume does not
+          // re-upload or overwrite the user's manual edits in the official page.
+          const pending = [
+            request.config.covers?.length ? `请一并核对封面：${request.config.covers.filter(cover => cover.index !== 2 || request.account.platform === 'douyin').map(cover => cover.name).join('、')}` : '',
+            request.config.schedule?.mode === 'official' ? `请一并设置官方定时：${request.config.schedule.at}` : '',
+          ].filter(Boolean);
+          update(job.id, 'attention', [error instanceof Error ? error.message : '需要查看官方页面', ...pending].join('；'));
+        }
       }
       guard();
       const currentJobs = jobs.filter(job => batchJobs.some(item => item.id === job.id));

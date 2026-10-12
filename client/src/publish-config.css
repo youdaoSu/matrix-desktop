@@ -1,0 +1,86 @@
+/* Shared single/batch account picker and platform forms. No fixed screenshot-sized canvas. */
+.matrix-publish-picker[data-slot=dialog-content] { width: calc(100vw - 64px); max-width: 1450px; height: min(816px, calc(100vh - 64px)); display: flex; flex-direction: column; gap: 16px; padding: 24px 20px 18px; background: var(--card); }
+.matrix-picker-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; padding-right: 30px; }
+.matrix-picker-heading [data-slot=dialog-title] { font-size: 18px; }
+.matrix-picker-heading [data-slot=dialog-description] { color: var(--primary); font-size: 14px; }
+.matrix-picker-body { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 20px; flex: 1; min-height: 0; }
+.matrix-picker-main { min-width: 0; display: flex; flex-direction: column; }
+.matrix-picker-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 18px 14px; }
+.matrix-picker-tools [role=tablist] { display: flex; flex-shrink: 0; }
+.matrix-picker-tools [role=tab] { padding: 9px 14px; border: 1px solid var(--border); margin-left: -1px; font-size: 14px; }
+.matrix-picker-tools [role=tab]:first-child { border-radius: 4px 0 0 4px; }
+.matrix-picker-tools [role=tab]:last-child { border-radius: 0 4px 4px 0; }
+.matrix-picker-tools [role=tab].is-active { color: var(--primary); border-color: var(--primary); z-index: 1; }
+.matrix-picker-tools > label { display: flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap; }
+.matrix-picker-search { min-width: 170px; flex: 1; position: relative; }
+.matrix-picker-search input { padding-right: 30px; }
+.matrix-picker-search > svg { position: absolute; right: 10px; top: 10px; pointer-events: none; }
+.matrix-picker-groups { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 24px; }
+.matrix-picker-groups > section { margin-bottom: 30px; }
+.matrix-picker-group-name { display: flex; gap: 14px; align-items: center; font-size: 14px; margin-bottom: 18px; }
+.matrix-picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px 12px; padding-left: 24px; }
+.matrix-picker-account { display: flex; align-items: center; gap: 12px; min-width: 0; cursor: pointer; }
+.matrix-picker-account > span:last-child { min-width: 0; }
+.matrix-picker-account strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 400; }
+.matrix-picker-account small, .matrix-picker-selected small, .matrix-picker-saved-list small { display: block; color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
+.matrix-picker-account:has([disabled]) { opacity: .65; cursor: default; }
+.matrix-publish-avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; height: 42px; width: 42px; border-radius: 50%; background: var(--muted); border: 1px solid var(--border); }
+.matrix-publish-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.matrix-publish-platform-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; color: white; flex-shrink: 0; }
+.matrix-publish-platform-icon.douyin { background: #151515; }
+.matrix-publish-platform-icon.xiaohongshu { background: #ee445e; }
+.matrix-publish-platform-icon.bilibili { background: #ed89b5; }
+.matrix-publish-platform-icon.wechat { background: #eaa339; }
+.matrix-publish-avatar > .matrix-publish-platform-icon { position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 4px; }
+.matrix-publish-avatar > .matrix-publish-platform-icon svg { width: 13px; height: 13px; }
+.matrix-picker-selected { min-height: 0; background: var(--muted); padding: 20px 16px; display: flex; flex-direction: column; }
+.matrix-picker-selected > div:first-child { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.matrix-picker-save { margin-left: auto; color: var(--primary); }
+.matrix-picker-selected ul { overflow: auto; padding-top: 15px; }
+.matrix-picker-selected li { display: flex; gap: 10px; align-items: center; margin: 18px 0; font-size: 13px; }
+.matrix-picker-selected li > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.matrix-picker-list-name { display: flex; gap: 4px; padding-top: 15px; }
+.matrix-picker-empty { padding: 40px 10px; color: var(--muted-foreground); font-size: 13px; }
+.matrix-picker-saved-list { display: flex; align-items: center; gap: 15px; border-bottom: 1px solid var(--border); padding: 15px 0; }
+.matrix-picker-saved-list > div { flex: 1; }
+.matrix-publish-picker footer { display: flex; justify-content: end; align-items: center; gap: 10px; }
+.matrix-publish-picker footer > span { margin-right: auto; color: var(--muted-foreground); font-size: 11px; }
+.matrix-platform-config-panel { display: flex; flex-direction: column; min-height: 100%; }
+.matrix-platform-config-panel > header.matrix-platform-config-header { height: auto; min-height: 52px; flex-wrap: wrap; flex-shrink: 0; }
+.matrix-platform-config-header strong { font-size: 13px; }
+.matrix-platform-config-header small { color: var(--muted-foreground); font-weight: 400; font-size: 11px; }
+.matrix-platform-config-header > div { display: flex; gap: 10px; flex-wrap: wrap; }
+.matrix-platform-config-header label { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted-foreground); }
+.matrix-publish-switch { width: 32px; height: 18px; border-radius: 10px; background: #b8b8b8; padding: 2px; flex-shrink: 0; }
+.matrix-publish-switch > span { display: block; height: 14px; width: 14px; background: white; border-radius: 50%; transition: transform .15s; }
+.matrix-publish-switch[aria-checked=true] { background: var(--primary); }
+.matrix-publish-switch[aria-checked=true] > span { transform: translateX(14px); }
+.matrix-platform-config-tabs { display: flex; flex-shrink: 0; gap: 24px; align-items: center; padding: 10px 12px 0; border-bottom: 1px solid var(--border); }
+.matrix-platform-config-tabs > button { color: var(--primary); border-color: var(--primary); margin-bottom: 10px; }
+.matrix-platform-config-tabs [role=tablist] { display: flex; gap: 16px; }
+.matrix-platform-config-tabs [role=tab] { position: relative; padding: 4px 0 14px; border-bottom: 2px solid transparent; }
+.matrix-platform-config-tabs [aria-selected=true] { border-bottom-color: var(--primary); }
+.matrix-platform-config-tabs sup { position: absolute; right: -10px; top: -4px; border: 1px solid var(--border); border-radius: 20px; min-width: 18px; height: 18px; padding: 4px; background: var(--card); color: var(--muted-foreground); font-size: 10px; }
+.matrix-platform-config-body { display: grid; grid-template-columns: 115px minmax(0, 1fr); flex: 1; }
+.matrix-platform-config-body > nav { border-right: 1px solid var(--border); }
+.matrix-platform-config-body > nav > div { display: flex; gap: 3px; align-items: center; min-height: 48px; padding: 8px 5px; border-bottom: 1px solid var(--border); }
+.matrix-platform-config-body > nav > div.is-active { color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.matrix-platform-config-body > nav button:first-child { display: flex; gap: 6px; align-items: center; min-width: 0; flex: 1; font-size: 12px; }
+.matrix-platform-config-body > nav button:first-child > span:last-child { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.matrix-platform-config-body > nav .matrix-publish-avatar { width: 22px; height: 22px; }
+.matrix-platform-config-body > nav .matrix-publish-platform-icon { display: none; }
+.matrix-platform-account-form { padding: 12px 16px 32px; min-width: 0; }
+.matrix-platform-account-notice { padding: 12px; border-radius: 8px; background: color-mix(in srgb, var(--primary) 5%, var(--card)); font-size: 13px; margin-bottom: 28px; }
+.matrix-platform-account-notice strong { color: var(--primary); font-weight: 400; }
+.matrix-platform-account-form .matrix-publish-field { grid-template-columns: 88px minmax(0, 1fr); margin-bottom: 22px; }
+.matrix-platform-account-form .matrix-publish-field select { width: 100%; border: 1px solid var(--border); background: var(--card); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+.matrix-platform-config-help { font-size: 11px; color: var(--muted-foreground); line-height: 1.8; padding: 8px 0 18px; }
+.matrix-platform-toggle { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; min-height: 36px; }
+.matrix-platform-toggle label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.matrix-platform-toggle input { accent-color: var(--primary); }
+.matrix-platform-toggle button { font-size: 11px; color: var(--primary); }
+.matrix-platform-config-panel .matrix-reference-account-empty { flex: 1; min-height: 420px; }
+.matrix-batch-accounts .matrix-platform-config-panel { min-height: calc(100% - 80px); }
+@media (min-width: 1700px) { .matrix-platform-config-body { grid-template-columns: 160px minmax(0, 1fr); } .matrix-platform-account-form { padding: 12px 24px 40px; } }
+@media (max-width: 1200px) { .matrix-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .matrix-picker-body { grid-template-columns: minmax(0, 1fr) 210px; } .matrix-platform-config-body { grid-template-columns: 90px minmax(0, 1fr); } .matrix-platform-account-form { padding: 12px 8px 28px; } .matrix-platform-account-form .matrix-publish-field { grid-template-columns: 66px minmax(0, 1fr); gap: 6px; } }
+@media (max-width: 720px) { .matrix-publish-picker[data-slot=dialog-content] { width: calc(100vw - 24px); height: calc(100vh - 24px); padding: 18px 12px; } .matrix-picker-body { grid-template-columns: minmax(0, 1fr); overflow: auto; } .matrix-picker-main { min-height: 260px; } .matrix-picker-selected { min-height: 100px; max-height: 180px; } .matrix-picker-grid { grid-template-columns: minmax(0, 1fr); } .matrix-picker-tools [role=tab] { padding: 8px 10px; } .matrix-publish-picker footer > span { display: none; } }

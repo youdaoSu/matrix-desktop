@@ -199,7 +199,11 @@ try {
   await screenshot('qa-workspace-embedded.png');
   ensure(await evaluate("!document.body.innerText.includes('官方工作区') && !document.body.innerText.includes('矩效工作台')"), 'Unified interface does not expose two separate workspaces');
   ensure(await evaluate("document.querySelector('.matrix-page-content').getClientRects().length > 0 && document.querySelector('.matrix-official-deck').getClientRects().length > 0"), 'Publishing form stays visible alongside the account panel');
-  await evaluate("(() => { [...document.querySelectorAll('.matrix-publish-account [role=checkbox]')].slice(0,2).forEach(item=>item.click()); const title=document.querySelector('#publish-title'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(title,'QA multi-account draft'); title.dispatchEvent(new Event('input',{bubbles:true})); return true; })()");
+  await click('button', '选择账号');
+  await waitUntil(() => evaluate("document.querySelectorAll('[data-publish-account]').length>=2"), 'Account picker missing');
+  await evaluate("[...document.querySelectorAll('[data-publish-account] [role=checkbox]:not([disabled])')].slice(0,2).forEach(item=>item.click());true");
+  await click('button', '确定');
+  await evaluate("(() => { const title=document.querySelector('#publish-title'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(title,'QA multi-account draft'); title.dispatchEvent(new Event('input',{bubbles:true})); return true; })()");
   await click('button', '同步至右侧');
   await evaluate("document.querySelector('.matrix-publish-footer details').open=true;true");
   await click('button', '为所选账号准备发布');
@@ -247,6 +251,8 @@ try {
   await waitUntil(() => evaluate(`document.querySelectorAll('webview').length === ${count - 1}`), 'Closing a tab did not release its guest');
   ensure(await evaluate(`document.querySelectorAll('webview').length === ${count - 1}`), 'Closing one tab preserves other account pages');
   await runScript('scripts/qa-account-pages.mjs', [String(debugPort), base]);
+  await sql`UPDATE platform_accounts SET tags=ARRAY['QA 发布']::text[] WHERE user_id=${user.id} AND nickname LIKE 'QA %'`;
+  await runScript('scripts/qa-publish-config-ui.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-personal-tools.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-auto-binding.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-publish-flow.mjs', [String(debugPort), base]);

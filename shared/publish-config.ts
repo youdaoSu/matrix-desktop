@@ -6,18 +6,21 @@ export interface PublishConfig {
   covers?: { id: string; name: string; index: number }[];
   schedule?: { mode: 'now' | 'official' | 'local'; at?: string };
   pinComment?: boolean;
+  /** Explicit requests requiring selection/confirmation in the official editor. */
+  extras?: Record<string, string>;
 }
 export function parseTopics(text: string): string[] {
   return [...new Set(text.split(/[\s#,，;；、]+/u).map(value => value.trim()).filter(Boolean))];
 }
-export function syncPublishConfig(common: PublishConfig, previous: PublishConfig | undefined, fields: readonly PublishSyncField[]): PublishConfig {
+export function syncPublishConfig(common: PublishConfig, previous: PublishConfig | undefined, fields: readonly PublishSyncField[], preserve: ReadonlySet<string> = new Set()): PublishConfig {
   const result: PublishConfig = previous ? { ...previous, topics: [...previous.topics], options: { ...previous.options } } : { title: '', body: '', topics: [], comment: '', options: {} };
   for (const key of fields) {
     if (key === 'topics') result.topics = [...common.topics]; else result[key] = common[key];
   }
-  result.covers = common.covers?.map(cover => ({ ...cover }));
-  result.schedule = common.schedule ? { ...common.schedule } : undefined;
-  result.pinComment = common.pinComment;
+  if (!preserve.has('covers')) result.covers = common.covers?.map(cover => ({ ...cover }));
+  if (!preserve.has('schedule')) result.schedule = common.schedule ? { ...common.schedule } : undefined;
+  if (!preserve.has('pinComment')) result.pinComment = common.pinComment;
+  result.extras = previous?.extras ? { ...previous.extras } : undefined;
   return result;
 }
 export function validatePublishConfig(config: PublishConfig): string | null {

@@ -874,6 +874,7 @@ export class PlatformService {
       avatarUrl: row.avatarUrl ?? undefined,
       accountRemark: row.accountRemark ?? undefined,
       groupName: row.groupName ?? undefined,
+      tags: row.tags ?? [],
       authStatus: row.authStatus as 'pending' | 'authorized' | 'expired' | 'error',
       authExpiresAt: row.authExpiresAt ? row.authExpiresAt.toISOString() : undefined,
       followersCount: row.followersCount,

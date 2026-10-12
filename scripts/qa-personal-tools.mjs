@@ -63,11 +63,13 @@ try {
     await wait(`!document.querySelector('.matrix-page-content').innerText.includes(${JSON.stringify(title)})`, 'Configuration not deleted'); checks++;
   }
   for (const suffix of ['batch-video', 'batch-image']) {
-    await navigate(`/publish/${suffix}`, "document.querySelectorAll('.matrix-page-content [role=checkbox]').length === 4 && ![...document.querySelectorAll('button')].find(el=>el.innerText==='批量保存草稿')?.disabled");
+    await navigate(`/publish/${suffix}`, "!!document.querySelector('.matrix-platform-config-panel') && ![...document.querySelectorAll('button')].find(el=>el.innerText==='批量保存草稿')?.disabled");
     await evaluate("[...document.querySelectorAll('.matrix-workspace-tabs > button')].find(el=>el.getClientRects().length&&el.innerText.includes('收起账号页面'))?.click();true");
     await wait("!document.querySelector('.matrix-main-integrated') && !!document.querySelector('.matrix-batch-columns')", 'Native batch editor did not become visible');
     assert.equal(await evaluate("(() => { const columns=document.querySelector('.matrix-batch-columns').getBoundingClientRect(); const common=document.querySelector('.matrix-batch-common').getBoundingClientRect(); const accounts=document.querySelector('.matrix-batch-accounts').getBoundingClientRect(); const footer=document.querySelector('.matrix-publish-footer').getBoundingClientRect(); return Math.abs(common.width/columns.width-.6)<.01 && Math.abs(accounts.width/columns.width-.4)<.01 && footer.bottom<=innerHeight+1 && footer.height>0; })()"), true); checks++;
-    await evaluate("[...document.querySelectorAll('.matrix-page-content [role=checkbox]')].slice(0,2).forEach(el=>el.click());");
+    await click('选择账号'); await wait("document.querySelectorAll('[data-publish-account] [role=checkbox]:not([disabled])').length === 4", 'Batch account picker missing');
+    await evaluate("[...document.querySelectorAll('[data-publish-account] [role=checkbox]:not([disabled])')].slice(0,2).forEach(el=>el.click());");
+    await click('确定');
     const title = `${run}_${suffix}`;
     await fill('[aria-label="内容1标题"]', title); await click('新增内容');
     await fill('[aria-label="内容2标题"]', `${title}_2`); await click('批量保存草稿');

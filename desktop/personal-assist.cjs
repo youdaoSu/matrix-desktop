@@ -63,6 +63,7 @@ function registerPersonalAssist({ ipcMain, dialog, webContents, session, getWind
       if (!['fill', 'topics', 'progress'].includes(input.command)) throw new Error('同步操作无效');
       if (input.command === 'fill') {
         const form = input.form;
+        if (form?.extras !== undefined && (!form.extras || Array.isArray(form.extras) || typeof form.extras !== 'object' || Object.keys(form.extras).length > 40 || Object.entries(form.extras).some(([key, value]) => !key || key.length > 50 || typeof value !== 'string' || value.length > 1000))) throw new Error('平台扩展配置格式或长度不正确');
         if (!form || typeof form.title !== 'string' || typeof form.body !== 'string' || form.title.length > 500 || form.body.length > 20000 || !Array.isArray(form.topics) || form.topics.length > 15 || form.topics.some(t => typeof t !== 'string' || !t.trim() || t.length > 40) || !form.options || Object.entries(form.options).some(([key, value]) => !['category', 'visibility', 'originality'].includes(key) || typeof value !== 'string' || value.length > 100)) throw new Error('发布配置格式或长度不正确');
       }
       if (guest.getURL() !== url.href) throw new Error('官方页面已切换，请重新同步');

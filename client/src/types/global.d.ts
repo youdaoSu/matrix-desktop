@@ -117,6 +117,7 @@ interface MatrixPublishForm {
   body: string;
   topics: string[];
   options: { category?: string; visibility?: string; originality?: string };
+  extras?: Record<string, string>;
 }
 interface MatrixPublishSyncResult { error?: string; filled?: string[]; unresolved?: string[]; topics?: string[]; topicsAsText?: boolean; submitted?: false; uploadPercent?: number; ready?: boolean; uploadError?: string }
 type MatrixPublishEntry = MatrixPageActionInput & { nonce: string; index: number };

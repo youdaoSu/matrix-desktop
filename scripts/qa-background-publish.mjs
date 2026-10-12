@@ -19,8 +19,11 @@ try {
   await main.call('Page.navigate', { url: base + '/app/#/dashboard' });
   await wait(() => main.evaluate("location.hash==='#/dashboard' && !document.querySelector('.matrix-publish-editor')"), 'Fresh editor navigation missing');
   await main.evaluate("location.hash='#/publish/create';true");
-  await wait(() => main.evaluate("!!document.querySelector('[data-publish-account]')"), 'Accounts missing');
-  await main.evaluate("(()=>{const el=document.querySelector('#publish-title');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'QA后台导航测试');el.dispatchEvent(new Event('input',{bubbles:true}));[...document.querySelectorAll('[data-publish-account]')].find(e=>e.innerText.includes('QA昵称已补全')).querySelector('[role=checkbox]').click();const file=document.createElement('input');file.type='file';file.id='qa-native-drop';document.body.append(file);return true})()");
+  await wait(() => main.evaluate("!!document.querySelector('.matrix-platform-config-tabs > button:not([disabled])')"), 'Accounts missing');
+  await main.evaluate("document.querySelector('.matrix-platform-config-tabs > button').click();true");
+  await main.evaluate("[...document.querySelectorAll('[data-publish-account]')].find(e=>e.innerText.includes('QA昵称已补全')).querySelector('[role=checkbox]').click();true");
+  await main.evaluate("[...document.querySelectorAll('[role=dialog] button')].find(e=>e.innerText==='确定').click();true");
+  await main.evaluate("(()=>{const el=document.querySelector('#publish-title');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'QA后台导航测试');el.dispatchEvent(new Event('input',{bubbles:true}));const file=document.createElement('input');file.type='file';file.id='qa-native-drop';document.body.append(file);return true})()");
   const { root } = await main.call('DOM.getDocument'), { nodeId } = await main.call('DOM.querySelector', { nodeId: root.nodeId, selector: '#qa-native-drop' });
   await main.call('DOM.setFileInputFiles', { nodeId, files: [path.resolve('desktop/assets/icon.png')] });
   await main.evaluate("(()=>{const data=new DataTransfer();data.items.add(document.querySelector('#qa-native-drop').files[0]);document.querySelector('.matrix-dropzone').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));return true})()");

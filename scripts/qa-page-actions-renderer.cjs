@@ -50,6 +50,16 @@ app.whenReady().then(async () => {
     await js('document.body.insertAdjacentHTML("beforeend", "<div class=topic-list><div role=option>#官方推荐</div><div role=option style=display:none>隐藏话题</div></div>")');
     assert.deepEqual((await sync('topics', {})).topics, ['官方推荐']); publishChecks++;
     console.log(JSON.stringify({ publishFormAssertions: publishChecks, localFixturesOnly: true }));
+    const extraResult = await sync('fill', { title: '', body: '', topics: [], options: {}, extras: { 音乐: '指定曲目', 允许评论: '关闭', 合集: '' } });
+    assert.equal(extraResult.unresolved.length, 2); assert.ok(extraResult.unresolved.some(text => text.includes('指定曲目'))); assert.ok(extraResult.unresolved.some(text => text.includes('关闭'))); assert.equal(extraResult.submitted, false);
+    console.log(JSON.stringify({ advancedFieldNotSilentlyDroppedChecks: 4 }));
+    await fixture(); await js('document.body.insertAdjacentHTML("beforeend", "<label><input type=checkbox>允许评论</label>")');
+    assert.ok((await sync('fill', { extras: { 允许评论: '开启' } })).filled.includes('允许评论')); assert.equal(await js('document.querySelector("input[type=checkbox]").checked'), true);
+    assert.ok((await sync('fill', { extras: { 允许评论: '关闭' } })).filled.includes('允许评论')); assert.equal(await js('document.querySelector("input[type=checkbox]").checked'), false);
+    await js('document.body.insertAdjacentHTML("beforeend", "<label><input type=checkbox>允许评论</label>")');
+    assert.ok((await sync('fill', { extras: { 允许评论: '开启' } })).unresolved.some(value => value.includes('允许评论'))); assert.equal(await js('[...document.querySelectorAll("input[type=checkbox]")].some(el=>el.checked)'), false);
+    assert.equal(await js('document.body.dataset.clicks'), undefined);
+    console.log(JSON.stringify({ exactBooleanControlChecks: 7 }));
     await fixture(); assert.equal((await sync('progress', {})).ready, true); assert.equal((await sync('progress', {})).uploadPercent, undefined);
     await js('document.body.insertAdjacentHTML("beforeend", "<progress value=35 max=100></progress>")');
     assert.equal((await sync('progress', {})).uploadPercent, 35); assert.equal((await sync('progress', {})).ready, false);

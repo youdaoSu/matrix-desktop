@@ -57,6 +57,7 @@ export interface PlatformAccount {
   avatarUrl?: string;
   accountRemark?: string;
   groupName?: string;
+  tags?: string[];
   authStatus: 'pending' | 'authorized' | 'expired' | 'error';
   authExpiresAt?: string;
   followersCount: number;

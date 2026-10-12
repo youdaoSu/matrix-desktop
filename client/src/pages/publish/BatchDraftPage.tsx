@@ -8,9 +8,11 @@ import { platformLabels, useOfficialWorkspace } from '@/components/workspace/Off
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
+import { PublishAccountPanel } from '@/components/workspace/PublishAccountPanel';
+import { loadPublishAccounts } from '@/components/workspace/publish-preferences';
+import { validatePlatformConfig } from '@shared/publish-platform-fields';
 import { usePublishQueue } from '@/components/workspace/PublishQueue';
-import { parseTopics, validatePublishConfig } from '@shared/publish-config';
+import { parseTopics, validatePublishConfig, type PublishConfig } from '@shared/publish-config';
 
 type Row = { id: string; title: string; content: string; topics?: string; comment?: string; saved: boolean; error?: string; media?: MatrixMediaSelection };
 const newRow = (): Row => ({ id: crypto.randomUUID(), title: '', content: '', saved: false });
@@ -21,10 +23,11 @@ export default function BatchDraftPage() {
   const mediaType = pathname.endsWith('batch-image') ? 'image' : 'video';
   const workspace = useOfficialWorkspace();
   const { queue } = usePublishQueue(), navigate = useNavigate();
-  const [preview, setPreview] = useState(false), [picker, setPicker] = useState(false);
+  const [preview, setPreview] = useState(false);
   const [batchField, setBatchField] = useState<'title' | 'content' | 'topics' | 'comment'>('title'), [batchText, setBatchText] = useState('');
   const [accounts, setAccounts] = useState<PlatformAccount[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [configs, setConfigs] = useState<Record<string, PublishConfig>>({});
   const [rows, setRows] = useState<Row[]>(() => [newRow()]);
   const [drafts, setDrafts] = useState<ContentPost[]>([]);
   const [busy, setBusy] = useState(false);
@@ -37,10 +40,10 @@ export default function BatchDraftPage() {
     setLoading(true); setLoadError('');
     try {
       const [a, d] = await Promise.all([
-        axiosForBackend.get('/api/platform/accounts', { params: { page: 1, pageSize: 100 } }),
+        loadPublishAccounts(),
         axiosForBackend.get('/api/content/posts', { params: { status: 'draft', page: 1, pageSize: 100 } }),
       ]);
-      if (current === generation.current) { setAccounts(a.data.data.items); setDrafts(d.data.data.items); }
+      if (current === generation.current) { setAccounts(a); setDrafts(d.data.data.items); }
     } catch (error) { if (current === generation.current) setLoadError(message(error)); }
     finally { if (current === generation.current) setLoading(false); }
   };
@@ -120,7 +123,12 @@ export default function BatchDraftPage() {
         if (!row.media) throw Error(`作品「${row.title || '未命名'}」未选择素材`);
         const config = { title: row.title, body: row.content, topics: parseTopics(row.topics || ''), comment: row.comment || '', options: {} };
         const error = validatePublishConfig(config); if (error) throw Error(error);
-        return targets.map(account => ({ account, config, media: row.media! }));
+        return targets.map(account => {
+          const accountConfig = { ...configs[account.id], ...config, options: configs[account.id]?.options || {} };
+          const invalid = validatePublishConfig(accountConfig) || validatePlatformConfig(account.platform, accountConfig);
+          if (invalid) throw Error(`${account.nickname}：${invalid}`);
+          return { account, config: accountConfig, media: row.media! };
+        });
       });
       queue.startMany(groups); workspace.hide(); navigate('/publish/tasks'); toast.success('全部作品已进入任务记录，将按作品顺序处理；每组最终提交时需确认');
     } catch (error) { toast.error(message(error)); }
@@ -149,9 +157,7 @@ export default function BatchDraftPage() {
         <div className="matrix-batch-add"><Button variant="outline" disabled={busy || rows.length >= 50} onClick={() => setRows(items => [...items, newRow()])}><Plus size={15} />新增内容</Button></div>
       </section>
       <section className="matrix-batch-accounts">
-        <header><strong>平台和账号配置</strong><span>已选 {selected.length} 个账号</span><Button size="sm" variant="outline" onClick={() => setPicker(value => !value)}>选择账号</Button></header>
-        {!picker && !selected.length && <div className="matrix-reference-account-empty"><button aria-label="添加发布账号" onClick={() => setPicker(true)}>＋</button><p>未选择账号，请点击加号按钮选择账号</p></div>}
-        <div className="matrix-publish-account-list">{accounts.map(account => <label key={account.id} className="matrix-publish-account"><Checkbox disabled={busy} checked={selected.includes(account.id)} onCheckedChange={checked => setSelected(ids => checked ? [...new Set([...ids, account.id])] : ids.filter(id => id !== account.id))} /><div><strong>{account.nickname || '未命名账号'}</strong><small>{platformLabels[account.platform]}</small></div><span>未发布</span></label>)}{loading && <p role="status">加载账号及草稿…</p>}{!loading && !accounts.length && <div className="matrix-publish-no-account"><Plus size={32} /><p>请先绑定自己的账号</p><Button variant="outline" onClick={() => workspace.show('manage')}>添加账号</Button></div>}</div>
+        <PublishAccountPanel accounts={accounts} selected={selected} configs={configs} onSelect={setSelected} onInit={(id, config) => setConfigs(current => ({ ...current, [id]: config }))} onChange={(id, patch) => setConfigs(current => ({ ...current, [id]: { title: '', body: '', topics: [], comment: '', options: {}, ...current[id], ...patch } }))} disabled={busy} loading={loading} mediaType={mediaType} batch />
         <details className="matrix-batch-saved"><summary>待发表草稿（最近 100 条）</summary>{drafts.filter(item => item.mediaType === mediaType).map(draft => <article key={draft.id}><div><strong>{draft.title || '未命名内容'}</strong><small>{platformLabels[draft.platform]} · {draft.accountNickname} · 本地草稿，未发布</small></div><Button variant="outline" size="sm" disabled={busy} onClick={() => void open(draft)}>准备该账号发表</Button></article>)}</details>
         <div className="matrix-distribution-preview"><button onClick={() => setPreview(value => !value)}>› 分发任务预览</button><span>作品：{rows.length}　账号：{selected.length}</span>{preview && <ol>{rows.flatMap((row, index) => accounts.filter(account => selected.includes(account.id)).map(account => <li key={row.id + account.id}>{index + 1}. {row.title || '未命名作品'} → {account.nickname} · {platformLabels[account.platform]}</li>))}</ol>}</div>
       </section>

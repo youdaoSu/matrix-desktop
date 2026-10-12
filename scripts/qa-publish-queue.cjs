@@ -51,5 +51,10 @@ function fixture(overrides = {}) {
   f.queue.operationReceipt({ ...receipt, id: 'withdraw', kind: 'withdraw', status: 'confirmed', message: '已下架' }); assert.equal(f.queue.jobs.at(-1).stage, 'confirmed'); assert.equal(f.queue.jobs.at(-1).followup.status, 'failed'); assert.equal(f.queue.jobs.at(-1).withdrawal.status, 'confirmed'); checks += 5;
   f.queue.operationReceipt({ ...receipt, accountId: 'foreign', status: 'confirmed' }); assert.equal(f.queue.jobs.at(-1).followup.status, 'failed');
   f.queue.remove(job.id); assert.ok(!f.queue.jobs.some(item => item.id === job.id)); assert.equal(f.calls.uploads, 2); checks += 3;
+  f = fixture({ fill: async () => ({ filled: ['title'], unresolved: ['音乐：QA 指定曲目（请在官方表单选择并核对）'] }) });
+  const advanced = item('advanced'); advanced.config.extras = { 音乐: 'QA 指定曲目' }; advanced.config.covers = [{ id: 'cover-handle', name: 'QA-cover.png', index: 1 }]; advanced.config.schedule = { mode: 'official', at: '2099-01-01T12:00' };
+  f.queue.start([advanced]); advanced.config.extras.音乐 = 'later edit'; await done(f.queue);
+  assert.equal(f.queue.jobs[0].stage, 'attention'); assert.equal(f.calls.submits, 0); assert.equal(f.queue.jobs[0].config.extras.音乐, 'QA 指定曲目');
+  assert.ok(f.queue.jobs[0].message.includes('QA-cover.png')); assert.ok(f.queue.jobs[0].message.includes('2099-01-01T12:00')); assert.ok(f.queue.jobs[0].message.includes('QA 指定曲目')); checks += 6;
   console.log(JSON.stringify({ backgroundQueueChecks: checks, externalPlatformActions: false }));
 })().catch(error => { console.error(error); process.exitCode = 1; });

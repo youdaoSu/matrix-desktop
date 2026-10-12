@@ -29,6 +29,18 @@ function publishForm(command, config = {}) {
   const expressions = { title: /标题|title/i, body: /简介|描述|正文|说点什么|分享|description|content/i, tags: /标签|话题|tag/i, category: /分区|分类|category/i, visibility: /可见|权限|visibility/i, originality: /创作类型|原创|转载|original/i };
   const read = el => el.isContentEditable ? el.innerText : el.value;
   const filled = [], unresolved = [];
+  const toggleAssignments = [];
+  const booleanFields = ['原创声明', '允许合拍', '允许保存', '允许评论', '允许二创', '未经作者允许禁止转载', '启用充电面板', '水印', '杜比音效', 'Hi-Res 无损音质', '关闭弹幕', '关闭评论', '开启精选评论', '同步动态', '允许下载', '允许转发'];
+  // Only exact, uniquely labelled visible checkboxes can be automated. Dynamic
+  // collections/products/music/mentions must be selected in the official editor.
+  for (const [name, value] of Object.entries(config.extras || {})) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    if (booleanFields.includes(name) && ['开启', '关闭'].includes(value)) {
+      const matches = [...document.querySelectorAll('input[type=checkbox],[role=checkbox]')].filter(el => visible(el) && el.getAttribute('aria-disabled') !== 'true' && [el.getAttribute('aria-label'), ...[...(el.labels || [])].map(item => item.innerText)].some(text => text?.trim() === name));
+      if (matches.length === 1 && (matches[0].tagName === 'INPUT' || ['true', 'false'].includes(matches[0].getAttribute('aria-checked')))) { toggleAssignments.push({ name, el: matches[0], checked: value === '开启' }); continue; }
+    }
+    unresolved.push(`${name}：${value.trim()}（请在官方表单选择并核对）`);
+  }
   const assignments = [];
   const topics = Array.isArray(config.topics) ? config.topics : [];
   const body = [config.body, config.platform === 'bilibili' ? '' : topics.map(tag => '#' + tag).join(' ')].filter(Boolean).join('\n');
@@ -60,6 +72,11 @@ function publishForm(command, config = {}) {
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }
     if (read(el).trim() === value.trim()) filled.push(key); else unresolved.push(`${key}：官方编辑器未接受内容`);
+  }
+  for (const { name, el, checked } of toggleAssignments) {
+    const readChecked = () => el.tagName === 'INPUT' ? el.checked : el.getAttribute('aria-checked') === 'true';
+    if (readChecked() !== checked) el.click();
+    if (readChecked() === checked) filled.push(name); else unresolved.push(`${name}：官方开关未接受设置，请核对`);
   }
   return { filled, unresolved, topicsAsText: config.platform !== 'bilibili' && topics.length > 0, submitted: false };
 }

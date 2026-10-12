@@ -1,8 +1,11 @@
-import { OfficialActionButton, platformLabels, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
+import { OfficialActionButton, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 import { usePublishQueue } from '@/components/workspace/PublishQueue';
+import { PublishAccountPanel } from '@/components/workspace/PublishAccountPanel';
+import { loadPublishAccounts } from '@/components/workspace/publish-preferences';
+import { validatePlatformConfig } from '@shared/publish-platform-fields';
 import { PublishCovers, PublishSchedule } from '@/components/workspace/PublishCommonExtras';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Plus, Save, UploadCloud } from 'lucide-react';
+import { ArrowRight, Save, UploadCloud } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { PlatformAccount } from '@shared/api.interface';
 import { parseTopics, publishSyncFields, syncPublishConfig, validatePublishConfig, type PublishConfig, type PublishSyncField } from '@shared/publish-config';
@@ -26,13 +29,13 @@ export default function ContentCreateRealPage() {
   const restored = useLocation().state?.localDraft as LocalPublishDraft | undefined;
   const draftId = useRef(restored?.id || crypto.randomUUID()), draftStamp = useRef('');
   const { queue } = usePublishQueue();
-  const overrides = useRef(new Map<string, Set<string>>());
+  const overrides = useRef(new Map<string, Set<string>>(Object.keys(restored?.configs || {}).map(id => [id, new Set(Object.keys(restored!.configs[id]))])));
   const workspaceRef = useRef(workspace); workspaceRef.current = workspace;
   const [accounts, setAccounts] = useState<PlatformAccount[]>([]), [selected, setSelected] = useState<string[]>(restored?.accounts.map(account => account.id) || []);
   const [common, setCommon] = useState<PublishConfig>(restored?.config || empty), [configs, setConfigs] = useState<Record<string, PublishConfig>>(restored?.configs || {});
   const [fields, setFields] = useState<PublishSyncField[]>([...publishSyncFields]);
   const [topicText, setTopicText] = useState(restored?.config.topics.join(' ') || '');
-  const [autoExtract, setAutoExtract] = useState(false), [picker, setPicker] = useState(false);
+  const [autoExtract, setAutoExtract] = useState(false);
   const [mediaType, setMediaType] = useState<'text' | 'image' | 'video'>(restored?.mediaType || 'video'), [media, setMedia] = useState<MatrixMediaSelection>();
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [dragging, setDragging] = useState(false);
   const [states, setStates] = useState<Record<string, State>>({}), [recommendations, setRecommendations] = useState<string[]>([]);
@@ -47,7 +50,7 @@ export default function ContentCreateRealPage() {
   }, [common, configs, selected, accounts, media, mediaType, loading]);
   useEffect(() => {
     let cancelled = false;
-    axiosForBackend.get('/api/platform/accounts', { params: { page: 1, pageSize: 100, authStatus: 'authorized' } }).then(r => { if (!cancelled) setAccounts(r.data?.data?.items || []); }).catch(e => { if (!cancelled) setError(message(e)); }).finally(() => { if (!cancelled) setLoading(false); });
+    loadPublishAccounts().then(items => { if (!cancelled) setAccounts(items); }).catch(e => { if (!cancelled) setError(message(e)); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
   const targets = () => accounts.filter(a => selected.includes(a.id));
@@ -130,6 +133,8 @@ export default function ContentCreateRealPage() {
         }
         if (result.error) throw Error(result.error);
         const missing = result.unresolved || [];
+        if (config.covers?.length) missing.push('封面：高级手动流程请在官方页面上传并核对裁剪，或使用后台一键发布流程');
+        if (config.schedule && config.schedule.mode !== 'now') missing.push(`定时：${config.schedule.at}，高级手动流程不会自动等待或设置定时，请在官方页面确认`);
         changeState(account.id, { prepared: true, note: missing.length ? `需在官方页面补全：${missing.join('；')}` : `素材已交给平台，文案已同步${result.topicsAsText ? '（话题以 #文本填入，请确认官方话题匹配）' : ''}；请核对封面、上传进度及必填项` });
       } catch (e) { changeState(account.id, { prepared: false, note: message(e) }); }
     }
@@ -180,8 +185,8 @@ export default function ContentCreateRealPage() {
       if (queue.jobs.some(job => ['unknown', 'interrupted'].includes(job.stage) && selected.includes(job.accountId)) && !window.confirm('所选账号有结果待核对或中断的旧任务。请先核对官方是否已收到，避免重复发布。确定这是需要新发布的作品吗？')) return;
       const requests = targets().map(account => {
         if (states[account.id]?.locked || states[account.id]?.prepared) throw Error('该账号已手动上传或提交，请用高级操作核对，避免重复上传');
-        const config = syncPublishConfig(common, configs[account.id], fields.filter(field => !overrides.current.get(account.id)?.has(field)));
-        const error = validatePublishConfig(config); if (error) throw Error(`${account.nickname}：${error}`);
+        const config = syncPublishConfig(common, configs[account.id], fields.filter(field => !overrides.current.get(account.id)?.has(field)), overrides.current.get(account.id));
+        const error = validatePublishConfig(config) || validatePlatformConfig(account.platform, config); if (error) throw Error(`${account.nickname}：${error}`);
         return { account, config, media, ...(draftStamp.current ? { draft: { id: draftId.current, updatedAt: draftStamp.current, accountIds: [...selected] } } : {}) };
       });
       queue.start(requests); workspace.hide(); navigate('/publish/tasks');
@@ -200,13 +205,6 @@ export default function ContentCreateRealPage() {
       <PublishSchedule config={common} change={setCommon} disabled={busy} />
       <div className="matrix-publish-field"><Label htmlFor="publish-comment">发布后追评</Label><div><Textarea id="publish-comment" disabled={busy} maxLength={2000} value={common.comment} onChange={e => setCommon({ ...common, comment: e.target.value })} placeholder="作品发布后要追加的评论" /><label className="flex gap-2 items-center text-sm py-2"><input type="checkbox" disabled />置顶（需官方页面支持，当前不自动置顶）</label><details><summary className="text-xs cursor-pointer">追评历史记录</summary>{[...new Set(queue.jobs.map(job => job.config?.comment).filter(Boolean))].slice(-10).map(comment => <button type="button" className="block text-left text-xs p-2 border-b" key={comment} onClick={() => setCommon({ ...common, comment: comment! })}>{comment}</button>)}</details><small>官方提示成功后生成追评待办。尚未接通自动定位新作品，不会向不确定的作品自动发表评论。</small></div></div>
       <div className="matrix-sync-fields">{publishSyncFields.map(f => <label key={f}><Checkbox disabled={busy} checked={fields.includes(f)} onCheckedChange={checked => setFields(current => checked ? [...current, f] : current.filter(v => v !== f))} />{fieldLabels[f]}</label>)}</div><Button variant="outline" disabled={busy} onClick={() => { setCommon(empty()); setTopicText(""); }}>清空</Button> <Button disabled={busy} onClick={syncRight}>同步至右侧 <ArrowRight size={15} /></Button><small className="matrix-sync-caption">一键发布会自动同步勾选字段，并保留右侧手动修改；无需先点击同步。</small>
-    </div></section><section className="matrix-publish-accounts"><header><strong>平台和账号配置</strong><span>已选 {selected.length} 个账号</span><Button size="sm" variant="outline" onClick={() => setPicker(value => !value)}>选择账号</Button></header>{!picker && !selected.length && <div className="matrix-reference-account-empty"><button aria-label="添加发布账号" onClick={() => setPicker(true)}>＋</button><p>未选择账号，请点击加号按钮选择账号</p></div>}<div className="matrix-publish-account-list">{loading && <p role="status">正在加载账号…</p>}
-      {accounts.map(a => <article key={a.id} className="matrix-account-publish-config" data-publish-account={a.id}><label className="matrix-publish-account"><Checkbox disabled={busy} checked={selected.includes(a.id)} onCheckedChange={checked => { setSelected(ids => checked ? [...new Set([...ids, a.id])] : ids.filter(id => id !== a.id)); if (checked && !configs[a.id]) setConfigs(current => ({ ...current, [a.id]: syncPublishConfig(common, undefined, publishSyncFields) })); }} /><div><strong>{a.nickname || '未命名账号'}</strong><small>{platformLabels[a.platform]} · {a.groupName || '默认分组'}</small></div><span>{states[a.id]?.locked ? '已提交 / 待核对' : states[a.id]?.note === '页面已准备 · 未发布' ? '页面已准备 · 未发布' : '未发布'}</span></label>
-        {selected.includes(a.id) && configs[a.id] && <div className="matrix-account-publish-fields">{(['title', 'body', 'comment'] as const).map(f => <label key={f}>{fieldLabels[f]}<Textarea aria-label={`${a.nickname}-${fieldLabels[f]}`} disabled={busy || states[a.id]?.locked} value={configs[a.id][f]} onChange={e => changeConfig(a.id, { [f]: e.target.value })} /></label>)}<label>标签 / 话题<Input aria-label={`${a.nickname}-话题`} disabled={busy || states[a.id]?.locked} defaultValue={configs[a.id].topics.join(' ')} key={configs[a.id].topics.join('|')} onBlur={e => changeConfig(a.id, { topics: parseTopics(e.target.value) })} /></label>
-          <details><summary>{platformLabels[a.platform]}专属选项（按官方控件同步）</summary>{([['category', a.platform === 'bilibili' ? '分区' : '内容分类'], ['originality', '创作类型'], ['visibility', '可见范围']] as const).map(([key, label]) => <label key={key}>{label}<Input disabled={busy || states[a.id]?.locked} aria-label={`${a.nickname}-${label}`} value={configs[a.id].options[key] || ''} placeholder="留空保留官方设置；填写官方选项名称" onChange={e => changeConfig(a.id, { options: { ...configs[a.id].options, [key]: e.target.value } })} /></label>)}<small>封面、定时及非标准选项需在官方表单核对。未匹配的控件会提示补全。</small></details>
-          {states[a.id]?.note && <p role="status">{states[a.id].note}</p>}{states[a.id]?.followup && <p>{states[a.id].followup}<Button size="sm" variant="outline" onClick={() => navigate('/engage/batch-tasks')}>查看追评待办</Button></p>}
-        </div>}</article>)}
-      {!loading && !accounts.length && <div className="matrix-publish-no-account"><Plus size={32} /><p>还没有已绑定账号</p><Button onClick={() => navigate('/accounts')}>添加账号</Button></div>}
-    </div></section></div><footer className="matrix-publish-footer"><Button variant="outline" disabled={busy} onClick={() => { if (!window.confirm('新建发布配置？官方页面和已提交结果不会撤回，请先核对，避免重复发布。')) return; draftId.current = crypto.randomUUID(); draftStamp.current = ''; setCommon(empty()); setTopicText(''); setConfigs({}); overrides.current.clear(); setSelected([]); setStates({}); setMedia(undefined); uploaded.current.clear(); }}>新建发布</Button><Button variant="outline" disabled={busy || loading} onClick={() => void save()}><Save size={14} />存为草稿</Button><details><summary className="cursor-pointer text-sm">高级操作（手动准备）</summary><div className="flex gap-2 py-2"><Button variant="outline" disabled={busy || loading || queue.running} onClick={() => void prepare()}>为所选账号准备发布</Button><Button variant="outline" disabled={busy || loading || !media || queue.running} onClick={() => void uploadAndSync()}>上传并同步到官方表单</Button><Button variant="outline" disabled={busy || loading || queue.running} onClick={() => void publishManually()}>提交已准备的表单</Button></div></details><Button disabled={busy || loading || queue.running} onClick={publish}>{queue.running ? '后台发布中，请查看进度' : `一键发布（${selected.length}）`}</Button></footer>
+    </div></section><section className="matrix-publish-accounts"><PublishAccountPanel accounts={accounts} selected={selected} configs={configs} common={common} onSelect={setSelected} onInit={(id, config) => setConfigs(current => ({ ...current, [id]: config }))} onChange={changeConfig} disabled={busy} loading={loading} mediaType={mediaType} states={states} /></section></div><footer className="matrix-publish-footer"><Button variant="outline" disabled={busy} onClick={() => { if (!window.confirm('新建发布配置？官方页面和已提交结果不会撤回，请先核对，避免重复发布。')) return; draftId.current = crypto.randomUUID(); draftStamp.current = ''; setCommon(empty()); setTopicText(''); setConfigs({}); overrides.current.clear(); setSelected([]); setStates({}); setMedia(undefined); uploaded.current.clear(); }}>新建发布</Button><Button variant="outline" disabled={busy || loading} onClick={() => void save()}><Save size={14} />存为草稿</Button><details><summary className="cursor-pointer text-sm">高级操作（手动准备）</summary><div className="flex gap-2 py-2"><Button variant="outline" disabled={busy || loading || queue.running} onClick={() => void prepare()}>为所选账号准备发布</Button><Button variant="outline" disabled={busy || loading || !media || queue.running} onClick={() => void uploadAndSync()}>上传并同步到官方表单</Button><Button variant="outline" disabled={busy || loading || queue.running} onClick={() => void publishManually()}>提交已准备的表单</Button></div></details><Button disabled={busy || loading || queue.running} onClick={publish}>{queue.running ? '后台发布中，请查看进度' : `一键发布（${selected.length}）`}</Button></footer>
   </div>;
 }

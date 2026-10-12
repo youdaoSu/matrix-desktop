@@ -22,12 +22,14 @@ async function wait(fn, message) { const end = Date.now() + 30000; while (Date.n
 try {
   const main = await connect((await targets()).find(t => t.type === 'page' && t.url.startsWith(base)).webSocketDebuggerUrl);
   await main.call('Page.navigate', { url: base + '/app/#/publish/create' });
-  await wait(() => main.evaluate("document.querySelectorAll('[data-publish-account]').length>=1"), 'Publish accounts missing');
+  await wait(() => main.evaluate("!!document.querySelector('.matrix-platform-config-tabs > button:not([disabled])')"), 'Publish accounts missing');
   const click = label => main.evaluate(`[...document.querySelectorAll('button,[role=option]')].find(e=>e.getClientRects().length&&e.innerText.trim()===${JSON.stringify(label)}).click();true`);
   const fill = (selector, value) => main.evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
   await fill('#publish-title', 'QA拖拽作品'); await fill('#publish-content', 'QA作品简介'); await fill('#publish-topics', '#健身，日常'); await fill('#publish-comment', 'QA追评文案');
   await main.evaluate("document.querySelector('#publish-media-type').click();true"); await click('图文');
+  await click('选择账号');
   await main.evaluate("[...document.querySelectorAll('[data-publish-account]')].find(e=>e.innerText.includes('QA昵称已补全')).querySelector('[role=checkbox]').click();true");
+  await click('确定');
   await click('同步至右侧');
   assert.equal(await main.evaluate("document.querySelector('[aria-label=\"QA昵称已补全-标题\"]').value"), 'QA拖拽作品');
   assert.equal(await main.evaluate("document.querySelector('[aria-label=\"QA昵称已补全-追评\"]').value"), 'QA追评文案');
@@ -53,7 +55,7 @@ try {
   await view.call('Page.navigate', { url: 'https://creator.xiaohongshu.com/publish/publish?target=image' });
   await wait(() => view.evaluate("!!document.querySelector('textarea')"), 'Synthetic official form missing');
   await click('上传并同步到官方表单');
-  await wait(() => main.evaluate("document.querySelector('.matrix-account-publish-fields').innerText.includes('文案已同步')"), 'Upload/form sync not completed');
+  await wait(() => main.evaluate("document.querySelector('.matrix-platform-account-form').innerText.includes('文案已同步')"), 'Upload/form sync not completed');
   assert.equal(await view.evaluate("document.querySelector('input[type=file]').files[0].name"), 'icon.png');
   assert.equal(await view.evaluate("document.querySelector('input[placeholder=标题]').value"), 'QA独立标题');
   assert.equal(await view.evaluate("document.querySelector('textarea').value"), 'QA作品简介\n#健身 #日常');

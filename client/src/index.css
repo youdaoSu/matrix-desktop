@@ -3,5 +3,6 @@
 @import "./tailwind-theme.css";
 @import "./typography.css";
 @import "./workspace.css";
+@import "./publish-config.css";
 
 @config "../../tailwind.config.ts";
