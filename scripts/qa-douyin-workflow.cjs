@@ -12,6 +12,7 @@ async function scenario(outcome,cleanupFails=false){
     if(command==='unfollow'){if(cleanupFails)return {error:'Fixture cleanup failed'};following=false;return {following:true};}
     if(command==='profile')return {following,nickname:'QA recipient'};
     if(command==='chat')return {ready:true,count:0};
+    if(command==='reply-editor')return {ready:true};
     if(command==='fill-message'||command==='fill-reply')return {filled:true};
     if(command==='message-result')return outcome==='unknown'?{error:'Fixture ambiguous receipt'}:{status:outcome};
     if(command==='reply-result')return {confirmed:true};

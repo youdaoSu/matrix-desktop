@@ -23,6 +23,7 @@ function douyinInteraction(command, input = {}) {
     const urls = [...new Set(lists.flatMap(list => [...list.querySelectorAll(':scope > li a[href*="/video/"]')].filter(visible).map(a => canonical(a.href))).filter(url => /^https:\/\/www\.douyin\.com\/video\/\d+$/.test(url)))];
     const loaded = document.readyState === 'complete' && (!!lists.length || [...document.querySelectorAll('div,p')].some(e => visible(e) && e.children.length === 0 && text(e) === '暂无内容'));
     const nickname = text(document.querySelector('h1'));
+    if (!nickname) throw Error('评论作者主页尚未加载');
     if (!loaded || !nickname) throw Error('作品目录尚未加载');
     if (command === 'more-works') lists.at(-1)?.lastElementChild?.scrollIntoView({ block: 'end' });
     const ended = [...document.querySelectorAll('div,p')].some(e => visible(e) && e.children.length === 0 && /^(暂无内容|暂时没有更多了|没有更多作品|没有更多了)$/.test(text(e)));
@@ -43,7 +44,10 @@ function douyinInteraction(command, input = {}) {
     return { nickname, following, label };
   }
   if (command === 'chat' || command === 'fill-message' || command === 'send-message' || command === 'message-result') {
-    if (canonical(location.href) !== input.authorProfileUrl || text(document.querySelector('.StackLayoutStackChatHeadertitle')) !== input.author) throw Error('私信收件人已变化');
+    if (canonical(location.href) !== input.authorProfileUrl) throw Error('私信收件人已变化');
+    const recipient = text(document.querySelector('.StackLayoutStackChatHeadertitle'));
+    if (!recipient) throw Error('私信面板尚未加载');
+    if (recipient !== input.author) throw Error('私信收件人已变化');
     const editor = one(document.querySelectorAll('[data-e2e="msg-input"] .messageEditorinputArea[contenteditable="true"]'));
     const outgoing = [...document.querySelectorAll('.MessageBoxContentisFromMe .TextMessageTextpureText')].filter(e => text(e) === input.message);
     if (command === 'chat') return { ready: true, draft: text(editor), count: outgoing.length };
@@ -53,7 +57,7 @@ function douyinInteraction(command, input = {}) {
     const failed = row && [...row.querySelectorAll('[class*="error"],[class*="Error"],[class*="fail"],[class*="Fail"]')].some(visible);
     return { status: outgoing.length <= input.baseline ? 'unknown' : failed ? 'failed' : !text(editor) ? 'confirmed' : 'unknown', outgoingCount: outgoing.length };
   }
-  if (command === 'open-reply' || command === 'fill-reply' || command === 'send-reply' || command === 'reply-result') {
+  if (command === 'open-reply' || command === 'reply-editor' || command === 'fill-reply' || command === 'send-reply' || command === 'reply-result') {
     if (canonical(location.href) !== input.videoUrl) throw Error('原作品页面已变化');
     const row = targetRow();
     if (command === 'open-reply') {
@@ -61,6 +65,7 @@ function douyinInteraction(command, input = {}) {
       click(one([...row.querySelectorAll('div,span,button')].filter(e => e.children.length === 0 && text(e) === '回复'))); return { opened: true };
     }
     const editor = [...row.querySelectorAll('[contenteditable="true"]')].find(visible);
+    if (command === 'reply-editor') return { ready: !!editor };
     if (command === 'reply-result') return { confirmed: !editor && [...row.querySelectorAll('[data-e2e="comment-item"]')].some(r => commentBody(r) === input.reply && text(commentAuthor(r)).split('\n')[0] === input.ownNickname) };
     if (!editor) throw Error('这条评论的专属回复框未打开');
     if (command === 'fill-reply') { editor.focus(); const range = document.createRange(); range.selectNodeContents(editor); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); document.execCommand('insertText', false, input.reply); return { filled: text(editor) === input.reply }; }
@@ -119,12 +124,13 @@ function registerDouyinInteraction({ ipcMain, context, journal, dialog, busy = n
       if (result.error) throw Error(result.error);
       return result;
     };
-    const wait = async (command, values, accept, timeout = 12000) => { const end = Date.now() + timeout; while (Date.now() < end) { const result = await run(command, values); if (accept(result)) return result; await sleep(300); } throw Error('官方页面未返回明确结果，请核对'); };
+    const wait = async (command, values, accept, timeout = 12000) => { const end = Date.now() + timeout; while (Date.now() < end) { try { const result = await run(command, values); if (accept(result)) return result; } catch(error) { if (!error.message.includes('尚未加载')) throw error; } await sleep(300); } throw Error('官方页面未返回明确结果，请核对'); };
     const navigate = async url => { await ctx.guest.loadURL(url); await sleep(1200); };
     const cleanup = async values => {
       const verification = await ctx.guest.executeJavaScriptInIsolatedWorld(1004, [{ code: script('verification', {}) }]);
       if (verification.required) throw Error('本人验证尚未完成，取消关注待处理；完成验证后请恢复取消关注');
       await navigate(values.authorProfileUrl);
+      await wait('profile', values, () => true);
       await run('unfollow', values);
       let relation;
       try { relation = await wait('profile', values, r => !r.following, 5000); }
@@ -167,6 +173,7 @@ function registerDouyinInteraction({ ipcMain, context, journal, dialog, busy = n
       let messageStatus = 'unknown';
       try {
         await navigate(values.authorProfileUrl);
+        await wait('profile', values, () => true);
         await run('follow', values); await wait('profile', values, r => r.following);
         await run('open-chat', values); const chat = await wait('chat', values, r => r.ready);
         values.baseline = chat.count;
@@ -183,8 +190,9 @@ function registerDouyinInteraction({ ipcMain, context, journal, dialog, busy = n
       }
       if (messageStatus === 'confirmed' || messageStatus === 'failed') {
         values.reply = messageStatus === 'confirmed' ? input.successReply : input.failedReply;
-        await navigate(values.videoUrl); await run('scroll-comments', values);
-        await run('open-reply', values); if (!(await run('fill-reply', values)).filled) throw Error('回复未正确填入');
+        await navigate(values.videoUrl); await wait('scroll-comments', values, r => r.opened);
+        await run('open-reply', values); await wait('reply-editor', values, r => r.ready);
+        if (!(await run('fill-reply', values)).filled) throw Error('回复未正确填入');
         await run('send-reply', values); await wait('reply-result', values, r => r.confirmed);
         record.replyStatus = 'confirmed'; record.replyText = values.reply;
       }
