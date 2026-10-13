@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
-function registerDesktopSettings({app,ipcMain,shell,Notification,getWindow,getAppUrl}) {
+function registerDesktopSettings({app,ipcMain,shell,Notification,getWindow,getAppUrl,fileSystem=fs}) {
   const file = () => path.join(app.getPath('userData'),'desktop-settings.json');
-  const read = () => { try { const value=JSON.parse(fs.readFileSync(file(),'utf8')); return {zoom:[0.8,0.9,1,1.1,1.2].includes(value.zoom)?value.zoom:1}; } catch { return {zoom:1}; } };
+  const read = () => { try { const value=JSON.parse(fileSystem.readFileSync(file(),'utf8')); return {zoom:[0.8,0.9,1,1.1,1.2].includes(value.zoom)?value.zoom:1}; } catch { return {zoom:1}; } };
   const host = event => { const win=getWindow(); if (!win || event.sender.id!==win.webContents.id) throw Error('仅允许矩效主窗口修改设置'); const url=new URL(win.webContents.getURL()); if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.origin!==new URL(getAppUrl()).origin)throw Error('仅允许矩效本机界面修改设置');return win; };
   const info = () => ({version:app.isPackaged?app.getVersion():require('../package.json').version,electron:process.versions.electron,node:process.versions.node,platform:process.platform,arch:process.arch,packaged:app.isPackaged,zoom:read().zoom,autoStart:app.isPackaged?app.getLoginItemSettings().openAtLogin:false,notificationsSupported:Notification.isSupported()});
   ipcMain.handle('matrix:system-settings',async(event,input={})=>{
@@ -11,7 +11,16 @@ function registerDesktopSettings({app,ipcMain,shell,Notification,getWindow,getAp
       if(input.command==='read')return info();
       if(input.command==='zoom') {
         if(![0.8,0.9,1,1.1,1.2].includes(input.zoom))throw Error('缩放值无效');
-        const temp=file()+'.tmp';fs.writeFileSync(temp,JSON.stringify({zoom:input.zoom}));fs.renameSync(temp,file());
+        const temp=file()+'.tmp';fileSystem.writeFileSync(temp,JSON.stringify({zoom:input.zoom}));
+        try { fileSystem.renameSync(temp,file()); }
+        catch(error) {
+          if(error.code!=='EXDEV')throw error;
+          // Some Windows encrypted/redirected profiles cannot rename this leaf file.
+          // Copy only this validated preferences file; never touch cookies or databases.
+          fileSystem.copyFileSync(temp,file());
+          if(read().zoom!==input.zoom)throw Error('缩放设置未正确保存，请重试');
+          try { fileSystem.unlinkSync(temp); } catch { /* A leftover preferences temp file is harmless. */ }
+        }
         win.webContents.setZoomFactor(input.zoom);return info();
       }
       if(input.command==='auto-start') {

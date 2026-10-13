@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const [port,base]=process.argv.slice(2);
+const projectVersion=JSON.parse(fs.readFileSync('package.json','utf8')).version;
 if(base!=='http://127.0.0.1:3291')throw Error('Disposable QA origin required');
 const target=(await fetch(`http://127.0.0.1:${port}/json/list`).then(r=>r.json())).find(t=>t.type==='page'&&t.url.startsWith(base));
 const socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise(resolve=>socket.addEventListener('open',resolve,{once:true}));
@@ -44,7 +45,7 @@ try{
   await expect("localStorage.getItem('matrix-publish-progress:settings-guard')",'QA tasks');
   await expect("localStorage.getItem('matrix_token')===window.__settingsQA.token",true);
   await evaluate("document.querySelector('[aria-label=maskAccountDetails]').click();true");await pause();await expect("document.querySelector('.matrix-shell').dataset.accountPrivacy",'masked');
-  await route('about');await wait("document.querySelector('[data-system-settings=about]').innerText.includes('v2.10.0-rc.14')");checks++;
+  await route('about');await wait(`document.querySelector('[data-system-settings=about]').innerText.includes(${JSON.stringify('v'+projectVersion)})`);checks++;
   await new Promise(resolve=>setTimeout(resolve,4500));
   for(const section of ['general','privacy','notify','about']){await route(section);await pause();await call('Page.bringToFront');const shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('logs/qa-system-'+section+'.png',Buffer.from(shot.data,'base64'));}
   console.log(JSON.stringify({systemSettingsUIAssertions:checks,screenshots:4,realWindowsStartupOrNotificationsChanged:false,isolatedProfile:true}));

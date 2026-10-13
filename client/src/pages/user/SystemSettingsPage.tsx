@@ -18,7 +18,7 @@ const pageNames=['首页','账号管理','单条发布','评论管理','任务�
 export default function SystemSettingsPage({section}:{section:keyof typeof titles}) {
   const prefs=useAppPreferences(),{theme,setTheme}=useTheme(),navigate=useNavigate();
   const [system,setSystem]=useState<MatrixSystemSettings>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[clearOpen,setClearOpen]=useState(false);
-  useEffect(()=>{let active=true;if(window.matrixDesktop?.systemSettings)void window.matrixDesktop.systemSettings({command:'read'}).then(result=>{if(active){setSystem(result);setError(result.error||'');}}).catch(()=>{if(active)setError('桌面设置读取失败，请重试');});return()=>{active=false;};},[]);
+  useEffect(()=>{let active=true;setError('');setClearOpen(false);if(window.matrixDesktop?.systemSettings)void window.matrixDesktop.systemSettings({command:'read'}).then(result=>{if(active){setSystem(result);setError(result.error||'');}}).catch(()=>{if(active)setError('桌面设置读取失败，请重试');});return()=>{active=false;};},[section]);
   const native=async(input:Parameters<NonNullable<typeof window.matrixDesktop>['systemSettings']>[0])=>{
     setBusy(true);setError('');try{if(!window.matrixDesktop?.systemSettings)throw Error('请在新版矩效安装版中使用此功能');const result=await window.matrixDesktop.systemSettings(input);if(result.error)throw Error(result.error);if(result.version)setSystem(result);if(result.requested)toast.success('已向 Windows 请求显示通知；是否展示取决于系统权限和勿扰模式');}catch(e){setError(e instanceof Error?e.message:'设置失败');}finally{setBusy(false);}
   };
