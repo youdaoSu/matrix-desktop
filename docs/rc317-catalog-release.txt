@@ -1,0 +1,53 @@
+RC317 candidate, 2026-11-01. Packaged; not installed yet.
+
+Only retire the historical creator catalog BrowserWindow after its terminal
+page was successfully read AND the interaction handler committed cache,
+continuation and replay evidence. Keep historical comment/reply DOM, work
+identity set, live-comment page and unfinished catalog pages. A failed cache
+write or owner check does not retire the page. A later admitted catalog read
+recreates only that catalog page, with the same account and scoped policies.
+No data-format, request-cadence, account-authority or message-send changes.
+
+Targeted checks: 47 synthetic lifecycle/durable-commit assertions; real
+sandboxed Electron creator response fixture 242 assertions including native
+retirement/recreation and historical comment DOM retention; interactions257,
+passive identity52 passed. Full236-suite gate and package91 checks passed.
+The additional package check executes the actual ASAR reader and its sandboxed
+preload through the full native creator-response fixture, including retirement.
+Source fingerprint:893 files,
+0fe95bc1f4e43bd960aad451e494945792a2f74f0f7d0e8bebd1dc8a052455e1.
+
+First package gate failed in the newly added native test wrapper, before its
+fixture started: Electron's patched fs treated app.asar as a virtual directory
+when hashing raw archive bytes, causing ENOENT and an owned-fixture timeout.
+The failure and standalone diagnostic logs are retained. The wrapper now uses
+original-fs only for raw hash verification and exits explicitly on guard failure.
+The same actual ASAR reader/preload then passed242 assertions. Runtime/source
+and candidate bytes were unchanged. Full package proof then passed all91 checks,
+including another242-assertion native creator run. ASAR:
+e24a4806ff8234caad3068057c2c54dc3c32dc519e85c8add344716a491bdef4.
+
+Actual installed RC316 sampling before this change: 18 native pages, including
+11 hidden creator pages with ~2546.59MiB associated private renderer memory.
+This is not a promise that the candidate releases all those pages or that all
+memory/stutter is fixed. Actual installed candidate comparison remains pending.
+
+Evidence correction: direct tool-shell file observations and Explorer-launched
+observations returned different metadata for the same absolute journal path.
+The reason for that context difference is not established. Earlier RC315/316
+archive replacement comparisons must not be treated as verified canonical
+application write-rate reduction. Raw reports are preserved. A new canonical
+Explorer-launched RC316 metadata-only 15.207s sample observed archive replacement
+counts10/8/0/9 (lower bounds). It has no comparable canonical RC315 baseline.
+Prior inspector allocation and native process/UI measurements still target the
+actual app process; they retain their workload/sampling limitations.
+
+
+## 2026-11-01 08:20 RC317 delivered; terminal catalog memory release
+
+- Full236 source suites/91 actual package checks passed;893 files/0fe95bc1f4e43bd960aad451e494945792a2f74f0f7d0e8bebd1dc8a052455e1, ASARe24a4806ff8234caad3068057c2c54dc3c32dc519e85c8add344716a491bdef4. Frozen C:\codex-build\yuanxiao-rc317-source. Only runtime creator-reader/interactions changed: retire terminal catalog only after durable cache/continuation/replay commit; retain unfinished catalog and comment/reply DOM/owner sets.
+- First package wrapper failed before native fixture: Electron patched fs treated raw ASAR as virtual directory, ENOENT then owned-fixture timeout. Logs retained; use original-fs for raw hash only and explicit guard-failure exit. Same package then passed242 native assertions standalone and in full91 proof. No product changes for this harness fix. No policy denial or force termination of user app.
+- Canonical backup D:\MatrixUserBackups\before-update-rc.317-20261101-080625,27370files/520253766bytes; all data/original key verified. Actual startup and4routes passed (2241/6946/8476/3578ms including accessibility overhead);336/5884/6232 cache counts retained. No sends/rule changes/screenshots.
+- Same20s warmup/15s sampler: creator pages11->7, associated private2546.59->1165.61MiB; total metrics6566.82->5688.37MiB. Other workloads differ; self pages grew1607.20->1811.11MiB and transient other page appeared. JS idle81.36%->75.65%, so NOT overall CPU or mouse latency acceptance. Current main77180; inspector49318 closed and independent listener absent. Per-category process memory may overlap across groups.
+- Deleted only retired315 generated binaries933173170bytes/3targets after native checks, preserved317/316 and all backups/source. Cumulative logical cleanup112641133896bytes/691targets. Installed directory759837222bytes. Actual current archive and target absence independently verified; no automatic cleaner installed.
+- Earlier direct-tool archive rate comparison remains noncanonical; context correction retained. Continue performance goal until Nov1 11:00. Next useful work: steady foreground responsiveness/event-loop evidence and remaining hidden self/live-page lifecycle, without dropping unfinished pagination or weakening durable ACK/owner safeguards. Frozen snapshot's installed:false is freeze-time only.

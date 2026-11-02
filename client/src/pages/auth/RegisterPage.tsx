@@ -47,7 +47,7 @@ export default function RegisterPage() {
   return (
     <AuthCard
       eyebrow="开始使用"
-      title="创建你的矩效账号"
+      title="创建你的远效账号"
       description="创建账号后即可登录；VIP 功能可在之后使用授权码开通。"
       footer={<>已经有账号？ <Link to="/login" className="font-semibold text-blue-700 hover:text-blue-800">返回登录</Link></>}
     >

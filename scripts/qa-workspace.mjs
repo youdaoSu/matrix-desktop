@@ -89,6 +89,9 @@ try {
       VALUES(${user.id},${platform},${`desktop:${sessionId}`},${`QA ${platform}`},'QA 工作区','authorized','normal',${sql.json({ provider: 'desktop-connector', connectorSessionId: sessionId })})`;
   }
   await runScript('scripts/qa-personal-tasks.mjs', [base]);
+  // Personal-task activation race tests intentionally redeem two-account codes.
+  // Restore only the disposable fixture's capacity before binding QA platforms.
+  await sql`UPDATE app_users SET max_accounts=100 WHERE id=${user.id}`;
   // Synthetic records exist only inside this disposable QA database, never in the user's data.
   const [qaDouyin] = await sql`SELECT id FROM platform_accounts WHERE user_id=${user.id} AND nickname='QA douyin'`;
   const [qaBilibili] = await sql`SELECT id FROM platform_accounts WHERE user_id=${user.id} AND nickname='QA bilibili'`;
@@ -96,16 +99,47 @@ try {
   const [qaWorkB] = await sql`INSERT INTO content_posts(user_id,account_id,platform,title,media_type,status,published_at) VALUES(${user.id},${qaDouyin.id},'douyin','QA Published work B','video','published',CURRENT_TIMESTAMP) RETURNING id`;
   await sql`INSERT INTO content_posts(user_id,account_id,platform,title,media_type,status) VALUES(${user.id},${qaDouyin.id},'douyin','QA Hidden draft','video','draft'),(${user.id},${qaDouyin.id},'douyin','QA Failed work','video','failed'),(${user.id},${qaBilibili.id},'bilibili','QA Other account work','video','published')`;
   await sql`INSERT INTO comment_items(user_id,account_id,post_id,platform,commenter_nickname,content) VALUES(${user.id},${qaDouyin.id},${qaWork.id},'douyin','QA commenter','QA Comment for work A'),(${user.id},${qaDouyin.id},${qaWorkB.id},'douyin','QA commenter','QA Comment for work B')`;
+  await sql`INSERT INTO follower_records(user_id,account_id,platform,follower_platform_id,nickname,location,remark) VALUES(${user.id},${qaDouyin.id},'douyin','qa-follower-only','QA isolated fan','QA location','QA profile remark')`;
+  const [qaConversation] = await sql`INSERT INTO message_sessions(user_id,account_id,platform,session_platform_id,user_nickname,last_message,unread_count,last_message_at) VALUES(${user.id},${qaDouyin.id},'douyin','qa-conversation-only','QA isolated conversation','QA latest message',1,CURRENT_TIMESTAMP) RETURNING id`;
+  await sql`INSERT INTO message_items(user_id,account_id,platform,session_id,direction,content,sent_at) VALUES(${user.id},${qaDouyin.id},'douyin',${qaConversation.id},'inbound','QA inbound fixture',CURRENT_TIMESTAMP)`;
   desktop = launch(path.join(root, '.desktop-deps/node_modules/electron/dist/electron.exe'), [
     'desktop/main.cjs', `--remote-debugging-port=${debugPort}`, `--matrix-user-data-dir=${profile}`,
     '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
   ], { ...process.env, MATRIX_APP_URL: `${base}/app/#/login` });
   await waitUntil(async () => { try { return (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).ok; } catch { return false; } }, 'QA desktop did not start');
   await runScript('scripts/qa-ui-auth.mjs', [String(debugPort), base]);
-  await runScript('scripts/qa-routes.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-platform-logos.mjs', [String(debugPort), base]);
+  if (!process.argv.includes('--publish-only') && !process.argv.includes('--task-only') && !process.argv.includes('--editor-only')) await runScript('scripts/qa-routes.mjs', [String(debugPort), base]);
   if (process.argv.includes('--settings-only')) {
     await runScript('scripts/qa-system-settings-ui.mjs', [String(debugPort), base]);
     console.log(JSON.stringify({settingsOnly:true,isolatedDatabase:true}));
+  } else if (process.argv.includes('--editor-only')) {
+    await runScript('scripts/qa-editor-draft-sync.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-task-records.mjs', [String(debugPort), base]);
+    console.log(JSON.stringify({editorOnly:true,isolatedDatabase:true,realPlatformWrites:false}));
+  } else if (process.argv.includes('--task-only')) {
+    await runScript('scripts/qa-task-records.mjs', [String(debugPort), base]);
+    console.log(JSON.stringify({taskOnly:true,isolatedDatabase:true,realPlatformWrites:false}));
+  } else if (process.argv.includes('--publish-only')) {
+    await runScript('scripts/qa-account-groups-api.mjs', [base]);
+    await runScript('scripts/qa-account-manager-ui.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-auto-binding.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-module-boundaries.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-publish-flow.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-background-publish.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-editor-draft-sync.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-task-records.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-account-pages.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-official-data-ui.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-interaction-visuals.mjs', [String(debugPort), base]);
+    console.log(JSON.stringify({publishOnly:true,isolatedDatabase:true,realPlatformWrites:false}));
+  } else if (process.argv.includes('--interaction-only')) {
+    await runScript('scripts/qa-official-data-ui.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-personal-tools.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-ui-auth.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-system-settings-ui.mjs', [String(debugPort), base]);
+    await runScript('scripts/qa-interaction-visuals.mjs', [String(debugPort), base]);
+    console.log(JSON.stringify({ interactionOnly: true, isolatedDatabase: true, realPlatformWrites: false }));
   } else {
   const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then(response => response.json());
   const target = targets.find(item => item.type === 'page' && item.url.startsWith(base));
@@ -151,25 +185,26 @@ try {
   await waitUntil(() => evaluate("!!document.querySelector('.matrix-shell')"), 'Desktop shell did not render');
   ensure(await evaluate("(async()=>{const r=await window.matrixDesktop.listPageActions(localStorage.getItem('matrix_token'));return Array.isArray(r.items)&&!r.error})()"), 'Page action journal authenticates against the isolated local backend');
   ensure(await evaluate("(async()=>{const r=await window.matrixDesktop.listPageActions('invalid-test-token');return !!r.error&&!r.items})()"), 'Invalid Matrix login cannot read page action records');
-  await waitUntil(() => evaluate("document.querySelectorAll('.matrix-home-platforms button').length === 4 && !document.querySelector('.matrix-dashboard')?.innerText.includes('加载中')"), 'Dashboard data did not finish loading');
+  await waitUntil(() => evaluate("document.querySelectorAll('.matrix-home-platforms a').length === 4 && !document.querySelector('.matrix-dashboard')?.innerText.includes('加载中')"), 'Dashboard data did not finish loading');
   await screenshot('qa-workspace-dashboard.png');
   await click('.matrix-topbar nav a', '账号管理');
-  await waitUntil(() => evaluate("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false && document.querySelector('.matrix-account-rail')?.getBoundingClientRect().width>0"), 'Unified account rail did not render');
+  await waitUntil(() => evaluate("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false && !!document.querySelector('[data-account-management]')"), 'Account management must directly show its grouped workspace');
   ensure(await evaluate("Math.abs(document.querySelector('.matrix-topbar').getBoundingClientRect().height-40)<1"), 'Measured reference topbar height is 40 CSS pixels');
-  ensure(await evaluate("Math.abs(document.querySelector('.matrix-account-rail').getBoundingClientRect().width-244)<1"), 'Reference frontend specifies a 244 CSS pixel account rail');
   ensure(await evaluate("!document.querySelector('.matrix-module-sidebar')"), 'Account module has no redundant outer sidebar');
-  await click('button', '管理面板');
-  await waitUntil(() => evaluate("document.body.innerText.includes('绑定账号')"), 'Account module did not render');
-  await click('button', '绑定账号');
+  await click('button', '添加账号');
   await click('[role=dialog] button', '抖音');
-  await waitUntil(() => evaluate("document.querySelectorAll('.matrix-rail-account').length === 4"), 'Account rail did not load fixtures');
+  await waitUntil(() => evaluate("document.querySelectorAll('.matrix-manager-account').length === 4"), 'Grouped account rail did not load fixtures');
   await waitUntil(() => evaluate("!document.querySelector('[role=dialog]') && getComputedStyle(document.body).pointerEvents !== 'none'"), 'Binding dialog left an overlay blocking the official page');
   ensure(await evaluate("!!document.querySelector('.matrix-browser-area .matrix-workspace-tabs')"), 'Account tabs live above the browser, not above the account rail');
   ensure(await evaluate("document.querySelector('.matrix-official-deck').getBoundingClientRect().height > 500"), 'Workspace uses the full content area');
   await screenshot('qa-workspace-empty.png');
   const platforms = [ ['douyin', '抖音'], ['xiaohongshu', '小红书'], ['wechat', '视频号'], ['bilibili', 'B站'] ];
   for (const [platform, label] of platforms) {
-    if (report.officialPages.length !== 0) await click('.matrix-add-platforms button', label);
+    if (report.officialPages.length !== 0) {
+      await click('.matrix-workspace-tabs > button', '收起官方页面');
+      await click('[data-account-management] button', '添加账号');
+      await click('[role=dialog] button', label);
+    }
     await waitUntil(() => evaluate(`document.querySelectorAll('webview').length === ${report.officialPages.length + 1}`), `${label} guest not created`);
     await waitUntil(() => evaluate(`(() => { try { return !![...document.querySelectorAll('.matrix-official-browser')].find(item => !item.hidden)?.querySelector('webview')?.getWebContentsId(); } catch { return false; } })()`), `${label} guest not attached`);
     const state = await evaluate(`(() => { const browser = [...document.querySelectorAll('.matrix-official-browser')].find(item => !item.hidden); const view=browser.querySelector('webview'); return {src:view.getAttribute('src'),partition:view.getAttribute('partition'),guestId:view.getWebContentsId(),height:view.getBoundingClientRect().height,width:view.getBoundingClientRect().width}; })()`);
@@ -195,21 +230,21 @@ try {
     report.officialPages[index].loaded = loaded;
     ensure(loaded.characters > 60 && loaded.url.startsWith('https://'), `${label} official page renders real content inside the guest`);
   }
-  await click('.matrix-workspace-tabs > button', '收起账号页面');
+  await click('.matrix-workspace-tabs > button', '收起官方页面');
   await click('.matrix-topbar nav a', '一键发布');
   await waitUntil(() => evaluate("location.hash === '#/publish/create' && document.body.innerText.includes('进入官方发布页')"), 'Publishing page missing');
   ensure(await evaluate("Math.abs(document.querySelector('.matrix-module-sidebar').getBoundingClientRect().width-128)<1"), 'Measured publishing sidebar width is 128 CSS pixels');
   ensure(await evaluate("(() => {const a=document.querySelector('.matrix-publish-common').getBoundingClientRect(),b=document.querySelector('.matrix-publish-accounts').getBoundingClientRect(),f=document.querySelector('.matrix-publish-footer').getBoundingClientRect(); return b.left>a.left+a.width-1 && Math.abs(a.top-b.top)<1 && f.bottom<=innerHeight && f.top>=a.bottom-1;})()"), 'Publishing has side-by-side common/account panels and an unobscured bottom action bar');
   await screenshot('qa-reference-publish.png');
   await click('button', '进入官方发布页');
-  ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar button.is-active')].some(button=>button.innerText==='发布内容')"), 'Publishing opens the official publishing workflow');
+  ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar .is-active')].some(item=>item.innerText==='发布内容')"), 'Publishing opens the official publishing workflow');
   ensure(JSON.stringify(guestIds) === JSON.stringify(await evaluate("[...document.querySelectorAll('webview')].map(view=>view.getWebContentsId()).sort((a,b)=>a-b)")), 'Module switching preserves all official pages and sessions');
   await click('.matrix-browser-toolbar button', '文案辅助');
   ensure(await evaluate("(() => { const browser=[...document.querySelectorAll('.matrix-official-browser')].find(item=>!item.hidden); browser.querySelector('[aria-label=\"缩小官方页面\"]').click(); return Math.abs(browser.querySelector('webview').getZoomFactor()-0.9)<0.01; })()"), 'Official page zoom changes inside the embedded guest');
   ensure(await evaluate("(() => { const browser=[...document.querySelectorAll('.matrix-official-browser')].find(item=>!item.hidden); browser.querySelector('[aria-label=\"重置页面缩放\"]').click(); return Math.abs(browser.querySelector('webview').getZoomFactor()-1)<0.01; })()"), 'Official page zoom can reset to the default');
   ensure(await evaluate("!![...document.querySelectorAll('.matrix-official-browser')].find(item=>!item.hidden).querySelector('.matrix-draft-helper')"), 'Publishing helper opens beside the official page');
   await screenshot('qa-workspace-embedded.png');
-  ensure(await evaluate("!document.body.innerText.includes('官方工作区') && !document.body.innerText.includes('矩效工作台')"), 'Unified interface does not expose two separate workspaces');
+  ensure(await evaluate("!document.body.innerText.includes('官方工作区') && !document.body.innerText.includes('远效工作台')"), 'Unified interface does not expose two separate workspaces');
   ensure(await evaluate("document.querySelector('.matrix-page-content').getClientRects().length > 0 && document.querySelector('.matrix-official-deck').getClientRects().length > 0"), 'Publishing form stays visible alongside the account panel');
   await click('button', '选择账号');
   await waitUntil(() => evaluate("document.querySelectorAll('[data-publish-account]').length>=2"), 'Account picker missing');
@@ -242,8 +277,8 @@ try {
   ensure(await evaluate(`performance.getEntriesByType('resource').some(e=>{const u=new URL(e.name);return u.pathname==='/api/comments'&&u.searchParams.get('postId')==='${qaWork.id}'})`), 'Selecting a work applies postId to the backend query');
   await screenshot('qa-reference-comments.png');
   await click('button', '官方页面回复');
-  ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar button.is-active')].some(button=>button.innerText==='评论回复')"), 'Comments open the official reply workflow');
-  await click('.matrix-workspace-tabs > button', '收起账号页面');
+  ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar .is-active')].some(item=>item.innerText==='评论回复')"), 'Comments open the official reply workflow');
+  await click('.matrix-workspace-tabs > button', '收起官方页面');
   await click('.matrix-module-sidebar a', '私信管理');
   await waitUntil(() => evaluate("location.hash === '#/engage/messages'"), 'Messages route did not open');
   await waitUntil(() => evaluate("!!document.querySelector('.matrix-messages-layout .matrix-message-sessions')"), 'Messages layout did not finish rendering');
@@ -254,7 +289,7 @@ try {
   await waitUntil(() => evaluate("performance.getEntriesByType('resource').some(e=>{const u=new URL(e.name);return u.pathname==='/api/messages/sessions'&&!!u.searchParams.get('accountId')})"), 'Selected message account was not applied to the real API filter');
   await screenshot('qa-reference-messages.png');
   await click('button', '官方页面发私信');
-  ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar button.is-active')].some(button=>button.innerText==='私信消息')"), 'Messages open the official messaging workflow');
+  ensure(await evaluate("[...document.querySelectorAll('.matrix-intent-bar .is-active')].some(item=>item.innerText==='私信消息')"), 'Messages open the official messaging workflow');
   await evaluate("document.documentElement.classList.add('dark'); true");
   await screenshot('qa-workspace-dark.png');
   await evaluate("document.documentElement.classList.remove('dark'); true");
@@ -272,6 +307,8 @@ try {
   await runScript('scripts/qa-background-publish.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-publish-visuals.mjs', [String(debugPort), base]);
   await runScript('scripts/qa-system-settings-ui.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-ui-auth.mjs', [String(debugPort), base]);
+  await runScript('scripts/qa-interaction-visuals.mjs', [String(debugPort), base]);
   fs.writeFileSync('logs/qa-workspace-results.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ passed: report.checks.length, officialPlatforms: report.officialPages.length, isolatedDatabase: true }, null, 2));
   }

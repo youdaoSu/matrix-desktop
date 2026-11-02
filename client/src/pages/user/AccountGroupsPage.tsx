@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   FolderGit2,
@@ -11,6 +11,7 @@ import {
   ArrowUp,
   ArrowDown,
   GripVertical,
+  RefreshCw,
   Music,
   BookOpen,
   Video,
@@ -47,6 +48,9 @@ import { Separator } from '@client/src/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { axiosForBackend } from '@/api';
 import { toast } from 'sonner';
+import { loadPublishAccounts } from '@/components/workspace/publish-preferences';
+import { useOwnerRequest } from '@/components/workspace/use-owner-request';
+import { useWorkspaceIdentity } from '@/components/workspace/WorkspaceUiState';
 
 const platformMeta: Record<PlatformType, { label: string; color: string; icon: any }> = {
   douyin: { label: '抖音', color: 'hsl(0 0% 8%)', icon: Music },
@@ -66,6 +70,12 @@ const AccountGroupsPage: React.FC = () => {
   const [groups, setGroups] = useState<AccountGroupView[]>([]);
   const [accounts, setAccounts] = useState<PlatformAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [sorting, setSorting] = useState(false);
+  const [sortUncertain, setSortUncertain] = useState(false);
+  const sortLock = useRef(false);
+  const beginRequest = useOwnerRequest();
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [editGroupOpen, setEditGroupOpen] = useState(false);
@@ -73,20 +83,23 @@ const AccountGroupsPage: React.FC = () => {
   const [editNameValue, setEditNameValue] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<AccountGroupView | null>(null);
+  const ready = loaded && !loading && !sorting && !sortUncertain && !loadError;
 
   const loadData = async () => {
-    setLoading(true);
+    const request = beginRequest();
+    if (!request.authorized) { request.finish(); setLoading(false); setLoadError('请登录后读取账号分组'); return; }
+    setLoading(true); setLoadError('');
     try {
       const [groupResponse, accountResponse] = await Promise.all([
-        axiosForBackend.get('/api/platform/groups'),
-        axiosForBackend.get('/api/platform/accounts', { params: { page: 1, pageSize: 100 } }),
+        axiosForBackend.get('/api/platform/groups', { signal: request.signal }),
+        loadPublishAccounts({ signal: request.signal }),
       ]);
-      setGroups(groupResponse.data?.data || []);
-      setAccounts(accountResponse.data?.data?.items || []);
+      if (!Array.isArray(groupResponse.data?.data)) throw Error('账号分组响应不完整');
+      if (request.current()) { setGroups(groupResponse.data.data); setAccounts(accountResponse); setLoaded(true); }
     } catch (error: any) {
-      toast.error(apiErrorMessage(error, '加载账号分组失败'));
+      if (request.current()) { const message=apiErrorMessage(error, '加载账号分组失败'); setLoadError(message); toast.error(message); }
     } finally {
-      setLoading(false);
+      request.finish(); if (request.current()) setLoading(false);
     }
   };
 
@@ -95,7 +108,7 @@ const AccountGroupsPage: React.FC = () => {
   const sortedGroups = [...groups].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const handleCreateGroup = async () => {
-    if (!newGroupName.trim()) return;
+    if (!ready || sortLock.current || !newGroupName.trim()) return;
     try {
       const maxOrder = groups.length ? Math.max(...groups.map((g) => g.sortOrder)) : 0;
       await axiosForBackend.post('/api/platform/groups', { groupName: newGroupName.trim(), sortOrder: maxOrder + 1 });
@@ -115,7 +128,7 @@ const AccountGroupsPage: React.FC = () => {
   };
 
   const saveEdit = async () => {
-    if (!editNameValue.trim() || !editingGroup) return;
+    if (!ready || sortLock.current || !editNameValue.trim() || !editingGroup) return;
     try {
       await axiosForBackend.put(`/api/platform/groups/${editingGroup.id}`, { groupName: editNameValue.trim() });
       await loadData();
@@ -128,29 +141,29 @@ const AccountGroupsPage: React.FC = () => {
   };
 
   const moveGroup = async (index: number, direction: 'up' | 'down') => {
+    if (!ready || sortLock.current) return;
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= sortedGroups.length) return;
-    const newSorted = [...sortedGroups];
-    const current = newSorted[index];
-    const target = newSorted[targetIndex];
+    const current = sortedGroups[index];
+    const target = sortedGroups[targetIndex];
     if (target.isDefault) return; // 不能和默认组交换
-    newSorted[index] = { ...current, sortOrder: target.sortOrder };
-    newSorted[targetIndex] = { ...target, sortOrder: current.sortOrder };
-    setGroups(newSorted);
+    sortLock.current = true; setSorting(true);
     try {
-      await Promise.all([
-        axiosForBackend.put(`/api/platform/groups/${current.id}`, { sortOrder: target.sortOrder }),
-        axiosForBackend.put(`/api/platform/groups/${target.id}`, { sortOrder: current.sortOrder }),
+      // Both writes must settle before re-reading: Promise.all rejects early,
+      // allowing the slower write to land after a supposedly fresh snapshot.
+      const results = await Promise.allSettled([
+        Promise.resolve().then(() => axiosForBackend.put(`/api/platform/groups/${current.id}`, { sortOrder: target.sortOrder })),
+        Promise.resolve().then(() => axiosForBackend.put(`/api/platform/groups/${target.id}`, { sortOrder: current.sortOrder })),
       ]);
+      const uncertain = results.some(result => result.status === 'rejected');
+      if (uncertain) setSortUncertain(true);
       await loadData();
-    } catch (error: any) {
-      toast.error(apiErrorMessage(error, '调整分组顺序失败'));
-      await loadData();
-    }
+      if (uncertain) toast.error('分组排序结果未确认；请核对当前记录，不要连续重复操作');
+    } finally { sortLock.current = false; setSorting(false); }
   };
 
   const confirmDelete = async () => {
-    if (!groupToDelete) return;
+    if (!ready || sortLock.current || !groupToDelete) return;
     try {
       await axiosForBackend.delete(`/api/platform/groups/${groupToDelete.id}`);
       await loadData();
@@ -166,9 +179,12 @@ const AccountGroupsPage: React.FC = () => {
     navigate('/accounts', { state: { groupId: group.id, groupName: group.groupName } });
   };
 
-  const getGroupAccounts = (group: AccountGroupView) => {
-    return accounts.filter((account) => (account as PlatformAccount & { groupId?: string }).groupId === group.id || account.groupName === group.groupName);
-  };
+  const accountIndex = useMemo(() => {
+    const byId = new Map<string, PlatformAccount[]>(), byName = new Map<string, PlatformAccount[]>();
+    for (const account of accounts) { const key=account.groupId || account.groupName; if (!key) continue; const target=account.groupId ? byId : byName; const rows=target.get(key) || []; rows.push(account); target.set(key, rows); }
+    return { byId, byName };
+  }, [accounts]);
+  const getGroupAccounts = (group: AccountGroupView) => [...(accountIndex.byId.get(group.id) || []), ...(accountIndex.byName.get(group.groupName) || [])];
 
   return (
     <div className="space-y-6">
@@ -183,14 +199,17 @@ const AccountGroupsPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-semibold text-foreground">账号分组</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {loading ? '正在加载真实数据…' : `共 ${groups.length} 个分组 · ${accounts.length} 个账号`}
+            {loading ? '正在加载真实数据…' : !loaded ? '分组与账号数量未知' : `共 ${groups.length} 个分组 · ${accounts.length} 个账号${loadError ? '（上次读取结果）' : ''}`}
           </p>
         </div>
-        <Button onClick={() => setNewGroupOpen(true)}>
+        <div className="flex gap-2"><Button variant="outline" disabled={loading || sorting} onClick={() => void loadData()}><RefreshCw className="w-4 h-4 mr-1.5" />刷新</Button><Button disabled={!ready} onClick={() => setNewGroupOpen(true)}>
           <Plus className="w-4 h-4 mr-1.5" />
           新建分组
-        </Button>
+        </Button></div>
       </div>
+
+      {loadError && <Alert variant="destructive"><AlertDescription role="alert">读取失败：{loadError}；{loaded ? '显示上次结果，请刷新后再核对。' : '无法判断分组或账号数量。'}</AlertDescription></Alert>}
+      {sortUncertain && <Alert variant="destructive"><AlertDescription role="alert">分组排序结果未确认，可能仅部分保存或延迟生效；请刷新并核对当前顺序，本页已暂停修改。此提示仅在本页保留。 <Button variant="outline" disabled={loading || sorting || !!loadError || !loaded} onClick={() => { if (window.confirm('已核对当前分组顺序？服务器可能仍在处理超时请求，请确认后再继续修改。')) setSortUncertain(false); }}>已核对，允许继续</Button></AlertDescription></Alert>}
 
       {/* 分组卡片网格 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -243,7 +262,7 @@ const AccountGroupsPage: React.FC = () => {
                           size="icon"
                           className="h-7 w-7 opacity-0 group-hover/card:opacity-100 transition-opacity"
                           onClick={() => moveGroup(index, 'up')}
-                          disabled={index === 0 || sortedGroups[index - 1].isDefault}
+                          disabled={!ready || index === 0 || sortedGroups[index - 1].isDefault}
                         >
                           <ArrowUp className="w-3.5 h-3.5" />
                         </Button>
@@ -252,7 +271,7 @@ const AccountGroupsPage: React.FC = () => {
                           size="icon"
                           className="h-7 w-7 opacity-0 group-hover/card:opacity-100 transition-opacity"
                           onClick={() => moveGroup(index, 'down')}
-                          disabled={index === sortedGroups.length - 1}
+                          disabled={!ready || index === sortedGroups.length - 1}
                         >
                           <ArrowDown className="w-3.5 h-3.5" />
                         </Button>
@@ -263,7 +282,7 @@ const AccountGroupsPage: React.FC = () => {
                       size="icon"
                       className="h-7 w-7 opacity-0 group-hover/card:opacity-100 transition-opacity"
                       onClick={() => startEdit(group)}
-                      disabled={group.isDefault}
+                      disabled={!ready || group.isDefault}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
@@ -273,7 +292,7 @@ const AccountGroupsPage: React.FC = () => {
                 {/* 平台分布小图标 */}
                 <div className="flex items-center gap-2 mb-3">
                   {Object.entries(platformCounts).map(([platform, count]) => {
-                    const meta = platformMeta[platform as PlatformType];
+                    const meta = platformMeta[platform as PlatformType] || {label: platform, color: 'hsl(220 10% 45%)', icon: Users};
                     const Icon = meta.icon;
                     return (
                       <div key={platform} className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -299,7 +318,7 @@ const AccountGroupsPage: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex -space-x-2">
                       {groupAccounts.slice(0, 5).map((acc) => {
-                        const meta = platformMeta[acc.platform];
+                        const meta = platformMeta[acc.platform] || {label: String(acc.platform), color: 'hsl(220 10% 45%)', icon: Users};
                         const Icon = meta.icon;
                         return (
                           <div
@@ -342,6 +361,7 @@ const AccountGroupsPage: React.FC = () => {
                         setGroupToDelete(group);
                         setDeleteConfirmOpen(true);
                       }}
+                      disabled={!ready}
                     >
                       <Trash2 className="w-3.5 h-3.5 mr-1" />
                       删除
@@ -356,7 +376,7 @@ const AccountGroupsPage: React.FC = () => {
         {/* 新建分组卡片 */}
         <Card
           className="shadow-sm border-dashed hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer flex items-center justify-center min-h-[180px]"
-          onClick={() => setNewGroupOpen(true)}
+          onClick={() => { if (ready) setNewGroupOpen(true); }}
         >
           <CardContent className="p-5 text-center">
             <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
@@ -434,4 +454,7 @@ const AccountGroupsPage: React.FC = () => {
   );
 };
 
-export default AccountGroupsPage;
+export default function AccountGroupsOwnerBoundary() {
+  const identity = useWorkspaceIdentity();
+  return <AccountGroupsPage key={identity} />;
+}

@@ -25,7 +25,7 @@ export const announcements: Announcement[] = [
     id: 'ann_001',
     title: 'V3.0 全新版本上线，矩阵监控全面升级',
     content:
-      '矩效 Matrix V3.0 正式发布！本次更新带来以下核心功能：\n\n1. **矩阵监控**：支持粉丝增长异常、关键词命中、评论负面情绪实时告警\n2. **多平台聚合**：抖音 / 小红书 / 视频号 / B站 评论与私信统一管理\n3. **自动回复 2.0**：新增关键词模糊匹配、多轮会话、离线回复策略\n4. **数据看板**：账号健康度评分、内容吸引力指数、流量来源分析\n\n立即前往各模块体验新功能，如有问题请联系客服。',
+      '远效 V3.0 正式发布！本次更新带来以下核心功能：\n\n1. **矩阵监控**：支持粉丝增长异常、关键词命中、评论负面情绪实时告警\n2. **多平台聚合**：抖音 / 小红书 / 视频号 / B站 评论与私信统一管理\n3. **自动回复 2.0**：新增关键词模糊匹配、多轮会话、离线回复策略\n4. **数据看板**：账号健康度评分、内容吸引力指数、流量来源分析\n\n立即前往各模块体验新功能，如有问题请联系客服。',
     summary: '矩阵监控全面升级 + 多平台评论私信聚合 + 自动回复 2.0',
     category: 'update',
     isPublished: true,
@@ -274,10 +274,10 @@ export const tutorialSections: TutorialSection[] = [
     title: '新手入门',
     items: [
       {
-        title: '矩效 Matrix 产品介绍',
+        title: '远效 产品介绍',
         gradient: 'from-blue-500 to-indigo-600',
         steps: [
-          { title: '什么是矩效 Matrix', description: '矩效 Matrix 是一款多平台新媒体账号矩阵管理工具，支持抖音、小红书、视频号、B站四大平台统一管理。', imageHint: '产品首页概览图' },
+          { title: '什么是远效', description: '远效 是一款多平台新媒体账号矩阵管理工具，支持抖音、小红书、视频号、B站四大平台统一管理。', imageHint: '产品首页概览图' },
           { title: '核心功能总览', description: '涵盖账号管理、一键发布、粉丝互动、数据中心四大核心模块，帮您高效运营多平台账号矩阵。', imageHint: '功能模块示意图' },
           { title: '适用人群', description: '适合 MCN 机构、品牌自媒体、个人创作者等需要管理多个账号的用户。', imageHint: '用户画像示意' },
         ],
@@ -286,7 +286,7 @@ export const tutorialSections: TutorialSection[] = [
         title: '三分钟快速注册激活',
         gradient: 'from-orange-400 to-rose-500',
         steps: [
-          { title: '注册账号', description: '使用手机号或邮箱注册矩效账号，注册成功后自动登录。', imageHint: '注册页面截图' },
+          { title: '注册账号', description: '使用手机号或邮箱注册远效账号，注册成功后自动登录。', imageHint: '注册页面截图' },
           { title: '获取授权码', description: '联系客服购买授权码，或使用试用授权码体验功能。', imageHint: '授权码购买示意' },
           { title: '激活 VIP', description: '进入「设置 - VIP 状态」，输入授权码即可激活，立即解锁全部功能。', imageHint: '激活页面示意' },
         ],
@@ -409,7 +409,7 @@ export const faqCategories = [
     value: 'register',
     label: '注册激活',
     items: [
-      { q: '如何注册矩效 Matrix 账号？', a: '点击注册按钮，使用手机号或邮箱即可完成注册，注册后需使用授权码激活 VIP 功能。' },
+      { q: '如何注册远效 账号？', a: '点击注册按钮，使用手机号或邮箱即可完成注册，注册后需使用授权码激活 VIP 功能。' },
       { q: '授权码如何激活？', a: '登录后进入「设置 - VIP 状态」页面，输入您购买的授权码即可完成激活，激活后立即生效。' },
       { q: '忘记密码怎么办？', a: '在登录页点击「忘记密码」，通过注册手机号或邮箱接收验证码即可重置密码。' },
     ],
@@ -437,7 +437,7 @@ export const faqCategories = [
     value: 'qualification',
     label: '平台资质',
     items: [
-      { q: '矩效 Matrix 有哪些资质？', a: '矩效 Matrix 是正规运营的 SaaS 服务，持有 ICP 备案、软件著作权，严格遵守各平台开放平台规则。' },
+      { q: '远效 有哪些资质？', a: '远效 是正规运营的 SaaS 服务，持有 ICP 备案、软件著作权，严格遵守各平台开放平台规则。' },
       { q: '数据安全有保障吗？', a: '所有数据存储于国内合规云服务，传输全程 TLS 加密，定期安全审计，符合等保三级要求。' },
       { q: '会违反平台规则吗？', a: '我们严格遵守各平台开发者协议，所有功能均基于平台官方开放接口实现，不突破平台限制。' },
     ],
@@ -480,7 +480,7 @@ export interface OnboardingStep {
 
 export const onboardingSteps: OnboardingStep[] = [
   {
-    title: '欢迎使用矩效 Matrix',
+    title: '欢迎使用远效',
     description: '这是您的工作台首页，让我们花 1 分钟快速了解核心功能，帮您更快上手。',
     position: 'bottom',
   },
@@ -504,7 +504,7 @@ export const onboardingSteps: OnboardingStep[] = [
   },
   {
     title: '🎉 恭喜完成新手引导',
-    description: '您已了解矩效 Matrix 的核心功能。快去绑定账号开始您的矩阵运营之旅吧！随时可在右侧信息卡重新查看引导。',
+    description: '您已了解远效 的核心功能。快去绑定账号开始您的矩阵运营之旅吧！随时可在右侧信息卡重新查看引导。',
     position: 'bottom',
   },
 ];

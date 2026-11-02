@@ -1,0 +1,21 @@
+// Real React, manual synthetic IPC, fresh offline renderer only.
+const path=require('node:path'),root=path.resolve(__dirname,'..');
+async function run(){
+ const assert=require('node:assert/strict'),React=require('react'),{createRoot}=require('react-dom/client'),{loadTs}=require('./qa-load-typescript.cjs');
+ let checks=0,calls=0,release,mode='first';const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},component=createRoot(document.getElementById('root'));
+ const snapshot={at:'2026-10-26T00:00:00Z',electronManagedOnly:true,sampleReady:false,sampleIntervalMs:0,cached:false,truncated:false,groups:[{type:'main',processes:1,cpuPercent:null,privateMiB:123,workingMiB:150}],pages:{total:2,webviews:1,unthrottled:1,loading:0,unavailable:0},windows:{visible:1,hidden:0,unavailable:0}};
+ window.matrixDesktop={systemSettings:async input=>{calls++;eq(input,{command:'performance'});if(mode==='defer')return new Promise(resolve=>{release=resolve;});if(mode==='failure')return {error:'QA本机性能暂不可用'};return{performance:mode==='first'?snapshot:{...snapshot,cached:true,sampleReady:true,groups:[{...snapshot.groups[0],cpuPercent:12.25}]}};}};
+ const {DesktopPerformancePanel}=loadTs('client/src/components/workspace/DesktopPerformancePanel.tsx',new Map()),pause=()=>new Promise(resolve=>setTimeout(resolve,25)),wait=async condition=>{for(let n=0;n<80&&!condition();n++)await pause();assert(condition(),'Synthetic performance panel timeout');},button=()=>[...document.querySelectorAll('button')].find(item=>item.textContent==='读取远效性能概览');
+ try{
+  component.render(React.createElement(DesktopPerformancePanel));await wait(()=>!!button());eq(calls,0);eq(document.querySelector('[role=status]'),null);
+  button().click();await wait(()=>document.body.textContent.includes('首次仅建立 CPU 基线'));eq(calls,1);eq(document.body.textContent.includes('CPU 待二次采样'),true);eq(document.body.textContent.includes('私有内存 123 MiB'),true);eq(document.body.textContent.includes('不含内置数据库'),true);
+  mode='second';button().click();await wait(()=>document.body.textContent.includes('CPU 12.25%'));eq(calls,2);eq(document.body.textContent.includes('缓存采样'),true);await pause();eq(calls,2);
+  mode='failure';button().click();await wait(()=>document.querySelector('[role=alert]')?.textContent==='QA本机性能暂不可用');eq(calls,3);eq(document.body.textContent.includes('CPU 12.25%'),true);
+  mode='defer';button().click();await wait(()=>!!release);eq(button().disabled,true);eq(calls,4);button().click();await pause();eq(calls,4);component.unmount();release({performance:snapshot});await pause();eq(document.querySelector('[role=status]'),null);
+  return {performancePanelChecks:checks,manualOnly:true,firstCpuNotShownAsIdle:true,lateUnmountDiscarded:true,actualReact:true,realUserProfileTouched:false,realPlatformRequests:0};
+ }finally{try{component.unmount();}catch{}window.matrixDesktop=undefined;}
+}
+module.exports={run};
+if(process.type==='renderer')module.exports={run};
+else if(!process.versions.electron){const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const r=require('node:child_process').spawnSync(path.join(root,'.desktop-deps/node_modules/electron/dist/electron.exe'),[__filename],{cwd:root,env,windowsHide:true,encoding:'utf8',timeout:45000});process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.exit(r.status??1);}
+else{const {app,BrowserWindow}=require('electron'),fs=require('node:fs'),os=require('node:os');app.setPath('userData',fs.mkdtempSync(path.join(os.tmpdir(),'matrix-performance-ui-qa-')));app.whenReady().then(async()=>{let win;try{win=new BrowserWindow({show:false,webPreferences:{nodeIntegration:true,contextIsolation:false,backgroundThrottling:false}});const origin='https://performance.fixture.test/';win.webContents.session.webRequest.onBeforeRequest((r,done)=>done({cancel:r.url!==origin}));win.webContents.session.protocol.handle('https',()=>new Response('<div id="root"></div>',{headers:{'content-type':'text/html'}}));await win.loadURL(origin);console.log(JSON.stringify(await win.webContents.executeJavaScript(`require(${JSON.stringify(__filename)}).run()`)));}catch(error){console.error(error.stack||error);process.exitCode=1;}finally{win?.destroy();app.exit(process.exitCode||0);}});}

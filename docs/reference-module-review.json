@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-17",
+  "scope": "用户指定的小V猫3.0.0安装资源静态分析，以及矩效源码审查；不含竞品核心字节码还原、真实账号或真实发布验收",
+  "referenceReport": "logs/reference-workflows-latest.json",
+  "referenceEvidence": {
+    "frontEnd": "assets/app.min.js：5,221,617字节，无source map；仅用AST分析字符串和接口调用，不执行代码",
+    "core": "server/server.jsc：11,775,368字节；只确认Bytenode加载方式，未还原核心源码",
+    "publishBoundary": ["PublishController.startPublishTask", "PublishController.getPublishPageStatus", "PublishController.cancelRunningTask", "PublishController:publishProcess", "PublishController:wokerProgress"],
+    "recordBoundary": ["Models.PublishLog.updateRecord", "Models.PublishLog.updateRecordsByIds"],
+    "limits": "接口名称和界面标签不是上传协议、平台选择器、调度算法或发布成功的证据；不据此推断或复制核心实现"
+  },
+  "modules": [
+    {
+      "module": "一键发布",
+      "priority": "P0",
+      "implementedInSource": ["发布前集中校验，未通过不创建任务或跳页", "只读素材检查：单次15秒、整批30秒，有真实检查计数并可取消", "上传和媒体处理完成后才填表，再处理封面及提交", "实际阶段、具体错误、原记录重试及结果未知防重复保护", "隔离单账号提交前检查错误，不连带其他已准备账号失败", "重复相同进度不重新渲染和存档整份任务列表，仍保持官方状态检查"],
+      "remaining": ["新源码尚未打包安装，必须单独验证安装包及升级保留", "在原授权范围内核验四个平台官方编辑器及明确发布结果，不把本地样本当作真实发布成功", "进一步设计主进程执行控制中心与稳定任务事件契约；竞品接口只是边界线索，不能冒充已完成此迁移"]
+    },
+    {
+      "module": "账号管理",
+      "priority": "P1",
+      "reviewedExistingSource": ["默认分组、整栏颜色、移组与账号观察状态已有独立实现", "账号绑定与重新授权保持在账号管理，不引入首页绑定或跨模块共享操作页"],
+      "remaining": ["逐个平台实测本人身份、登录失效及恢复，不能因目录中有入口就显示支持", "账号异常与授权有效期需要保持可追溯证据；本轮只复核隔离测试，没有读取竞品账号数据库"]
+    },
+    {
+      "module": "粉丝互动",
+      "priority": "P1",
+      "reviewedExistingSource": ["当前可见官方列表快照、账号及用户隔离、本地备注和本地已处理状态", "未读状态只有明确标记才显示；本地处理不调用平台标已读接口"],
+      "remaining": ["已打开官方消息页可能由平台自身改变未读状态，需要独立平台实测，不能保证界面打开后永不变化", "回复、评论和私信继续以官方允许的关系与本人确认机制验收，不抄用未知私有接口"]
+    },
+    {
+      "module": "数据中心",
+      "priority": "P1",
+      "implementedInSource": ["移除固定40%入站假设和模拟回复耗时", "缺少私信回复关联或耗时样本时返回null和具体原因", "评论回复率只描述本地已同步记录，无样本或计数不一致时不补造", "统计卡片明确本地已保存范围，0不代表平台没有数据"],
+      "remaining": ["平台实时统计完整性、数据来源时间和字段覆盖度仍需独立接入与验证", "流量速度等尚未接通能力继续保留待接通标识"]
+    },
+    {
+      "module": "草稿与任务记录",
+      "priority": "P1",
+      "reviewedExistingSource": ["单条、批量视频、批量图文独立编辑状态及草稿", "清空本页同步删除对应草稿，不改其他页面和平台作品", "已成功或结果未知记录不自动重发；重试复用原任务ID"],
+      "remaining": ["大量带缩略图任务的存档容量需要进一步迁移到本地受控存储，不能通过静默删历史记录解决", "历史任务缺少配置或完成证据时不补造步骤或成功状态"]
+    }
+  ],
+  "referenceCodeExecuted": false,
+  "referenceAccountDataRead": false,
+  "licenseOrProtectionBypassed": false,
+  "proprietarySourceCopiedIntoMatrix": false,
+  "installedApplicationChanged": false,
+  "realPlatformPostsCreated": false
+}

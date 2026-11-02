@@ -1,3 +1,4 @@
+import { InteractionExtraTools } from '@/components/workspace/InteractionExtraTools';
 import { useEffect, useRef } from 'react';
 import { useAppPreferences } from '@/contexts/AppPreferences';
 import { Outlet, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom';
@@ -43,11 +44,12 @@ import {
   DropdownMenuTrigger,
 } from '@client/src/components/ui/dropdown-menu';
 import NotificationCenter from '@client/src/components/notification/NotificationCenter';
+import AppBrandMark from '@/components/AppBrandMark';
 import PersonalTaskReminder from '@/components/notification/PersonalTaskReminder';
 import { clearAuthToken, getAuthToken, getUser } from '@client/src/api';
-import { Globe2 } from 'lucide-react';
 import { OfficialWorkspaceDeck, useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 import { PublishProgressButton } from '@/components/workspace/PublishQueue';
+import { useWorkspacePreference } from '@/components/workspace/WorkspaceUiState';
 
 interface SubMenuItem {
   to: string;
@@ -80,8 +82,7 @@ const topMenuItems: TopMenuItem[] = [
     icon: Users,
     basePath: '/accounts',
     groups: [
-      { label: '账号管理', items: [{ to: '/accounts', label: '账号列表' }] },
-      { label: '账号分组', items: [{ to: '/accounts/groups', label: '分组管理' }] },
+      { label: '账号管理', items: [{ to: '/accounts', label: '账号工作区' }] },
     ],
   },
   {
@@ -118,7 +119,7 @@ const topMenuItems: TopMenuItem[] = [
         items: [
           { to: '/engage/comments', label: '评论管理' },
           { to: '/engage/comments-agg', label: '评论聚合' },
-          { to: '/engage/auto-comment', label: '回复待办' },
+          { to: '/engage/auto-comment', label: '自动评论' },
           { to: '/engage/batch-tasks', label: '批量任务' },
         ],
       },
@@ -128,11 +129,11 @@ const topMenuItems: TopMenuItem[] = [
         items: [
           { to: '/engage/messages', label: '私信管理' },
           { to: '/engage/messages-agg', label: '私信聚合' },
-          { to: '/engage/auto-message', label: '回复待办' },
+          { to: '/engage/auto-message', label: '自动私信' },
         ],
       },
       {
-        label: '粉丝',
+        label: '我的粉丝',
         icon: UserPlus,
         items: [
           { to: '/engage/followers', label: '粉丝管理' },
@@ -143,10 +144,11 @@ const topMenuItems: TopMenuItem[] = [
         label: '自动化',
         icon: Bot,
         items: [
+          { to: '/engage/account-operations', label: '账号运营' },
           { to: '/automation/keywords', label: '关键词回复' },
           { to: '/automation/welcome', label: '欢迎语' },
-          { to: '/automation/offline', label: '离线回复' },
-          { to: '/automation/monitor', label: '监控任务' },
+          { to: '/automation/offline', label: '离线文案' },
+          { to: '/automation/monitor', label: '同步监控' },
           { to: '/automation/active-messages', label: '操作待办' },
           { to: '/automation/templates', label: '消息模板' },
         ],
@@ -169,6 +171,7 @@ const topMenuItems: TopMenuItem[] = [
         label: '账号与通知',
         items: [
           { to: '/analytics/account-monitor', label: '账号会话检查' },
+          { to: '/analytics/account-data', label: '账号数据核对' },
           { to: '/analytics/notify-monitor', label: '待办提醒' },
         ],
       },
@@ -190,7 +193,6 @@ const topMenuItems: TopMenuItem[] = [
         label: '产品文档',
         items: [
           { to: '/docs/overview', label: '产品框架' },
-          { to: '/docs/requirements', label: '功能需求' },
           { to: '/docs/non-functional', label: '非功能需求' },
           { to: '/docs/roadmap', label: '扩展路线图' },
           { to: '/docs/testing', label: '测试方案' },
@@ -216,17 +218,27 @@ const topMenuItems: TopMenuItem[] = [
       },
       { label: '系统设置', items: [
         { to: '/settings/general', label: '通用' }, { to: '/settings/privacy', label: '隐私' },
-        { to: '/settings/notify', label: '通知' }, { to: '/settings/about', label: '关于矩效' },
+        { to: '/settings/notify', label: '通知' }, { to: '/settings/about', label: '关于远效' },
+        { to: '/settings/capabilities', label: '功能与数据来源' },
       ] },
     ],
   },
 ];
 
+function validModuleRoutes(value: unknown): value is Record<string, string> {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && Object.entries(value).every(([base, route]) =>
+    topMenuItems.some(menu => menu.basePath === base && menu.groups.some(group => group.items.some(item => item.to === route))));
+}
 const UserLayoutContent = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const workspace = useOfficialWorkspace();
   const user = getUser();
+  const [lastRoutes, setLastRoutes] = useWorkspacePreference<Record<string, string>>('navigation.modules', {}, validModuleRoutes);
+  useEffect(() => {
+    const menu = topMenuItems.find(item => item.groups.some(group => group.items.some(sub => sub.to === location.pathname)));
+    if (menu && lastRoutes[menu.basePath] !== location.pathname) setLastRoutes(previous => ({ ...previous, [menu.basePath]: location.pathname }));
+  }, [location.pathname, lastRoutes, setLastRoutes]);
   const preferences = useAppPreferences(), startupApplied = useRef(false);
   useEffect(() => {
     if (!startupApplied.current && getAuthToken()) {
@@ -234,12 +246,6 @@ const UserLayoutContent = () => {
       if (location.pathname === '/') navigate(preferences.startupPage, { replace: true });
     }
   }, [location.pathname, navigate, preferences.startupPage]);
-  useEffect(() => {
-    if (location.pathname === '/accounts' && window.matrixDesktop?.isDesktop) workspace.show('manage');
-    else workspace.hide();
-    // Route entry opens the unified account view; closing it must still expose the management panel.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
 
   // 鉴权：未登录则跳转登录页
   if (!getAuthToken()) {
@@ -275,12 +281,10 @@ const UserLayoutContent = () => {
       <header className="matrix-topbar h-14 bg-card border-b border-border flex items-center px-4 gap-2 z-30 shrink-0">
         {/* Logo */}
         <div className="flex items-center gap-2 mr-6">
-          <div className="matrix-brand-icon w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shrink-0">
-            <PlaySquare className="w-4 h-4" />
-          </div>
+          <AppBrandMark className="shrink-0" />
           <div className="flex flex-col overflow-hidden">
             <span className="text-sm font-semibold text-foreground leading-tight truncate">
-              矩效 Matrix
+              远效
             </span>
           </div>
         </div>
@@ -292,8 +296,7 @@ const UserLayoutContent = () => {
             return (
               <NavLink
                 key={item.basePath}
-                onClick={() => item.basePath === '/accounts' ? workspace.show('manage') : workspace.hide()}
-                to={item.groups[0]?.items[0]?.to || item.basePath}
+                to={lastRoutes[item.basePath] || item.groups[0]?.items[0]?.to || item.basePath}
                 end
                 className={({ isActive: linkActive }) =>
                   cn(
@@ -368,7 +371,7 @@ const UserLayoutContent = () => {
         {showSidebar && (
           <aside className="matrix-module-sidebar w-52 bg-card border-r border-border flex flex-col shrink-0 overflow-y-auto">
             <div className="py-3 px-2 space-y-4">
-              {activeMenu.groups.map((group) => (
+              {activeMenu.groups.map((group) => group.label === '自动化' ? <InteractionExtraTools key={group.label} items={group.items}/> : (
                 <div key={group.label}>
                   <div className="matrix-menu-group px-3 mb-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                     {group.icon && <group.icon className="w-3 h-3" />}

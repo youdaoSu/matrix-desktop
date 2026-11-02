@@ -26,11 +26,13 @@ export const axiosForBackend = axios.create({
 export function setAuthToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
   sessionStorage.removeItem(TOKEN_KEY);
+  window.dispatchEvent(new Event('matrix:auth-updated'));
 }
 
 export function setSessionAuthToken(token: string) {
   sessionStorage.setItem(TOKEN_KEY, token);
   localStorage.removeItem(TOKEN_KEY);
+  window.dispatchEvent(new Event('matrix:auth-updated'));
 }
 
 export function getAuthToken(): string | null {
@@ -42,6 +44,7 @@ export function clearAuthToken() {
   sessionStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(USER_KEY);
+  window.dispatchEvent(new Event('matrix:auth-updated'));
 }
 
 export function setUser(user: any, remember = Boolean(localStorage.getItem(TOKEN_KEY) || !sessionStorage.getItem(TOKEN_KEY))) {
@@ -49,6 +52,7 @@ export function setUser(user: any, remember = Boolean(localStorage.getItem(TOKEN
   const otherStorage = remember ? sessionStorage : localStorage;
   storage.setItem(USER_KEY, JSON.stringify(user));
   otherStorage.removeItem(USER_KEY);
+  window.dispatchEvent(new Event('matrix:auth-updated'));
 }
 
 export function getUser(): any {

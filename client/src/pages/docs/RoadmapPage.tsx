@@ -131,7 +131,7 @@ const phases: RoadmapPhase[] = [
     icon: Flower2,
     color: 'bg-[hsl(330_70%_55%)] text-white',
     features: [
-      '开放 API：第三方系统可接入矩效能力',
+      '开放 API：第三方系统可接入远效能力',
       'Webhook 事件推送：数据变更实时回调',
       '插件市场：开发者可开发功能插件',
       '多语言支持：国际化版本',
@@ -157,7 +157,7 @@ const RoadmapPage: React.FC = () => {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">后续扩展路线图</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            矩效 Matrix 产品发展规划与能力扩展路线
+            远效 产品发展规划与能力扩展路线
           </p>
         </div>
         <div className="relative">

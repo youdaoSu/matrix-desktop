@@ -1,0 +1,13 @@
+// Immutable synthetic snapshots only. No actual account, credentials or I/O.
+const assert=require('node:assert/strict'),{performance}=require('node:perf_hooks'),{loadTs}=require('./qa-load-typescript.cjs');
+const {createInteractionProjection}=loadTs('client/src/components/workspace/interaction-projection.ts',new Map());
+let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},project=createInteractionProjection(),rows=[{platformId:'1',author:'QA first',isCurrentFollower:true},{platformId:'2',author:'QA historical',isCurrentFollower:false},{platformId:'3',author:'QA unknown'}];
+const a={accountId:'qa-a',accountNickname:'QA A',sessionId:'qa-session',nativeKey:'qa-native',rows},b={...a,accountId:'qa-b',accountNickname:'QA B'};
+const first=project('owner-1','followers',[a,b]);eq(first.length,4);eq(first.map(row=>[row.accountId,row.platformId]),[['qa-a','1'],['qa-a','3'],['qa-b','1'],['qa-b','3']]);eq(rows.some(row=>'accountId'in row),false);
+assert.equal(project('owner-1','followers',[{...a},{...b}]),first);checks++;
+for(const [lease,kind,sources]of [['owner-2','followers',[a,b]],['owner-1','comments',[a,b]],['owner-1','followers',[b,a]],['owner-1','followers',[{...a,accountNickname:'QA renamed'},b]],['owner-1','followers',[{...a,sessionId:'qa-rebound'},b]],['owner-1','followers',[{...a,nativeKey:'qa-other'},b]],['owner-1','followers',[{...a,rows:[...rows]},b]],['owner-1','followers',[a]]]){const before=project('owner-1','followers',[a,b]);assert.notEqual(project(lease,kind,sources),before);checks++;}
+eq(project('owner-1','comments',[a,b]).length,6);eq(project('owner-1','followers',[{...a,rows:undefined}]),[]);eq(project('owner-1','followers',[]),[]);
+let reads=0;const large=Array.from({length:50000},(_,i)=>({platformId:String(i),get author(){reads++;return 'QA member';}})),source={...a,rows:large},memo=createInteractionProjection();const begin=performance.now(),largeFirst=memo('qa-owner','followers',[source]),initialMs=performance.now()-begin;eq(reads,large.length);
+const warmed=performance.now();for(let n=0;n<100;n++){assert.equal(memo('qa-owner','followers',[{...source}]),largeFirst);checks++;}const statusOnlyMs=performance.now()-warmed;eq(reads,large.length);
+eq(JSON.stringify(project('owner-1','comments',[{...a,accountNickname:'QA renamed'}])[0]),JSON.stringify({...rows[0],accountId:a.accountId,accountNickname:'QA renamed'}));
+console.log(JSON.stringify({projectionChecks:checks,syntheticRows:large.length,statusOnlyRenders:100,initialProjectionMs:Math.round(initialMs*100)/100,statusOnlyTotalMs:Math.round(statusOnlyMs*100)/100,noRepeatedRowReads:true,ownerAndBindingInvalidation:true,metadataAndOrderPreserved:true,realUserDataTouched:false,realPlatformRequests:0}));

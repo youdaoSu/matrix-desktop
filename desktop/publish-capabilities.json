@@ -1,0 +1,6 @@
+{
+  "douyin": { "label": "抖音", "mediaTypes": ["video", "image"] },
+  "xiaohongshu": { "label": "小红书", "mediaTypes": ["video", "image"] },
+  "wechat": { "label": "视频号", "mediaTypes": ["video"] },
+  "bilibili": { "label": "B站", "mediaTypes": ["video"] }
+}

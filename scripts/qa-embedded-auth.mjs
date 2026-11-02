@@ -50,7 +50,7 @@ async function waitFor(expression, message, attempts = 120) {
 
 await call('Runtime.enable');
 await evaluate(`localStorage.setItem('matrix_token', ${JSON.stringify(login.token)}); localStorage.setItem('matrix_user', ${JSON.stringify(JSON.stringify(login.user))}); location.href = location.origin + '/app/#/accounts'; true`);
-await waitFor("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false", '统一账号列表未加载');
+await waitFor("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false && !!document.querySelector('[data-account-management]')", '账号管理未直接显示统一工作区');
 const platforms = [
   { key: 'douyin', label: '抖音', host: 'creator.douyin.com' },
   { key: 'xiaohongshu', label: '小红书', host: 'creator.xiaohongshu.com' },
@@ -59,9 +59,27 @@ const platforms = [
 ];
 const results = [];
 for (const platform of platforms) {
-  await evaluate(`(() => { const button = [...document.querySelectorAll('.matrix-add-platforms button')].find(item => item.getClientRects().length && item.innerText.includes(${JSON.stringify(platform.label)})); if (!button) throw new Error('可见平台入口不存在'); button.click(); return true; })()`);
+  await evaluate("[...document.querySelectorAll('[data-account-management] button')].find(button=>button.getClientRects().length && button.innerText.trim()==='添加账号').click();true");
+  await waitFor("!!document.querySelector('[role=dialog]')", '账号管理绑定弹窗未打开');
+  await evaluate(`(() => { const button = document.querySelector('[data-bind-provider="${platform.key}"]'); if (!button) throw new Error('可见平台入口不存在'); button.click(); return true; })()`);
+  await waitFor(`document.querySelector('[data-bind-provider="${platform.key}"]')?.getAttribute('aria-pressed')==='true'`, '平台选择未更新');
+  await evaluate("document.querySelector('[data-open-bind-provider]').click();true");
+  if(platform.key==='wechat'){
+    await waitFor("!!document.querySelector('.matrix-edge-host')?.dataset.edgeGuestId",'视频号原生 Edge 控件未成功嵌入',250);
+    await waitFor("document.querySelector('.matrix-edge-host')?.dataset.edgeUrl.startsWith('https://channels.weixin.qq.com/')",'视频号原生官方页未加载',450);
+    await waitFor("document.querySelector('.matrix-edge-host')?.dataset.edgeUrl.includes('/login.html')",'视频号扫码页重定向未完成',450);
+    await waitFor("![...document.querySelectorAll('.matrix-browser-error')].some(e=>e.getClientRects().length)",'视频号保留了旧导航的失败提示',100);
+    const state=await evaluate(`(async()=>{const host=document.querySelector('.matrix-edge-host');const token=localStorage.getItem('matrix_token')||sessionStorage.getItem('matrix_token');const guard=await window.matrixDesktop.bindEdgeGuest({guestId:host.dataset.edgeGuestId,accessToken:token});return{url:host.dataset.edgeUrl,unloggedBindingBlocked:!!guard.error,electronGuest:!!document.querySelector('webview'),toolbar:!!document.querySelector('.matrix-binding-banner')};})()`);
+    if(!state.unloggedBindingBlocked||state.electronGuest||!state.toolbar)throw Error('视频号原生控件或未登录保护失败');
+    results.push({platform:platform.label,embedded:true,engine:'webview2',...state});
+    await evaluate("document.querySelector('.matrix-account-tab.is-active .matrix-tab-close')?.click();true");
+    await waitFor("!document.querySelector('.matrix-edge-host')",'视频号原生窗口未正确关闭');
+    await evaluate("document.querySelector('.matrix-workspace-tabs > button')?.click();true");
+    await waitFor("document.querySelector('[data-account-management]')?.getClientRects().length>0", '视频号关闭后未返回账号列表');
+    continue;
+  }
   await waitFor("!!document.querySelector('webview')", `${platform.label}内嵌官方授权 webview 未创建`);
-  await waitFor("document.querySelector('.matrix-official-deck')?.hidden === false && document.body.innerText.includes('我已登录，完成绑定')", `${platform.label}内嵌工作区未显示`);
+  await waitFor("document.querySelector('.matrix-official-deck')?.hidden === false && !!document.querySelector('.matrix-binding-banner')", `${platform.label}内嵌工作区未显示`);
   const loginReady = platform.key === 'xiaohongshu'
     ? "document.body.innerText.includes('短信登录') && document.querySelectorAll('input').length >= 2"
     : "document.querySelectorAll('[class*=qr i],[id*=qr i],img[alt*=二维码],img[alt*=扫码]').length > 0";
@@ -101,6 +119,7 @@ for (const platform of platforms) {
   await evaluate("document.querySelector('.matrix-account-tab.is-active .matrix-tab-close')?.click(); true");
   await waitFor("!document.querySelector('webview')", `${platform.label}内嵌窗口未正确关闭`);
   await evaluate("document.querySelector('.matrix-workspace-tabs > button')?.click(); true");
+  await waitFor("document.querySelector('[data-account-management]')?.getClientRects().length>0", '关闭官方页面后未返回账号列表');
 }
 console.log(JSON.stringify({ passed: platforms.length * 7, results }, null, 2));
 socket.close();

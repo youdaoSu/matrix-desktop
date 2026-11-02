@@ -52,7 +52,7 @@ const routes = [
   '/publish', '/publish/tasks', '/publish/create', '/publish/batch-video', '/publish/batch-image', '/publish/drafts', '/publish/stats',
   '/engage/comments', '/engage/comments-agg', '/engage/auto-comment', '/engage/batch-tasks', '/engage/messages', '/engage/messages-agg', '/engage/auto-message', '/engage/followers', '/engage/follower-monitor',
   '/automation/keywords', '/automation/welcome', '/automation/offline', '/automation/active-messages', '/automation/monitor', '/automation/templates', '/automation/logs',
-  '/analytics', '/analytics/flow', '/analytics/account-monitor', '/analytics/notify-monitor', '/analytics/violation', '/analytics/drafts', '/analytics/data-screen',
+  '/analytics', '/analytics/account-data', '/analytics/flow', '/analytics/account-monitor', '/analytics/notify-monitor', '/analytics/violation', '/analytics/drafts', '/analytics/data-screen',
   '/settings/profile', '/settings/password', '/settings/vip', '/settings/logins', '/settings/notify', '/settings/theme', '/settings/data',
   '/settings', '/settings/general', '/settings/privacy', '/settings/about',
   '/admin', '/admin/dashboard', '/admin/users', '/admin/codes', '/admin/plans', '/admin/logs', '/admin/settings',

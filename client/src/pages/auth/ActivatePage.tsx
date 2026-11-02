@@ -35,7 +35,7 @@ export default function ActivatePage() {
   };
 
   return (
-    <AuthCard eyebrow="开通矩效会员" title={activated ? '授权已生效' : '激活你的 VIP'} description={activated ? '你的账号权益已更新，可以开始使用矩效工作台。' : '输入管理员发放的授权码，开通对应会员权益。'}>
+    <AuthCard eyebrow="开通远效会员" title={activated ? '授权已生效' : '激活你的 VIP'} description={activated ? '你的账号权益已更新，可以开始使用远效工作台。' : '输入管理员发放的授权码，开通对应会员权益。'}>
       {activated ? (
         <div className="py-5 text-center" role="status">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50 text-emerald-600"><BadgeCheck className="h-8 w-8" /></div>
@@ -52,7 +52,7 @@ export default function ActivatePage() {
           <AuthError>{error}</AuthError>
           <Alert className="rounded-xl border-blue-100 bg-blue-50 text-blue-900">
             <ShieldCheck className="h-4 w-4 text-blue-700" />
-            <AlertDescription className="text-xs leading-5">授权码由矩效管理员发放。激活后，套餐时长和账号额度会显示在你的账户中。</AlertDescription>
+            <AlertDescription className="text-xs leading-5">授权码由远效管理员发放。激活后，套餐时长和账号额度会显示在你的账户中。</AlertDescription>
           </Alert>
           <AuthField
             id="activation-code"

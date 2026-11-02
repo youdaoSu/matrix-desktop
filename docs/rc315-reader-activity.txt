@@ -1,0 +1,37 @@
+RC315 candidate: passive public identity page during creator collection.
+NOT built or installed. Installed RC314 remains the live baseline.
+
+Baseline fixture proved that the public identity collector remained unthrottled
+throughout unrelated creator work. RC314 actual observations still showed 18
+hidden windows, 8 unthrottled and approximately two logical cores consumed by
+the main process in a separate quiet sample. These observations do not by
+themselves attribute all CPU consumption to the idle identity page.
+
+Creator acquisition now requests a passive identity lease. Initial page boot and
+identity verification remain active. Later reads use reference-counted active
+scopes; idle identity pages use normal Electron background throttling. Avatar
+work participates in the same activity decision, including its failure cleanup.
+Default follower/public leases retain their existing activity lifetime.
+No window, cookie, DOM, pagination state or request policy is discarded or
+replaced. Owner verification and refusal behavior are unchanged. This does not
+introduce browser emulation, parallel account requests or messaging actions.
+
+Targeted validation: 52 synthetic lifecycle assertions covering overlap, avatar
+completion order, activity/read failure, close while pending, ordinary lease
+handoff, changed cookies, same page continuation and actual creator wiring.
+13 real sandboxed Electron assertions validate activity flags during a held
+synthetic profile response and same-page DOM continuation on reacquisition;
+the disposable profile was removed after normal exit. Existing browser reader
+332 checks and actual native creator reader 113 checks passed. No real platform
+requests or sends were performed by these tests.
+
+Full gate requires 234 source suites / 88 actual package checks. Installation,
+canonical data/key verification, real UI switching and resource acceptance are
+still pending. This is a targeted CPU optimization, not a claim to have solved
+all hidden-window memory or main-process archive/worker CPU consumption.
+
+Delivered with234 source suites/88 package checks. See workspace
+matrix-rc315-delivery-summary.json for native proof, hashes and measured limits.
+Unthrottled pages8->4, but background CPU/memory still high. Fresh-launch
+allocation sampling estimates1.032GB/15s, chiefly archive protection/encoding
+and record-map copies. Allocation churn is not retained-memory growth proof.

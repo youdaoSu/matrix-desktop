@@ -29,6 +29,12 @@ export class AnalyticsController {
     return { code: 0, message: 'success', data: result };
   }
 
+  @Get('account-data-audit')
+  async getAccountDataAudit(@Req() req:AuthenticatedRequest) {
+    const data=await this.analyticsService.getAccountDataAudit(req.user.userId);
+    return {code:0,message:'success',data};
+  }
+
   @Get('engagement-trend')
   async getEngagementTrend(
     @Req() req: AuthenticatedRequest,

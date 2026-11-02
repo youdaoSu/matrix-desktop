@@ -113,11 +113,12 @@ export function AuthError({ children }: { children: ReactNode }) {
   );
 }
 
-export function AuthSubmit({ children, loading = false }: { children: ReactNode; loading?: boolean }) {
+export function AuthSubmit({ children, loading = false, disabled = false, tabIndex }: { children: ReactNode; loading?: boolean; disabled?: boolean; tabIndex?: number }) {
   return (
     <Button
       type="submit"
-      disabled={loading}
+      disabled={loading || disabled}
+      tabIndex={tabIndex}
       className="h-12 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:from-blue-700 hover:to-indigo-700 hover:shadow-blue-700/25 disabled:opacity-70"
     >
       {loading && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}

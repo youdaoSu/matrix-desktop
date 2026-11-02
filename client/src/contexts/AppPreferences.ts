@@ -7,7 +7,7 @@ export function readAppPreferences(): AppPreferences {
 }
 export function saveAppPreferences(patch: Partial<AppPreferences>) {
   const owner = getUser()?.id;
-  if (!owner) throw Error('请先登录矩效');
+  if (!owner) throw Error('请先登录远效');
   localStorage.setItem(preferenceKey(owner), JSON.stringify(normalizePreferences({ ...readAppPreferences(), ...patch })));
   window.dispatchEvent(new Event('matrix:preferences-updated'));
 }

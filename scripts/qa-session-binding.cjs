@@ -9,6 +9,7 @@ const { createAutoBinding } = fixture.exports;
 let checks = 0;
 const cookie = name => ({ name, value: 'fixture-only' });
 const profile = { nickname: 'QA creator' };
+assert.equal(classifySession('douyin', [{ name: 'sessionid', value: 'fixture' }], { ...profile, accountIssue: { kind: 'banned', message: 'fixture only' } }, 'https://creator.douyin.com/').authenticated, false); checks++;
 for (const name of ['web_session', 'access-token-creator.xiaohongshu.com']) {
   assert.equal(classifySession('xiaohongshu', [cookie(name)], profile, 'https://creator.xiaohongshu.com/home').authenticated, true); checks++;
 }
@@ -24,7 +25,7 @@ for (const patch of [{ value: '' }, { expirationDate: 1 }]) { assert.equal(class
   let loggedIn = false, saves = 0, bound = 0, error = '', current = true, failSave = false, release;
   let gate = null;
   const login = { platform: 'xiaohongshu', sessionId: 'fixture-session-0001', nickname: 'QA creator', pageUrl: 'https://creator.xiaohongshu.com/home' };
-  const options = { detect: async () => { if (gate) await gate; return loggedIn ? login : { error: '尚未检测到登录' }; }, persist: async () => { saves++; if (failSave) throw Error('保存失败'); return { id: 'qa-account' }; }, isCurrent: () => current, detected: () => {}, saved: () => bound++, failed: e => { error = e; }, saving: () => {} };
+  const options = { confirmationMilliseconds: 0, detect: async () => { if (gate) await gate; return loggedIn ? login : { error: '尚未检测到登录' }; }, persist: async () => { saves++; if (failSave) throw Error('保存失败'); return { id: 'qa-account' }; }, isCurrent: () => current, detected: () => {}, saved: () => bound++, failed: e => { error = e; }, saving: () => {} };
   let runner = createAutoBinding(options);
   await runner.run(); assert.equal(saves, 0); assert.equal(error, ''); checks++;
   await runner.run(false); assert.equal(error, '尚未检测到登录'); checks++;
@@ -45,5 +46,31 @@ for (const patch of [{ value: '' }, { expirationDate: 1 }]) { assert.equal(class
   profileReady = true; await profileRunner.run(); assert.equal(saves, beforeProfile + 1); assert.equal(waiting, ''); checks++;
   const emptyName = createAutoBinding({ ...options, detect: async () => ({ ...login, nickname: '  ' }) });
   await emptyName.run(); assert.equal(saves, beforeProfile + 1); checks++;
+  let stableClock = 1000, stableSaves = 0, returnedToLogin = 0;
+  const stableOptions = { ...options, confirmationMilliseconds: 3000, now: () => stableClock, detect: async () => login, persist: async () => { stableSaves++; return { id: 'stable-account' }; } };
+  const stableRunner = createAutoBinding(stableOptions);
+  await stableRunner.run(); assert.equal(stableSaves, 0); checks++;
+  stableClock += 2999; await stableRunner.run(); assert.equal(stableSaves, 0); checks++;
+  stableClock += 1; await stableRunner.run(); assert.equal(stableSaves, 1); checks++;
+  await stableRunner.run(); assert.equal(stableSaves, 1); checks++;
+  const returning = createAutoBinding({ ...options, persist: async () => { throw Error('binding save failed'); }, returnToLogin: async () => { returnedToLogin++; } });
+  await returning.run(); await returning.run(); assert.equal(returnedToLogin, 1); checks++;
+  let recoveringResult = login, recoveringSaves = 0, recoveringFail = true;
+  const recovering = createAutoBinding({ ...stableOptions, detect: async () => recoveringResult,
+    persist: async () => { recoveringSaves++; if (recoveringFail) throw Error('server unavailable'); return { id: 'recovered' }; },
+    returnToLogin: async () => { returnedToLogin++; } });
+  await recovering.run(); stableClock += 3000; await recovering.run(); assert.equal(recoveringSaves, 1); checks++;
+  recoveringFail = false; recoveringResult = { error: 'temporary profile error', pendingProfile: true };
+  await recovering.run(); recoveringResult = login; stableClock += 4000; await recovering.run();
+  assert.equal(recoveringSaves, 1); checks++;
+  recoveringResult = { error: 'official login required', loginRequired: true }; await recovering.run();
+  recoveringResult = login; await recovering.run(); assert.equal(recoveringSaves, 1); checks++;
+  stableClock += 3000; await recovering.run(); assert.equal(recoveringSaves, 2); checks++;
+  await recovering.run(); assert.equal(recoveringSaves, 2); checks++;
+  let changedResult = login, identitySaves = 0;
+  const identity = createAutoBinding({ ...stableOptions, detect: async () => changedResult, persist: async () => { identitySaves++; return {}; } });
+  await identity.run(); stableClock += 2999; changedResult = { ...login, nickname: 'another owner' }; await identity.run();
+  stableClock += 1; await identity.run(); assert.equal(identitySaves, 0); checks++;
+  stableClock += 2999; await identity.run(); assert.equal(identitySaves, 1); checks++;
   console.log(JSON.stringify({ sessionAndAutoBindingChecks: checks, realAccountsModified: false }));
 })().catch(error => { console.error(error); process.exitCode = 1; });

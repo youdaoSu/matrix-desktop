@@ -1,4 +1,5 @@
 const { spawnSync } = require('node:child_process');
+require('./qa-console-pipe.cjs').guardQaConsolePipes();
 const path = require('node:path');
 const fs = require('node:fs');
 const root = path.resolve(__dirname, '..');

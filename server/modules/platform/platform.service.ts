@@ -1,10 +1,11 @@
-import { Injectable, Inject, Logger, BadRequestException, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, NotFoundException, ForbiddenException, ConflictException, type OnModuleInit } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { platformAccounts, appUsers, accountGroups, followerRecords, contentPosts } from '@server/database/schema';
 import { eq, and, like, desc, count, sql, inArray, gte, lt, or } from 'drizzle-orm';
 import type { PlatformAccount, PlatformType, AccountGroup, FollowerRecord, PlatformAccountDetail } from '@shared/api.interface';
 import * as jwt from 'jsonwebtoken';
 import * as CryptoJS from 'crypto-js';
+import { mergeAccountMetricSnapshot, observedFollowers, type AccountMetricEvidence } from '@shared/account-metrics';
 
 type OAuthState = { userId: string; platform: PlatformType; nonce: string };
 
@@ -35,10 +36,43 @@ interface DouyinUserResponse {
 }
 
 @Injectable()
-export class PlatformService {
+export class PlatformService implements OnModuleInit {
   private readonly logger = new Logger(PlatformService.name);
 
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+
+  async onModuleInit() {
+    // Additive upgrade: existing account/session rows are never removed.
+    await this.db.execute(sql`ALTER TABLE public.account_groups ADD COLUMN IF NOT EXISTS color varchar(7) NOT NULL DEFAULT '#64748b'`);
+  }
+
+  private async ensureDefaultGroup(userId: string) {
+    return this.db.transaction(async tx => {
+      // A per-owner row lock also prevents concurrent first binds from creating two default groups.
+      await tx.select({ id: appUsers.id }).from(appUsers).where(eq(appUsers.id, userId)).for('update');
+      let [group] = await tx.select().from(accountGroups).where(and(eq(accountGroups.userId, userId), eq(accountGroups.isDefault, true))).orderBy(accountGroups.createdAt).limit(1);
+      if (!group) {
+        const [named] = await tx.select().from(accountGroups).where(and(eq(accountGroups.userId, userId), eq(accountGroups.groupName, '默认分组'))).limit(1);
+        [group] = named
+          ? await tx.update(accountGroups).set({ isDefault: true, sortOrder: -1 }).where(eq(accountGroups.id, named.id)).returning()
+          : await tx.insert(accountGroups).values({ userId, groupName: '默认分组', isDefault: true, sortOrder: -1 }).returning();
+      }
+      // Repair legacy name-only assignments without discarding the user's custom group names.
+      await tx.execute(sql`INSERT INTO public.account_groups (user_id, group_name, sort_order)
+        SELECT ${userId}, a.group_name, 1 + COALESCE((SELECT MAX(g.sort_order) FROM public.account_groups g WHERE g.user_id=${userId}),0)
+        FROM public.platform_accounts a WHERE a.user_id=${userId} AND a.group_id IS NULL
+          AND NULLIF(trim(a.group_name),'') IS NOT NULL AND a.group_name <> '默认分组'
+          AND NOT EXISTS (SELECT 1 FROM public.account_groups g WHERE g.user_id=${userId} AND g.group_name=a.group_name)
+        GROUP BY a.group_name`);
+      await tx.execute(sql`UPDATE public.platform_accounts a SET group_id=g.id, group_name=g.group_name
+        FROM public.account_groups g WHERE a.user_id=${userId} AND g.user_id=${userId}
+          AND a.group_id IS NULL AND a.group_name=g.group_name`);
+      await tx.update(platformAccounts).set({ groupId: group.id, groupName: group.groupName })
+        .where(and(eq(platformAccounts.userId, userId), sql`${platformAccounts.groupId} IS NULL`,
+          or(sql`${platformAccounts.groupName} IS NULL`, sql`trim(${platformAccounts.groupName})=''`, eq(platformAccounts.groupName, '默认分组'))));
+      return group;
+    });
+  }
 
   async getAccounts(
     userId: string,
@@ -51,6 +85,7 @@ export class PlatformService {
     },
   ): Promise<{ items: PlatformAccount[]; total: number; page: number; pageSize: number }> {
     const { platform, groupName, authStatus, page, pageSize } = params;
+    await this.ensureDefaultGroup(userId);
     const conditions = [eq(platformAccounts.userId, userId)];
     if (platform) conditions.push(eq(platformAccounts.platform, platform));
     if (groupName) conditions.push(eq(platformAccounts.groupName, groupName));
@@ -97,7 +132,12 @@ export class PlatformService {
 
     const patch: Partial<typeof platformAccounts.$inferInsert> = {};
     if (data.accountRemark !== undefined) patch.accountRemark = data.accountRemark;
-    if (data.groupName !== undefined) patch.groupName = data.groupName;
+    if (data.groupName !== undefined) {
+      await this.ensureDefaultGroup(userId);
+      const [group] = await this.db.select().from(accountGroups).where(and(eq(accountGroups.userId, userId), eq(accountGroups.groupName, data.groupName)));
+      if (!group) throw new BadRequestException('请先创建目标分组');
+      patch.groupName = group.groupName; patch.groupId = group.id;
+    }
 
     if (Object.keys(patch).length === 0) {
       return this.toAccountDto(account);
@@ -120,6 +160,8 @@ export class PlatformService {
       nickname: string;
       avatarUrl?: string;
       pageUrl?: string;
+      nativeAccountKey?:string;
+      groupId?: string;
     },
   ): Promise<PlatformAccount> {
     const validPlatforms: PlatformType[] = ['douyin', 'xiaohongshu', 'wechat', 'bilibili'];
@@ -128,16 +170,20 @@ export class PlatformService {
       throw new BadRequestException('桌面连接器会话标识无效');
     }
     const nickname = data.nickname.trim().slice(0, 200);
+    if(data.nativeAccountKey!==undefined&&(typeof data.nativeAccountKey!=='string'||!/^[A-Za-z0-9_.:-]{2,100}$/.test(data.nativeAccountKey)))throw new BadRequestException('平台账号ID无效');
     if (!nickname) throw new BadRequestException('未能从平台页面识别账号名称');
     if (data.avatarUrl && !/^https?:\/\//i.test(data.avatarUrl)) {
       throw new BadRequestException('账号头像地址格式无效');
     }
 
-    const [defaultGroup] = await this.db
-      .select()
-      .from(accountGroups)
-      .where(and(eq(accountGroups.userId, userId), eq(accountGroups.isDefault, true)))
-      .limit(1);
+    const defaultGroup = await this.ensureDefaultGroup(userId);
+    let initialGroup = defaultGroup;
+    if (data.groupId !== undefined) {
+      if (typeof data.groupId !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(data.groupId)) throw new BadRequestException('绑定分组标识无效');
+      const [requestedGroup] = await this.db.select().from(accountGroups).where(and(eq(accountGroups.id, data.groupId), eq(accountGroups.userId, userId))).limit(1);
+      if (!requestedGroup) throw new NotFoundException('绑定分组不存在或不属于当前用户');
+      initialGroup = requestedGroup;
+    }
     const platformUserId = `desktop:${data.connectorSessionId}`;
     const [existing] = await this.db
       .select()
@@ -148,25 +194,30 @@ export class PlatformService {
         eq(platformAccounts.platformUserId, platformUserId),
       ))
       .limit(1);
+    const previousRaw=(existing?.rawData||{}) as Record<string,any>;
+    if(previousRaw.nativeAccountKey&&data.nativeAccountKey&&previousRaw.nativeAccountKey!==data.nativeAccountKey)throw new BadRequestException('平台账号ID与原绑定不同，请新建账号，不覆盖原账号');
     const values = {
       nickname,
       avatarUrl: data.avatarUrl,
       authStatus: 'authorized',
       healthStatus: 'normal',
       rawData: {
+        ...previousRaw,
         provider: 'desktop-connector',
         connectorSessionId: data.connectorSessionId,
+        nativeAccountKey:previousRaw.nativeAccountKey||data.nativeAccountKey,
         pageUrl: data.pageUrl,
         scope: ['本机创作者中心会话'],
       },
-      groupId: existing?.groupId ?? defaultGroup?.id ?? null,
-      groupName: existing?.groupName ?? defaultGroup?.groupName ?? '默认分组',
+      groupId: existing?.groupId ?? initialGroup.id,
+      groupName: existing?.groupName ?? initialGroup.groupName,
       updatedAt: new Date(),
     };
     if (existing) {
+      const { groupId: _groupId, groupName: _groupName, ...profileValues } = values;
       const [updated] = await this.db
         .update(platformAccounts)
-        .set(values)
+        .set(profileValues)
         .where(eq(platformAccounts.id, existing.id))
         .returning();
       return this.toAccountDto(updated);
@@ -197,6 +248,13 @@ export class PlatformService {
   async reauthorizeAccount(_userId: string, _id: string): Promise<PlatformAccount> {
     throw new BadRequestException('请通过官方 OAuth 或桌面连接器重新授权');
   }
+  async getDesktopAccount(userId: string, id: string): Promise<PlatformAccount> {
+    const account = await this.findAccountById(userId, id);
+    if (!account) throw new NotFoundException('账号不存在');
+    // Only the existing public DTO; never expose OAuth tokens or rawData.
+    return this.toAccountDto(account);
+  }
+
   async getAccountDetail(userId: string, id: string): Promise<PlatformAccountDetail> {
     const account = await this.findAccountById(userId, id);
     if (!account) {
@@ -270,6 +328,7 @@ export class PlatformService {
   }
 
   async getAccountGroups(userId: string): Promise<AccountGroup[]> {
+    await this.ensureDefaultGroup(userId);
     const groups = await this.db
       .select()
       .from(accountGroups)
@@ -293,15 +352,18 @@ export class PlatformService {
       groupName: g.groupName,
       sortOrder: g.sortOrder,
       isDefault: g.isDefault,
+      color: g.color,
       accountCount: countMap.get(g.id) ?? 0,
       createdAt: g.createdAt.toISOString(),
     }));
   }
 
   async createGroup(userId: string, groupName: string, sortOrder?: number): Promise<AccountGroup> {
-    if (!groupName || !groupName.trim()) {
-      throw new BadRequestException('分组名称不能为空');
+    if (typeof groupName !== 'string' || !groupName.trim() || groupName.trim().length > 100) {
+      throw new BadRequestException('分组名称需为 1～100 个字符');
     }
+    groupName = groupName.trim();
+    await this.ensureDefaultGroup(userId);
     const existing = await this.db
       .select()
       .from(accountGroups)
@@ -321,6 +383,7 @@ export class PlatformService {
       groupName: inserted[0].groupName,
       sortOrder: inserted[0].sortOrder,
       isDefault: inserted[0].isDefault,
+      color: inserted[0].color,
       accountCount: 0,
       createdAt: inserted[0].createdAt.toISOString(),
     };
@@ -329,7 +392,7 @@ export class PlatformService {
   async updateGroup(
     userId: string,
     id: string,
-    data: { groupName?: string; sortOrder?: number },
+    data: { groupName?: string; sortOrder?: number; color?: string },
   ): Promise<AccountGroup> {
     const group = await this.db
       .select()
@@ -338,13 +401,22 @@ export class PlatformService {
     if (group.length === 0) {
       throw new NotFoundException('分组不存在');
     }
-    if (group[0].isDefault && data.groupName !== undefined) {
-      throw new BadRequestException('默认分组不能修改名称');
+    if (group[0].isDefault && (data.groupName !== undefined || data.sortOrder !== undefined)) {
+      throw new BadRequestException('默认分组不能修改名称或排序');
+    }
+
+    if (data.color !== undefined && (typeof data.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(data.color))) throw new BadRequestException('分组颜色必须为六位十六进制颜色');
+    if (data.groupName !== undefined) {
+      if (typeof data.groupName !== 'string' || !data.groupName.trim() || data.groupName.trim().length > 100) throw new BadRequestException('分组名称需为 1～100 个字符');
+      data.groupName = data.groupName.trim();
+      const duplicates = await this.db.select({ id: accountGroups.id }).from(accountGroups).where(and(eq(accountGroups.userId, userId), eq(accountGroups.groupName, data.groupName), sql`${accountGroups.id} <> ${id}`));
+      if (duplicates.length) throw new ConflictException('分组名称已存在');
     }
 
     const patch: Partial<typeof accountGroups.$inferInsert> = {};
     if (data.groupName !== undefined) patch.groupName = data.groupName;
     if (data.sortOrder !== undefined) patch.sortOrder = data.sortOrder;
+    if (data.color !== undefined) patch.color = data.color.toLowerCase();
 
     if (Object.keys(patch).length === 0) {
       return this.toGroupDto(group[0], 0);
@@ -367,29 +439,16 @@ export class PlatformService {
   }
 
   async deleteGroup(userId: string, id: string): Promise<void> {
-    const group = await this.db
-      .select()
-      .from(accountGroups)
-      .where(and(eq(accountGroups.id, id), eq(accountGroups.userId, userId)));
-    if (group.length === 0) {
-      throw new NotFoundException('分组不存在');
-    }
-    if (group[0].isDefault) {
-      throw new BadRequestException('默认分组不能删除');
-    }
-
-    const defaultGroup = await this.db
-      .select()
-      .from(accountGroups)
-      .where(and(eq(accountGroups.userId, userId), eq(accountGroups.isDefault, true)));
-
-    const defaultGroupId = defaultGroup[0]?.id ?? null;
-    await this.db
-      .update(platformAccounts)
-      .set({ groupId: defaultGroupId, groupName: defaultGroup[0]?.groupName ?? '默认分组' })
-      .where(and(eq(platformAccounts.userId, userId), eq(platformAccounts.groupId, id)));
-
-    await this.db.delete(accountGroups).where(eq(accountGroups.id, id));
+    const defaultGroup = await this.ensureDefaultGroup(userId);
+    await this.db.transaction(async tx => {
+      await tx.select({ id: appUsers.id }).from(appUsers).where(eq(appUsers.id, userId)).for('update');
+      const [group] = await tx.select().from(accountGroups).where(and(eq(accountGroups.id, id), eq(accountGroups.userId, userId))).for('update');
+      if (!group) throw new NotFoundException('分组不存在');
+      if (group.isDefault) throw new BadRequestException('默认分组不能删除');
+      await tx.update(platformAccounts).set({ groupId: defaultGroup.id, groupName: defaultGroup.groupName })
+        .where(and(eq(platformAccounts.userId, userId), eq(platformAccounts.groupId, id)));
+      await tx.delete(accountGroups).where(and(eq(accountGroups.id, id), eq(accountGroups.userId, userId)));
+    });
   }
 
   async moveAccountsToGroup(
@@ -397,24 +456,20 @@ export class PlatformService {
     accountIds: string[],
     groupId: string,
   ): Promise<{ moved: number }> {
-    if (!accountIds || accountIds.length === 0) {
+    if (!Array.isArray(accountIds) || accountIds.length === 0 || accountIds.length > 100 || accountIds.some(id => typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id))) {
       throw new BadRequestException('请选择要移动的账号');
     }
-    const group = await this.db
-      .select()
-      .from(accountGroups)
-      .where(and(eq(accountGroups.id, groupId), eq(accountGroups.userId, userId)));
-    if (group.length === 0) {
-      throw new NotFoundException('分组不存在');
-    }
-
-    const updated = await this.db
-      .update(platformAccounts)
-      .set({ groupId, groupName: group[0].groupName })
-      .where(and(eq(platformAccounts.userId, userId), inArray(platformAccounts.id, accountIds)))
-      .returning({ id: platformAccounts.id });
-
-    return { moved: updated.length };
+    accountIds = [...new Set(accountIds)];
+    return this.db.transaction(async tx => {
+      await tx.select({ id: appUsers.id }).from(appUsers).where(eq(appUsers.id, userId)).for('update');
+      const [group] = await tx.select().from(accountGroups).where(and(eq(accountGroups.id, groupId), eq(accountGroups.userId, userId))).for('update');
+      if (!group) throw new NotFoundException('分组不存在');
+      const owned = await tx.select({ id: platformAccounts.id }).from(platformAccounts).where(and(eq(platformAccounts.userId, userId), inArray(platformAccounts.id, accountIds))).for('update');
+      if (owned.length !== accountIds.length) throw new NotFoundException('包含不存在或不属于当前用户的账号，未移动任何账号');
+      const updated = await tx.update(platformAccounts).set({ groupId, groupName: group.groupName })
+        .where(and(eq(platformAccounts.userId, userId), inArray(platformAccounts.id, accountIds))).returning({ id: platformAccounts.id });
+      return { moved: updated.length };
+    });
   }
 
   async getStats(userId: string): Promise<{
@@ -603,12 +658,14 @@ export class PlatformService {
         await this.db.update(platformAccounts).set(values).where(eq(platformAccounts.id, existing[0].id));
       } else {
         await this.ensureAccountCapacity(state.userId);
+        const defaultGroup = await this.ensureDefaultGroup(state.userId);
         await this.db.insert(platformAccounts).values({
           ...values,
           userId: state.userId,
           platform: 'douyin',
           platformUserId: profile.data.open_id,
-          groupName: '默认分组',
+          groupId: defaultGroup.id,
+          groupName: defaultGroup.groupName,
         });
       }
       return resultUrl('success', `已绑定抖音账号「${values.nickname}」`);
@@ -839,6 +896,7 @@ export class PlatformService {
       groupName: row.groupName,
       sortOrder: row.sortOrder,
       isDefault: row.isDefault,
+      color: row.color,
       accountCount,
       createdAt: row.createdAt.toISOString(),
     };
@@ -864,8 +922,38 @@ export class PlatformService {
     };
   }
 
+  async syncDesktopObservation(userId:string,id:string,data:{sessionId:string;nickname:string;avatarUrl?:string;nativeAccountKey?:string;observedAt?:number;metrics?:{followersCount?:number;followingCount?:number;likesCount?:number};metricEvidence?:AccountMetricEvidence;metricsError?:string}):Promise<PlatformAccount>{
+    if(typeof data?.nickname!=='string'||!data.nickname.trim()||data.nickname.length>200||typeof data.sessionId!=='string')throw new BadRequestException('账号观测格式无效');
+    if(data.nativeAccountKey!==undefined&&(typeof data.nativeAccountKey!=='string'||!/^[A-Za-z0-9_.:-]{2,100}$/.test(data.nativeAccountKey)))throw new BadRequestException('账号身份编号无效');
+    if(data.observedAt!==undefined&&(!Number.isSafeInteger(data.observedAt)||data.observedAt<=0||data.observedAt>Date.now()+5000))throw new BadRequestException('账号观测时间无效');
+    if(data.metricEvidence!==undefined&&(!data.metricEvidence||Array.isArray(data.metricEvidence)||Object.keys(data.metricEvidence).some(key=>!['source','ownerUid'].includes(key))||!['douyin-self-profile','douyin-creator-profile','rendered-own-counter'].includes(data.metricEvidence.source)||data.metricEvidence.source!=='rendered-own-counter'&&!/^[1-9]\d{0,18}$/.test(data.metricEvidence.ownerUid||'')||data.metricEvidence.source==='rendered-own-counter'&&data.metricEvidence.ownerUid!==undefined))throw new BadRequestException('粉丝计数来源格式无效');
+    if(data.metricsError!==undefined&&(typeof data.metricsError!=='string'||data.metricsError.length>240||/[\u0000-\u001f]|cookie|token|authorization|https?:/i.test(data.metricsError)))throw new BadRequestException('粉丝计数状态说明无效');
+    if(data.metricEvidence&&data.metricEvidence.source!=='rendered-own-counter'&&BigInt(data.metricEvidence.ownerUid!)>9223372036854775807n)throw new BadRequestException('粉丝计数本人编号超出范围');
+    return this.db.transaction(async tx=>{
+      const [row]=await tx.select().from(platformAccounts).where(and(eq(platformAccounts.id,id),eq(platformAccounts.userId,userId))).for('update');
+      if(!row)throw new NotFoundException('账号已解绑，旧检查结果不会恢复绑定');
+      const raw=(row.rawData || {}) as Record<string,any>;
+      if(raw.provider!=='desktop-connector'||raw.connectorSessionId!==data.sessionId)throw new BadRequestException('账号会话已变化');
+      if(data.observedAt!==undefined&&data.observedAt<Date.parse(raw.lastDesktopCheckAt||''))return this.toAccountDto(row);
+      if(raw.nativeAccountKey&&data.nativeAccountKey&&raw.nativeAccountKey!==data.nativeAccountKey)throw new BadRequestException('官方身份编号不同，未更新绑定');
+      const sameKey=Boolean(raw.nativeAccountKey&&data.nativeAccountKey===raw.nativeAccountKey);
+      if(row.nickname?.trim()!==data.nickname.trim()&&!sameKey)throw new BadRequestException('缺少同账号身份依据，改名后请重新核验');
+      const metrics:Record<string,number>={};for(const field of ['followersCount','followingCount','likesCount'] as const){const value=data.metrics?.[field];if(value!==undefined){if(!Number.isSafeInteger(value)||value<0||value>2147483647)throw new BadRequestException('账号指标超出当前整数存储范围');metrics[field]=value;}}
+      // An older renderer may still report a rounded/default number without
+      // provenance. Never let that overwrite an already verified exact sample.
+      if(row.platform==='douyin'&&(!data.metricEvidence||!((raw.nativeAccountKey||data.nativeAccountKey)&&data.sessionId)))delete metrics.followersCount;
+      const old=raw.metricSnapshot,at=new Date(data.observedAt??Date.now()).toISOString();
+      if(data.metricEvidence&&data.metricEvidence.source!=='rendered-own-counter'&&row.platform!=='douyin')throw new BadRequestException('粉丝计数来源与平台不一致');
+      const snapshot=mergeAccountMetricSnapshot(row.platform,old,metrics,at,{sessionId:data.sessionId,nativeAccountKey:raw.nativeAccountKey||data.nativeAccountKey,evidence:data.metricEvidence});
+      const verifiedNicknames=sameKey&&row.nickname?.trim()!==data.nickname.trim()?[...new Set([...(Array.isArray(raw.verifiedNicknames)?raw.verifiedNicknames:[]),row.nickname?.trim(),data.nickname.trim()].filter(Boolean))].slice(-20):raw.verifiedNicknames;
+      const metricStatus={at,error:data.metricsError||(row.platform==='douyin'&&metrics.followersCount===undefined?'本人主页尚未提供精确粉丝数':undefined)};
+      const [updated]=await tx.update(platformAccounts).set({nickname:data.nickname.trim(),...(data.avatarUrl&&/^https:\/\//.test(data.avatarUrl)&&data.avatarUrl.length<3000?{avatarUrl:data.avatarUrl}:{}),...metrics,rawData:{...raw,nativeAccountKey:raw.nativeAccountKey||data.nativeAccountKey,verifiedNicknames,metricSnapshot:snapshot,metricStatus,lastDesktopCheckAt:at},updatedAt:new Date()}).where(and(eq(platformAccounts.id,id),eq(platformAccounts.userId,userId))).returning();
+      return this.toAccountDto(updated);
+    });
+  }
   private toAccountDto(row: typeof platformAccounts.$inferSelect): PlatformAccount {
-    const rawData = row.rawData as { provider?: string; connectorSessionId?: string } | null;
+    const rawData = row.rawData as { provider?: string; connectorSessionId?: string;nativeAccountKey?:string;verifiedNicknames?:string[];lastDesktopCheckAt?:string;metricSnapshot?:{at?:string;followersAt?:string;followersChange?:number;followersSource?:string};metricStatus?:{at?:string;error?:string} } | null;
+    const trustedFollowers=observedFollowers(row);
     return {
       id: row.id,
       platform: row.platform as PlatformType,
@@ -874,6 +962,7 @@ export class PlatformService {
       avatarUrl: row.avatarUrl ?? undefined,
       accountRemark: row.accountRemark ?? undefined,
       groupName: row.groupName ?? undefined,
+      groupId: row.groupId ?? undefined,
       tags: row.tags ?? [],
       authStatus: row.authStatus as 'pending' | 'authorized' | 'expired' | 'error',
       authExpiresAt: row.authExpiresAt ? row.authExpiresAt.toISOString() : undefined,
@@ -883,8 +972,11 @@ export class PlatformService {
       postsCount: row.postsCount,
       healthStatus: row.healthStatus as 'normal' | 'warning' | 'error',
       createdAt: row.createdAt.toISOString(),
+      bindTime: row.createdAt.toISOString(),
+      lastVerifiedAt:rawData?.lastDesktopCheckAt&&Number.isFinite(Date.parse(rawData.lastDesktopCheckAt))?rawData.lastDesktopCheckAt:undefined,
       connectorMode: rawData?.provider === 'desktop-connector' ? 'desktop' : 'oauth',
       connectorSessionId: rawData?.provider === 'desktop-connector' ? rawData.connectorSessionId : undefined,
+      nativeAccountKey:rawData?.nativeAccountKey,verifiedNicknames:rawData?.verifiedNicknames,metricsObservedAt:trustedFollowers?.at,followersChange:trustedFollowers?rawData?.metricSnapshot?.followersChange:undefined,metricsSource:trustedFollowers?rawData?.metricSnapshot?.followersSource:undefined,metricsError:rawData?.metricStatus?.error,metricsAttemptedAt:rawData?.metricStatus?.at,
     };
   }
 }

@@ -16,6 +16,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AutomationModule } from './modules/automation/automation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MediaModule } from './modules/media/media.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { MediaModule } from './modules/media/media.module';
     AutomationModule,
     NotificationsModule,
     MediaModule,
+    FeedbackModule,
 
     ViewModule,
   ],

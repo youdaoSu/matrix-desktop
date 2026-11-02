@@ -1,8 +1,9 @@
+param([ValidateSet('release','release-next')][string]$OutputDirectory='release')
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location -LiteralPath $projectRoot
 
-$releasePath = Join-Path $projectRoot 'release'
+$releasePath = Join-Path $projectRoot $OutputDirectory
 New-Item -ItemType Directory -Force -Path $releasePath | Out-Null
 $logPath = Join-Path $releasePath 'desktop-build.log'
 Start-Transcript -Path $logPath -Force | Out-Null
@@ -128,6 +129,11 @@ if ($distPath -ne (Join-Path $projectRoot 'dist')) {
 Write-Host '[1/3] Building NestJS server...'
 npm run build:server
 if ($LASTEXITCODE -ne 0) { throw 'Server build failed' }
+# Shared admission helpers import the same capability data as the desktop.
+# SWC compiles TS, not this desktop-owned JSON; retain its relative runtime path.
+$matrixSharedDesktopPath = Join-Path $distPath 'desktop'
+New-Item -ItemType Directory -Force -Path $matrixSharedDesktopPath | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'desktop\publish-capabilities.json') -Destination (Join-Path $matrixSharedDesktopPath 'publish-capabilities.json') -Force
 
 Write-Host '[2/3] Building React client...'
 $clientDistPath = Join-Path $distPath 'client'
@@ -183,23 +189,21 @@ if (Test-Path -LiteralPath $licenseSource) {
 }
 
 Write-Host '[3/3] Creating Windows installer...'
-& $electronBuilderCommand --win nsis
+& (Join-Path $PSScriptRoot 'build-edge-host.ps1')
+& $electronBuilderCommand --win nsis "--config.directories.output=$OutputDirectory"
 if ($LASTEXITCODE -ne 0) { throw 'Desktop packaging failed' }
 
-# Keep only the installer and block map for the version that just passed the
-# build. Published historical installers live in GitHub Releases.
+# Preserve prior installers for rollback. Packaging is not permission to delete
+# the user's local release history, including candidates not uploaded anywhere.
 $package = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
-$releasePath = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'release'))
+$releasePath = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDirectory))
 $currentInstaller = "Matrix-$($package.version)-Setup.exe"
 $currentBlockMap = "$currentInstaller.blockmap"
-Get-ChildItem -LiteralPath $releasePath -File -Filter 'Matrix-*-Setup.exe*' | ForEach-Object {
-  if ($_.DirectoryName -ne $releasePath) {
-    throw "Refusing to remove artifact outside release directory: $($_.FullName)"
-  }
-  if ($_.Name -ne $currentInstaller -and $_.Name -ne $currentBlockMap) {
-    [System.IO.File]::Delete($_.FullName)
+foreach ($artifact in @($currentInstaller,$currentBlockMap)) {
+  if (-not (Test-Path -LiteralPath (Join-Path $releasePath $artifact) -PathType Leaf)) {
+    throw "Missing current release artifact: $artifact"
   }
 }
 
-Write-Host 'Done. Installer is in the release directory.'
+Write-Host "Done. Installer is in $releasePath. Prior installers preserved."
 Stop-Transcript | Out-Null

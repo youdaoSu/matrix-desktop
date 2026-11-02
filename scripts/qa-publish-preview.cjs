@@ -1,0 +1,25 @@
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
+const {byteRange,createPublishPreview,registerPublishPreview}=require('../desktop/publish-preview.cjs');
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'matrix-preview-qa-'));
+const file=path.join(root,'private.mp4');fs.writeFileSync(file,Buffer.from('0123456789abcdef'));
+const stat=fs.statSync(file),media={mediaType:'video',paths:[file],files:[{name:'private.mp4',size:stat.size,modified:stat.mtimeMs}]};
+let owner='qa-owner',clock=1,reads=0;
+const options={mediaStore:{read:(user,id)=>{reads++;if(user!=='qa-owner'||id!=='saved-qa')throw Error('not owned');return{media,covers:[]};}},authenticate:async token=>{if(token!=='qa-only')throw Error('unauthorized');return{userId:owner};},getAppUrl:()=> 'http://127.0.0.1:3291/app/',now:()=>clock};
+const preview=createPublishPreview(options);
+(async()=>{
+  let checks=0;
+  assert.deepEqual(byteRange('bytes=3-6',16),{start:3,end:6,partial:true});assert.deepEqual(byteRange('bytes=-3',16),{start:13,end:15,partial:true});assert.throws(()=>byteRange('bytes=99-',16));assert.throws(()=>byteRange('bytes=0-2,4-5',16));checks+=4;
+  const first=await preview.open({accessToken:'qa-only',recoveryId:'saved-qa'},11),url=first.files[0].url;
+  assert.ok(!JSON.stringify(first).includes(root));assert.ok(!JSON.stringify(first).includes('qa-only'));assert.equal(first.mediaType,'video');checks+=3;
+  const request=(url,headers={},method='GET')=>fetch(url,{method,headers:{Origin:'http://127.0.0.1:3291',...headers}});
+  let response=await request(url,{Range:'bytes=3-6'});assert.equal(response.status,206);assert.equal(response.headers.get('Content-Range'),'bytes 3-6/16');assert.equal(await response.text(),'3456');checks+=3;
+  response=await request(url,{},'HEAD');assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),'video/mp4');assert.equal(response.headers.get('Content-Length'),'16');assert.equal(await response.text(),'');checks+=4;
+  assert.equal((await fetch(url)).status,403);assert.equal((await request(url,{Origin:'https://foreign.test'})).status,403);assert.equal((await request(url,{},'POST')).status,405);assert.equal((await request(url+'/../other')).status,404);assert.equal((await request(url,{Range:'bytes=999-'})).status,416);checks+=5;
+  owner='foreign-owner';assert.equal((await request(url)).status,410);await assert.rejects(preview.open({accessToken:'qa-only',recoveryId:'saved-qa'},11));owner='qa-owner';checks+=2;
+  const second=await preview.open({accessToken:'qa-only',recoveryId:'saved-qa'},11);preview.revoke(first.previewId,11);assert.equal((await request(url)).status,404);preview.revoke(second.previewId,99);assert.equal((await request(second.files[0].url)).status,200);checks+=2;
+  clock=16*60000;assert.equal((await request(second.files[0].url)).status,404);checks++;
+  clock=1;const third=await preview.open({accessToken:'qa-only',recoveryId:'saved-qa'},11);fs.writeFileSync(file,Buffer.from('changed'));assert.equal((await request(third.files[0].url)).status,410);await assert.rejects(preview.open({accessToken:'qa-only',recoveryId:'saved-qa'},11),/移动或修改/);checks+=2;
+  const handlers={},registered=registerPublishPreview({...options,ipcMain:{handle:(name,fn)=>{handlers[name]=fn;}},getWindow:()=>({webContents:{id:11}})});
+  const before=reads;assert.ok((await handlers['matrix:preview-publish-media']({sender:{id:99}},{accessToken:'qa-only',recoveryId:'saved-qa'})).error);assert.equal(reads,before);registered.close();checks+=2;
+  console.log(JSON.stringify({privateLocalPreviewAndRangeChecks:checks,credentialsOrPathsExposed:false,externalPlatformActions:false}));
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>preview.close());

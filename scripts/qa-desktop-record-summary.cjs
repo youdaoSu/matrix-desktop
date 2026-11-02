@@ -1,0 +1,25 @@
+// Pure synthetic data. No profile, credentials, platform or database access.
+const assert=require('node:assert/strict'),{loadTs}=require('./qa-load-typescript.cjs');
+const {summarizeDesktopRecords:project,recordsCsv}=loadTs('client/src/components/workspace/desktop-record-summary.ts');
+const {publishReport}=loadTs('client/src/components/workspace/publish-report.ts');
+const {featureDeliveries}=loadTs('shared/feature-delivery.ts');
+let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;};
+const row=(patch={})=>({accountId:'synthetic-a',platform:'douyin',nickname:'QA',works:null,comments:null,followers:null,avatarAddresses:null,threads:null,messages:null,commentsComplete:false,followersVerified:false,historyComplete:false,state:'尚未载入',...patch});
+eq(project([]).metrics.comments.value,null);
+eq(project([row()]).metrics.followers,{value:null,measured:0,accounts:1});
+eq(project([row({comments:0})]).metrics.comments.value,0);
+eq(project([row({comments:12}),row({accountId:'b'})]).metrics.comments,{value:12,measured:1,accounts:2});
+const duplicate=project([row({nativeAccountKey:'123',comments:12,followers:20}),row({accountId:'b',nativeAccountKey:'123',comments:10,followers:30})]);
+eq(duplicate.duplicateBindings,1);eq(duplicate.metrics.comments.value,12);eq(duplicate.metrics.followers.value,30);
+eq(project([row({nativeAccountKey:'123',comments:12}),row({accountId:'b',platform:'bilibili',nativeAccountKey:'123',comments:10})]).metrics.comments.value,22);
+for(const invalid of [-1,NaN,Infinity,'1',1.5,Number.MAX_SAFE_INTEGER+1])eq(project([row({comments:invalid})]).metrics.comments.value,null);
+eq(project([row({comments:Number.MAX_SAFE_INTEGER}),row({accountId:'b',comments:1})]).metrics.comments.value,null);
+for(const name of ['=1+1',' +2','\t@SUM(A1)','\r-1','\uFEFF=1'])assert.ok(recordsCsv([row({nickname:name})]).includes('"\''+name+'"')),checks++;
+const csv=recordsCsv([row({nickname:'A,"B\nC',comments:0})]);assert.ok(csv.startsWith('\uFEFF'));assert.ok(csv.includes('"A,""B\nC"'));assert.ok(csv.includes('\r\n'));checks+=3;
+eq(new Set(featureDeliveries.map(item=>item.id)).size,featureDeliveries.length);assert.ok(featureDeliveries.some(item=>item.state==='pending'));checks++;
+const jobs=Array.from({length:100000},(_,i)=>({accountId:'qa',platform:'douyin',nickname:'QA',createdAt:'2026-10-27T01:00:00+08:00',stage:i%2?'confirmed':'unknown'}));
+const start=performance.now(),report=publishReport(jobs,'2026-10-27');
+eq(report.total,100000);eq(report.success,50000);eq(report.accounts[0].total,100000);eq(report.days.length,1);
+const elapsedMs=Math.round(performance.now()-start);assert.ok(elapsedMs<10000,'Linear 100k report must not regress to quadratic array copying');checks++;
+eq(publishReport([], '2026-10-27').accounts,[]);
+console.log(JSON.stringify({desktopRecordSummaryChecks:checks,reportJobs:jobs.length,elapsedMs,unobservedNotZero:true,officialIdentityDeduplicated:true,csvFormulaEscaped:true,platformRequests:false}));

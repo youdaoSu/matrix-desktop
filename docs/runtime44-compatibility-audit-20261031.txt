@@ -1,0 +1,43 @@
+Electron 44.10.0 compatibility audit — 2026-10-31
+
+This is an isolated audit, not an installed runtime upgrade.
+Official release: https://github.com/electron/electron/releases/tag/v44.10.0
+Support policy: https://www.electronjs.org/docs/latest/tutorial/electron-timelines
+The current product runtime remains Electron 33.4.11. Support-policy risk is
+not resolved by these tests; no claim of complete migration is made.
+
+Artifact provenance
+Official release metadata marked this stable release published, not draft.
+The downloaded ZIP and SHASUMS256.txt both matched official SHA256 metadata;
+the manifest also matched the ZIP. ZIP SHA256:
+64c2d874fea1bd4c8d2e1f2df3a547497044159a6b853dee7fcdff357ff0e3cd
+The first download ended with transport EOF; the partial file was resumed
+and verified before extraction. All 73 entry paths were checked. The runtime
+was extracted into a new local temporary directory, never over the app.
+
+Observed compatibility
+Six of seven original source fixtures passed, including the actual encrypted
+worker, Bilibili tag webview/observation, publish scroll readiness, Xiaohongshu
+editor settlement and renderer page actions.
+The original UI fixture failed its width<=440 assertion. A separate native
+probe observed an offscreen viewport width of 441 for requested width 440;
+the normal hidden-window path returned 426 after layout. The original failure
+is retained and is not labelled passed.
+A diagnostic copy using normal hidden windows then passed all 271 UI checks,
+without relaxing any assertion or changing product source.
+Three separate processes verified synthetic safeStorage material from
+33.4.11 -> 44.10.0 -> 33.4.11. No real key, Cookie, profile or account was read.
+This is not proof of existing-profile/Cookie migration or actual OS recovery.
+
+Remaining before a product upgrade
+Full source and actual packaged regression under the selected runtime;
+existing-profile migration and rollback design; packaged main-window/native
+host/browser-page behaviour; actual platform acceptance with an approved
+scope. No real comments, messages or videos were sent in this audit.
+
+Evidence in D:/codexworck/软件
+matrix-runtime44-extraction-proof.json
+matrix-runtime44-source-compatibility.json (original: 6 pass, 1 fail)
+matrix-runtime-resize-44.10.0.json
+matrix-runtime44-ui-normal-window.json (271 checks pass)
+matrix-runtime-key-compatibility.json (three processes pass)

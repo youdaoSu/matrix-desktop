@@ -1,0 +1,18 @@
+RC282 已交付：回复历史分页与原任务操作
+
+2026-10-30 09:04，北京时间，安装后检查完成。
+188组完整回归、37项实际安装包校验通过；123桌面模块和34文件worker依赖图逐文件核对。源码指纹6f76cdb7d3b1826e7cdd748f827e61cbcf0000ca6b827a8489a04dc5f3c2814b/827文件。
+
+回复历史现在每页100条，可按状态和回复账号筛选，超过300条的旧任务可继续查询、核对原任务。来源原文单独返回，最新会话与历史页互不混入。分页、迟到响应、换用户、空结果、末页夹取和原任务ID操作均有隔离测试；没有为测试发送真实消息。
+126项投影/加密临时库、真实React111项、实际worker74项和原组件185项通过。宽/窄窗口已目视核对，详情区域有界滚动，翻页按钮可见。初始合成数据关联错误、测试生成器的正则转义失败保留，后续修正测试后通过；未放宽产品校验。
+
+正常退出更新，D盘备份：D:\MatrixUserBackups\before-update-rc.282-20261030-085824
+业务数据逐字节校验和原密钥核验通过。实际启动HTML/JS/favicon均200，加载/assets/index-C68blCNa.js。
+原第二十九天仍为发布成功，执行起点未记录，总用时（含排队）1分53秒。只读检查0平台写入，没有重发或伪造历史起点。
+
+ASAR 8914facf90258070c0aae005133ebdb448630843ba7f06726be94fa5c8c1e67d
+安装包 11fe669309dc2422de6840bda0c3c9f0e5d3e58e79e926c671f41f650bcd1c90
+EXE 1db9df7e8d188aec100fafab5aaba3c5adc395497a76e786462ef9c0b361f1ca
+证据：D:\codexworck\软件\matrix-rc282-regression-full.json、matrix-rc282-package-proof.json、matrix-rc282-complete.json、matrix-rc282-startup-proof.json、matrix-rc282-timing-ui-Inspect-1.json。
+
+11点目标继续。源码及实际加密存储的独立合成审计发现：超过300个新评论线程会把已有私信挤出最新会话显示；不同渠道同threadId可能合并。数据仍保留，这两项尚未在本版修复，下一批应处理，证据matrix-rc283-display-audit.json和matrix-rc283-display-store-audit.json。官网评论服务已开启previewFirst:true，不应再假设未开启最新读取而重复修改。

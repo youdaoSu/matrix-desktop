@@ -1,0 +1,79 @@
+RC303 interaction lifecycle candidate — 2026-10-31
+
+Scope
+Keep the original interaction tables and the migrated engine. This batch changes
+native lifecycle handling only; no real account messages/comments/posts/pins are
+used for verification. Installed RC294 remains separate from candidate evidence.
+
+Evidence and implementation
+1. Startup failure: an actual unresponsive fixture worker was still waiting at
+   13 seconds after a 10-second ready deadline. The host now revokes that
+   unconfigured worker before cleanup, preserving the original startup error.
+   The 16-assertion fixture covers timeout, early error/exit, unchanged persistent
+   key and normal retry. No claim that a 150-second delay was actually measured.
+2. Out-of-order account configuration: gated real IPC authentication reproduced
+   an older result replacing the newer account list. Latest-intent checks now
+   span owner authentication, worker startup, account reads and worker replies.
+   Invalid list syntax does not supersede an already-valid pending request.
+3. Obsolete workspace reads: a delayed A snapshot reopened A after configuring B
+   (actual fixture worker order A,B,A). Non-configuration commands cannot switch
+   an active workspace. Startup waiters revalidate scope, and only cancellation
+   of an obsolete opener permits the new request to retry that opening step.
+   Genuine startup errors still propagate. Configuration ordering has 25 checks;
+   workspace ordering has 38 checks, including same-owner startup replacement
+   with the original persistent key preserved. Startup is awaited before an
+   active entry can be reused, even when owner/workspace identifiers match.
+4. Hidden renderer timers: Electron 33.4.11 / Chromium 130, real React runtime,
+   440-second hidden-window observations. Default throttling produced 61,005.51ms
+   max heartbeat gap; unthrottled produced 15,010.09ms. The native lease expires
+   after 45 seconds, so default throttling can stop an otherwise valid worker.
+   A reference-counted background timer lease now belongs to the native worker
+   lifetime. Stop/failure releases it and restores the previous setting. The
+   renderer still has to send authenticated heartbeats; expiry/authentication/
+   account checks are not removed. The helper has 15 ownership/restoration checks.
+
+Validation status
+The first full gate stopped at suite 49 because the new guard replaced the
+existing logged-out error wording. Its failed JSON/log are retained as
+matrix-rc303-regression-first-failed.*. The implementation restores that wording;
+the original assertion is unchanged. The targeted native suite again passed
+83 checks plus 185 upstream tests. A later 213-suite pass is retained as
+regression-before-ready-order: an additional same-owner fixture uncovered a
+startup reuse race outside that initial coverage. Its failure and successful
+prototype are retained. A local release hold stopped packaging before compilation;
+this was a deliberate local gate, not a platform approval rejection. The expanded
+workspace regression is part of the final 213-suite gate: all passed in 642.077s.
+The 865 counted inputs have SHA256
+4d718aebb40aea0df7d0aa8e4a34b33b5806af40afcc9fce1d4fbae6cfafa11d.
+
+The first native-host/real-React hidden-window run completed 440 seconds with
+30 calls, max gap 15,009.94ms and throttling restored on close. It preceded the
+last workspace-guard changes. The final source-matched run completed 440 seconds,
+30 calls, max heartbeat gap 15,014.45ms, no network/platform attempt and successful
+restoration. Its manifest binds the React runtime, native host and lease helper.
+The actual ASAR/unpacked worker repeated 440 seconds with 30 calls, max gap
+15,009.88ms, original throttling restored and zero network/platform attempts.
+The first package probe failed before its watchdog: Electron patched fs treats
+the ASAR as a virtual directory, so reading the whole archive raised ENOENT.
+An isolated probe reproduced this and original-fs verified the correct bytes.
+The corrected probe streams the digest with original-fs, protects bootstrap
+with a watchdog and checks the final report as well as process exit. The first
+timeout/log and normal dismissal of its own error dialog remain recorded; no
+manual process signal was sent, and the installed application was untouched.
+The same existing candidate then passed all 63 package checks. This harness
+correction did not alter the candidate or repeat compilation. Its generator
+now uses the corrected template. Full build succeeded; installer is unsigned.
+
+Separate RC301 evidence: its frozen source completed 7,201,276ms observation,
+360 cycles and 2,555 assertions with 10,000 synthetic records. Archive bytes
+stayed unchanged under repeated duplicate intake; normal close/reopen preserved
+all records. Driver PID 44096 exited. This is not RC303 soak evidence or a
+whole-application/platform performance claim.
+
+Limits
+These synthetic fixtures do not prove every real platform or OS sleep/resume
+case. Reduced idle reads and observed timer cadence are not whole-app speed or
+zero-error guarantees. No UI redesign, platform-frequency increase, credentials
+change or installed application restart is part of these source checks.
+The running app's publishing header remains unreadable, so installation is
+paused under the project normal-exit rule; this is not a policy refusal.

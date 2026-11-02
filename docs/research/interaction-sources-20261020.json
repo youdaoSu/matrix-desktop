@@ -1,0 +1,91 @@
+{
+  "checkedAt": "2026-10-20",
+  "scope": "Primary platform documentation and public repository source inspection. Not a claim to have searched every repository or verified live completeness.",
+  "implementation": {
+    "bilibili": {
+      "mode": "Independently implemented GET-only web-session adapter; not copied SDK code and not official OAuth API",
+      "comments": "Owner UID + exact BV/aid verification, root and child pagination, exact large integer IDs, pinned root collection, duplicate-page detection",
+      "messages": "Paged session list and latest-message preview only; excludes chat history, acknowledgement, conversation opening and sending",
+      "followers": "Current authenticated user's paged accessible fan list, separate from fan count or demographic statistics",
+      "tested": "RC100 installed and exercised through normal public UI on two owned Bilibili accounts: 24 session summaries (4 + 20), 784 follower records (8 + 776), accessible pagination ended. Comments remain fixture-tested only. No conversations opened or read-acknowledgement requests implemented; real platform unread before/after invariance not independently verified.",
+      "limits": "10 pages per UI batch with continuation, 5000 rows memory cap, 10-minute owner/session/work-bound cursor; deleted/hidden/restricted records excluded"
+    },
+    "xiaohongshuFollowup": {
+      "liveResult": "After RC100 normal-UI retest, own-ID assertion passed and the original private work was located. Collection now reports that the official card has no usable work ID. No new comment or pin sent.",
+      "change": "Use observed creator /new/home route, bounded 12-second identity readiness instead of 2.4 seconds, distinguish unread own identity from actual login expiry",
+      "limits": "Work ID still missing; live follow-up and pin are not confirmed. A later visible view changed to the publishing editor; further navigation/retries stopped to avoid overwriting possible editing."
+    },
+    "wechatFollowup": {
+      "liveResult": "User restored original account login; current normal account-manager UI reports healthy. Original task visibility is platform default, not an explicit private setting.",
+      "constraint": "Do not apply latest private-only test permission to the old potentially public work. Exact official work ID remains pending. No repost or comment sent."
+    }
+  },
+  "sources": [
+    {
+      "url": "https://open.douyin.com/platform/resource/docs/ability/interaction-management/video-comment-management-solution",
+      "kind": "official",
+      "finding": "Approved video.comment capability provides comment and child-list reads; this documented top-comment operation is enterprise-only. Browser login alone is not this approval."
+    },
+    {
+      "url": "https://developer.open-douyin.com/docs/resource/zh-CN/dop/develop/openapi/account-management/user-data/get-fans-list",
+      "kind": "official-search-index",
+      "finding": "fans.list requires application permission and account authorization; described recent fan list, not unrestricted lifetime fan history. Direct document fetch was unavailable in this inspection."
+    },
+    {
+      "url": "https://developer.open-douyin.com/docs/resource/zh-CN/mini-app/develop/server/reach-marketing/instant-message/private-message/private-msg-webhook",
+      "kind": "official",
+      "finding": "Inbound private-message event route. Does not establish access to arbitrary historical personal inboxes. Qualification details still require checking in the intended application console."
+    },
+    {
+      "url": "https://ad-market.xiaohongshu.com/app-center",
+      "kind": "official-search-index",
+      "finding": "Commercial private-message API entry appears in official app center; account eligibility and creator-wide comment/fan access not established here. Commerce APIs are not substitutes."
+    },
+    {
+      "url": "https://github.com/NanmiCoder/MediaCrawler/blob/main/media_platform/douyin/client.py",
+      "kind": "repository-primary-source",
+      "finding": "Public video comment and child-comment cursor pagination; does not solve private inbox access or prove hidden/deleted comments can be fetched."
+    },
+    {
+      "url": "https://github.com/NanmiCoder/MediaCrawler/blob/main/media_platform/xhs/client.py",
+      "kind": "repository-primary-source",
+      "finding": "Public note comments require note identity/context and root/child pagination; count caps mean method names containing all are not a completeness guarantee."
+    },
+    {
+      "url": "https://github.com/NanmiCoder/MediaCrawler/blob/main/LICENSE",
+      "kind": "repository-license",
+      "finding": "Non-commercial learning license; not incorporated into this application."
+    },
+    {
+      "url": "https://github.com/seiuna/bilibili-api/blob/main/src/api/message.ts",
+      "kind": "repository-primary-source",
+      "finding": "GET paged sessions and POST update_ack are separate operations. Read-only adapter excludes all acknowledgement/send/detail-opening routes. This source is GPL licensed; no SDK code copied."
+    },
+    {
+      "url": "https://github.com/seiuna/bilibili-api/blob/main/src/api/comment.ts",
+      "kind": "repository-primary-source",
+      "finding": "Root comments, paged child replies and distinct page totals; exact large comment IDs must be preserved."
+    },
+    {
+      "url": "https://github.com/seiuna/bilibili-api/blob/main/src/api/user.ts",
+      "kind": "repository-primary-source",
+      "finding": "Paged /x/relation/fans list is distinct from aggregate relation statistics."
+    },
+    {
+      "url": "https://github.com/Nemo2011/bilibili-api",
+      "kind": "repository-primary-source",
+      "finding": "Archived repository; not selected as a currently maintained application dependency."
+    },
+    {
+      "url": "https://open.kuaishou.com/platformDocs/openAbility/userInformation/publicInformation.html",
+      "kind": "official",
+      "finding": "Public user-info fan count is not a follower roster. Live comment delivery and message sharing must not be presented as historical video comments or inbox reads."
+    }
+  ],
+  "unverified": [
+    "General WeChat Channels creator APIs covering all historical comments, private inbox and complete followers were not verified. Do not substitute WeChat Shop customer support or Official Account APIs.",
+    "Douyin, Xiaohongshu and Channels full personal-inbox history without appropriate platform grants remains unverified.",
+    "Other account-directory providers have not been verified for these data categories; do not mark them supported based only on a login entry."
+  ],
+  "safety": "Own bound accounts only; no credentials printed, exported or requested in chat; no CAPTCHA bypass; no read acknowledgements; no new public posting under the latest private-only test request; no remote source/artifact upload."
+}

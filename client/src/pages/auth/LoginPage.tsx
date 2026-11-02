@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AtSign, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { readAppPreferences } from '@/contexts/AppPreferences';
@@ -9,7 +9,9 @@ import { AuthCard, AuthError, AuthField, AuthPasswordField, AuthSubmit, getAuthE
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
+  const location = useLocation();
+  const recoveryState = location.state as { recoveredUsername?: string; passwordReset?: boolean; passwordChanged?: boolean } | null;
+  const [username, setUsername] = useState(typeof recoveryState?.recoveredUsername === 'string' ? recoveryState.recoveredUsername : '');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -41,11 +43,12 @@ export default function LoginPage() {
   return (
     <AuthCard
       eyebrow="欢迎回来"
-      title="登录矩效"
+      title="登录远效"
       description="登录后继续管理你的内容与平台账号。"
       footer={<>还没有账号？ <Link to="/register" className="font-semibold text-blue-700 hover:text-blue-800">免费创建</Link></>}
     >
       <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+        {(recoveryState?.passwordReset || recoveryState?.passwordChanged) && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">密码已{recoveryState.passwordReset ? '重置' : '修改'}，请使用新密码登录。账号与业务数据均保留。</p>}
         <AuthError>{error}</AuthError>
         <AuthField
           id="username"
@@ -55,29 +58,30 @@ export default function LoginPage() {
           onChange={(event) => { setUsername(event.target.value); setError(''); }}
           placeholder="请输入用户名"
           autoComplete="username"
+          tabIndex={1}
           autoFocus
           required
         />
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-700">密码</span>
-            <Link to="/forgot-password" className="text-xs font-medium text-blue-700 hover:text-blue-800">忘记密码？</Link>
-          </div>
-          <AuthPasswordField
-            id="password"
-            aria-label="密码"
-            value={password}
-            onChange={(event) => { setPassword(event.target.value); setError(''); }}
-            placeholder="请输入密码"
-            autoComplete="current-password"
-            required
-          />
+        <AuthPasswordField
+          id="password"
+          label="密码"
+          aria-label="密码"
+          value={password}
+          onChange={(event) => { setPassword(event.target.value); setError(''); }}
+          placeholder="请输入密码"
+          autoComplete="current-password"
+          tabIndex={2}
+          required
+        />
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-600">
+            <Checkbox checked={remember} onCheckedChange={(checked) => setRemember(checked === true)} />
+            <span>在此设备上保持登录</span>
+          </label>
+          <Link to="/forgot-password" className="text-xs font-medium text-blue-700 hover:text-blue-800">忘记密码？</Link>
         </div>
-        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-600">
-          <Checkbox checked={remember} onCheckedChange={(checked) => setRemember(checked === true)} />
-          <span>在此设备上保持登录</span>
-        </label>
-        <AuthSubmit loading={loading}><LockKeyhole className="mr-2 h-4 w-4" />{loading ? '正在安全登录…' : '登录工作台'}</AuthSubmit>
+        {/* Keep the three primary stops first; auxiliary controls remain keyboard reachable. */}
+        <AuthSubmit loading={loading} tabIndex={3}><LockKeyhole className="mr-2 h-4 w-4" />{loading ? '正在安全登录…' : '登录工作台'}</AuthSubmit>
         <div className="flex items-center justify-center gap-2 border-t border-slate-100 pt-4 text-xs text-slate-500">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
           本机账号密码验证 · 平台登录会话独立

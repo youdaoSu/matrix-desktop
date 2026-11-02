@@ -1,0 +1,92 @@
+// Real UI/native media plumbing against disposable data. No posts or messages.
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const [port, base] = process.argv.slice(2);
+if (base !== 'http://127.0.0.1:3291') throw Error('Disposable QA origin required');
+const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then(r=>r.json());
+const socket = new WebSocket(targets.find(t=>t.type==='page'&&t.url.startsWith(base)).webSocketDebuggerUrl);
+await new Promise(r=>socket.addEventListener('open',r,{once:true}));
+let seq=0, checks=0; const pending=new Map();
+const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq,timer=setTimeout(()=>{pending.delete(id);reject(Error(method+' timeout'))},15000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}))});
+socket.addEventListener('message',event=>{const m=JSON.parse(event.data),p=pending.get(m.id);if(p){clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)};if(m.method==='Fetch.requestPaused')void call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:'image/png'}],body:fs.readFileSync('desktop/assets/icon.png').toString('base64')})});
+const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description);return r.result.value};
+const wait=async fn=>{for(let i=0;i<150;i++){if(await fn())return;await new Promise(r=>setTimeout(r,150))}throw Error('UI not ready')};
+try {
+  // Seed display records with the user's workspace provider unmounted. Otherwise
+  // an old queue's final emit can overwrite the artificial localStorage fixture.
+  await call('Page.navigate',{url:base+'/app/#/admin/dashboard'});
+  await wait(()=>evaluate("location.hash==='#/admin/dashboard'&&!document.querySelector('.matrix-shell')"));
+  await call('Fetch.enable',{patterns:[{urlPattern:'https://qa-avatar.test/*'}]});
+  await evaluate("(()=>{const input=document.createElement('input');input.type='file';input.id='qa-task-image';input.hidden=true;document.body.append(input);return true})()");
+  const {result:object}=await call('Runtime.evaluate',{expression:"document.querySelector('#qa-task-image')",returnByValue:false});
+  await call('DOM.setFileInputFiles',{objectId:object.objectId,files:[path.resolve('desktop/assets/icon.png')]});
+  await call('Runtime.releaseObject',{objectId:object.objectId});
+  const result=await evaluate(`(async()=>{const selected=await window.matrixDesktop.importMedia([...document.querySelector('#qa-task-image').files],'image');if(selected.error)throw Error(selected.error);const token=localStorage.getItem('matrix_token')||sessionStorage.getItem('matrix_token');window.__qaTaskMedia=await window.matrixDesktop.rememberPublishMedia({accessToken:token,selectionId:selected.selection.id,covers:[{id:selected.selection.id,index:1}]});if(window.__qaTaskMedia.error)throw Error(window.__qaTaskMedia.error);return {preview:window.__qaTaskMedia.thumbnail.startsWith('data:image/jpeg;base64,'),saved:!!window.__qaTaskMedia.recoveryId}})()`);
+  assert.deepEqual(result,{preview:true,saved:true});checks++;
+  await evaluate(`(()=>{const owner=JSON.parse(localStorage.getItem('matrix_user')||sessionStorage.getItem('matrix_user')||'null');if(!owner?.id)throw Error('User missing');const saved=window.__qaTaskMedia,now=new Date().toISOString(),common={batchId:'qa-batch',accountId:'qa-account',nickname:'QA任务账号',avatarUrl:'https://qa-avatar.test/avatar.png',platform:'xiaohongshu',files:['icon.png'],createdAt:now,updatedAt:now,thumbnail:saved.thumbnail,recoveryId:saved.recoveryId,mediaType:'image',config:{title:'QA图文',body:'简介保留',topics:['QA话题'],comment:'QA追评',options:{},covers:[{id:'expired',name:'icon.png',index:1}]},history:[]};localStorage.setItem('matrix-publish-progress:'+owner.id,JSON.stringify([{...common,id:'qa-failed',title:'QA图文重发',stage:'failed',submission:'not_submitted',message:'尚未提交：QA模拟上传失败'},{...common,id:'qa-unknown',title:'QA结果未知',stage:'unknown',submission:'uncertain',message:'提交连接中断'},{...common,id:'qa-comment',title:'QA作品已发布',stage:'confirmed',submission:'confirmed',message:'发布成功',followup:{status:'failed',message:'QA追评失败',receiptId:'comment-receipt'}}]));window.__qaTaskRecoveryId=saved.recoveryId;return true})()`);
+  const recoveryId=await evaluate('window.__qaTaskRecoveryId');
+  await evaluate(`(()=>{const owner=JSON.parse(localStorage.getItem('matrix_user')||sessionStorage.getItem('matrix_user')),key='matrix-publish-progress:'+owner.id,rows=JSON.parse(localStorage.getItem(key));rows.find(r=>r.id==='qa-failed').history=[{at:new Date().toISOString(),stage:'uploading',message:'QA 正在上传素材'},{at:new Date().toISOString(),stage:'failed',message:'QA 模拟超时'}];localStorage.setItem(key,JSON.stringify(rows));return true})()`);
+  await evaluate(`(()=>{const owner=JSON.parse(localStorage.getItem('matrix_user')||sessionStorage.getItem('matrix_user')),key='matrix-publish-progress:'+owner.id,rows=JSON.parse(localStorage.getItem(key));rows.find(r=>r.id==='qa-failed').mediaObservation={at:new Date().toISOString(),stored:false,value:{version:1,state:'waiting_preview',busySignals:[],editorReady:true,attachedVideoInputs:1,mediaElements:0,decodedMedia:0,coverContainers:0,coverImages:0,decodedCoverImages:0,enabledSubmitButtons:1,cookie:'never-render-qa-cookie'}};localStorage.setItem(key,JSON.stringify(rows));return true})()`);
+  await call('Page.navigate',{url:base+'/app/#/publish/tasks'});
+  await wait(()=>evaluate("document.querySelectorAll('[data-publish-job]').length===3"));
+  assert.equal(await evaluate("document.querySelector('[data-publish-job=qa-unknown] .matrix-task-details summary').innerText"),'执行到的阶段：提交发布 / 等待平台结果');checks++;
+  assert.equal(await evaluate("document.querySelector('[data-publish-job=qa-comment] .matrix-task-details summary').innerText"),'执行到的阶段：发布完成');checks++;
+  assert.equal(await evaluate("[...document.querySelectorAll('.matrix-task-details summary')].some(el=>el.innerText.includes('执行日志'))"),false);checks++;
+  assert.equal(await evaluate("document.querySelector('[data-publish-job=qa-failed] .matrix-task-details summary').innerText"),'执行到的阶段：上传素材 / 等待转码');checks++;
+  await wait(()=>evaluate("[...document.querySelectorAll('.matrix-task-media img,.matrix-task-avatar img')].every(i=>i.naturalWidth>0)"));
+  assert.equal(await evaluate("document.querySelectorAll('.matrix-task-media img').length"),3);checks++;
+  assert.equal(await evaluate("document.querySelectorAll('.matrix-task-avatar > img').length"),3);checks++;
+  assert.equal(await evaluate("document.querySelectorAll('.matrix-task-avatar [data-platform-logo] img').length"),3);checks++;
+  assert.equal(await evaluate("[...document.querySelectorAll('.matrix-task-avatar [data-platform-logo] img')].every(i=>i.complete&&i.naturalWidth>0&&i.src.startsWith('data:image/'))"),true);checks++;
+  assert.equal(await evaluate("[...document.querySelectorAll('[data-publish-job=qa-failed] .matrix-task-status button')].some(b=>b.innerText==='重发'&&!b.disabled)"),true);checks++;
+  assert.equal(await evaluate("[...document.querySelectorAll('[data-publish-job=qa-unknown] button')].some(b=>/^重发/.test(b.innerText))"),false);checks++;
+  assert.equal(await evaluate("[...document.querySelectorAll('[data-publish-job=qa-comment] .matrix-task-status button')].map(b=>b.innerText)" ).then(x=>x.join(',')),'重发追评');checks++;
+  assert.equal(await evaluate("document.querySelector('[data-publish-job=qa-comment] .matrix-task-status').innerText.includes('发布成功')"),true);checks++;
+  const rowsBeforeDetail=await evaluate("[...document.querySelectorAll('[data-publish-job]')].map(row=>({id:row.dataset.publishJob,status:row.querySelector('.matrix-task-status').innerText}))");
+  await evaluate("document.querySelector('[data-publish-job=qa-failed] .matrix-task-row-links > button').click();true");
+  await wait(()=>evaluate("!!document.querySelector('[data-task-detail=qa-failed]') && document.querySelectorAll('[data-task-detail=qa-failed] .matrix-detail-gallery img').length===1"));
+  await wait(()=>evaluate("[...document.querySelectorAll('[data-task-detail] img')].every(image=>image.naturalWidth>0)"));
+  assert.equal(await evaluate("document.querySelector('[data-task-detail] input[aria-label=任务标题]').value"),'QA图文');checks++;
+  assert.equal(await evaluate("document.querySelector('[data-task-detail] textarea[aria-label=任务简介]').value"),'简介保留');checks++;
+  assert.equal(await evaluate("document.querySelector('[data-task-detail]').innerText.includes('执行阶段') && document.querySelector('[data-task-detail]').innerText.includes('执行到的阶段：')"),true);checks++;
+  assert.equal(await evaluate("[...document.querySelectorAll('[data-task-detail] summary')].some(el=>el.innerText==='媒体准备观测（不是发布回执）')"),true);checks++;
+  await evaluate("[...document.querySelectorAll('[data-task-detail] details')].find(el=>el.querySelector('summary')?.innerText==='媒体准备观测（不是发布回执）').open=true;true");
+  assert.equal(await evaluate("document.querySelector('[data-task-detail]').innerText.includes('尚未识别到唯一已解码封面') && document.querySelector('[data-task-detail]').innerText.includes('不是发布回执')"),true);checks++;
+  assert.equal(await evaluate("document.querySelector('[data-task-detail]').innerText.includes('never-render-qa-cookie')"),false);checks++;
+  assert.equal(await evaluate("document.querySelector('[data-publish-job=qa-failed] .matrix-task-status').innerText.includes('发布成功')"),false);checks++;
+  assert.equal(await evaluate("[...document.querySelectorAll('[data-task-detail] input,[data-task-detail] textarea')].every(field=>field.readOnly)"),true);checks++;
+  assert.equal(await evaluate("document.querySelector('[data-task-detail] .matrix-detail-covers img').naturalWidth>0"),true);checks++;
+  assert.equal(await evaluate("document.querySelector('[data-task-detail]').innerText.includes('#QA话题') && document.querySelector('[data-task-detail] textarea[aria-label=任务追评]').value==='QA追评'"),true);checks++;
+  const previewRange=await evaluate("(async()=>{const image=document.querySelector('[data-task-detail] .matrix-detail-gallery img');const response=await fetch(image.src,{headers:{Range:'bytes=0-3'}});return{status:response.status,bytes:(await response.arrayBuffer()).byteLength}})()");assert.deepEqual(previewRange,{status:206,bytes:4});checks++;
+  await call('Emulation.setDeviceMetricsOverride',{width:1580,height:950,deviceScaleFactor:1,mobile:false});
+  await new Promise(resolve=>setTimeout(resolve,700)); // Drawer/viewport transition must finish before visual QA.
+  const detailShot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('logs/qa-task-details-drawer.png',Buffer.from(detailShot.data,'base64'));
+  await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  await wait(()=>evaluate("!document.querySelector('[data-task-detail]')"));
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('[data-publish-job]')].map(row=>({id:row.dataset.publishJob,status:row.querySelector('.matrix-task-status').innerText}))"),rowsBeforeDetail);checks++;
+  await wait(()=>evaluate("document.activeElement===document.querySelector('[data-publish-job=qa-failed] .matrix-task-row-links > button')"));checks++;
+  await evaluate("document.querySelector('[data-publish-job=qa-comment] .matrix-task-row-links > button').click();true");await wait(()=>evaluate("!!document.querySelector('[data-task-detail=qa-comment]')"));
+  await call('Input.dispatchMouseEvent',{type:'mousePressed',x:20,y:300,button:'left',clickCount:1});await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:20,y:300,button:'left',clickCount:1});await wait(()=>evaluate("!document.querySelector('[data-task-detail]')"));checks++;
+  const restored=await evaluate(`(async()=>{const token=localStorage.getItem('matrix_token')||sessionStorage.getItem('matrix_token');const r=await window.matrixDesktop.restorePublishMedia({accessToken:token,recoveryId:${JSON.stringify(recoveryId)}});if(r.error)throw Error(r.error);return {media:r.selection.files[0].name,cover:r.covers[0].name,coverFresh:r.covers[0].id!=='expired'}})()`);
+  assert.deepEqual(restored,{media:'icon.png',cover:'icon.png',coverFresh:true});checks++;
+  await call('Emulation.setDeviceMetricsOverride',{width:1580,height:950,deviceScaleFactor:1,mobile:false});
+  await wait(()=>evaluate("!document.querySelector('[role=dialog]')"));
+  await new Promise(resolve=>setTimeout(resolve,700)); // Wait for the closed sheet's exit animation, not only its body unmount.
+  const shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync('logs/qa-task-records-preview-retry.png',Buffer.from(shot.data,'base64'));
+  await evaluate("document.querySelector('[data-publish-job=qa-failed] > input').click();document.querySelector('[data-publish-job=qa-unknown] > input').click();true");
+  assert.equal(await evaluate("[...document.querySelectorAll('.matrix-task-footer button')].find(b=>b.innerText==='批量重发').disabled"),true);checks++;
+  await evaluate("document.querySelector('[data-publish-job=qa-unknown] > input').click();true");
+  assert.equal(await evaluate("[...document.querySelectorAll('.matrix-task-footer button')].find(b=>b.innerText==='批量重发').disabled"),false);checks++;
+  await call('Emulation.setDeviceMetricsOverride',{width:1100,height:760,deviceScaleFactor:1,mobile:false});
+  assert.equal(await evaluate("document.querySelector('.matrix-task-records').getBoundingClientRect().right<=innerWidth+1"),true);checks++;
+  await evaluate("location.hash='#/dashboard';true");await wait(()=>evaluate("!document.querySelector('[data-publish-progress]')"));await evaluate("location.hash='#/publish/tasks';true");await wait(()=>evaluate("document.querySelectorAll('[data-publish-job]').length===3"));checks++;
+  assert.equal(await evaluate("document.querySelector('[data-publish-job=qa-failed] .matrix-task-media img').naturalWidth>0"),true);checks++;
+  await call('Emulation.setDeviceMetricsOverride',{width:1580,height:950,deviceScaleFactor:1,mobile:false});
+  const tokenScope=await evaluate("JSON.parse(localStorage.getItem('matrix_user')||sessionStorage.getItem('matrix_user')).id");
+  await evaluate(`localStorage.removeItem('matrix-publish-progress:'+${JSON.stringify(tokenScope)});true`);
+  console.log(JSON.stringify({ taskRecordUiAndNativeChecks:checks,localRecoveryNoFilePicker:true,actualPlatformActions:false }));
+} catch(error) {
+  console.error(await evaluate("({route:location.hash,rows:document.querySelectorAll('[data-publish-job]').length,text:document.querySelector('.matrix-page-content')?.innerText.slice(0,1000),stored:Object.keys(localStorage).filter(k=>k.startsWith('matrix-publish-progress:')).map(k=>JSON.parse(localStorage.getItem(k)).length)})"));
+  throw error;
+} finally {await call('Fetch.disable').catch(()=>{});await call('Emulation.clearDeviceMetricsOverride').catch(()=>{});socket.close()}

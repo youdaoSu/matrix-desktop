@@ -69,7 +69,6 @@ const OverviewPage: React.FC = () => {
 
   const docSections = [
     { name: '产品框架总览', desc: '产品定位与整体架构' },
-    { name: '功能需求清单', desc: '全模块功能点明细' },
     { name: '非功能需求', desc: '性能、安全、可用性等' },
     { name: '扩展路线图', desc: '版本规划与能力扩展' },
     { name: '测试方案', desc: '测试策略与用例' },
@@ -96,7 +95,7 @@ const OverviewPage: React.FC = () => {
             产品框架与模块总览
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            矩效 Matrix — 多平台新媒体账号矩阵管理系统
+            远效 — 多平台新媒体账号矩阵管理系统
           </p>
         </div>
         <div className="relative">
@@ -127,7 +126,7 @@ const OverviewPage: React.FC = () => {
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm leading-7">
-              <strong className="text-primary">矩效 Matrix</strong>
+              <strong className="text-primary">远效</strong>
               是一款面向新媒体团队的多平台账号矩阵管理 SaaS
               产品。它将抖音、小红书、微信视频号、B站等主流内容平台的账号、内容、粉丝、私信、评论与自动回复能力整合到统一工作台中，帮助团队提升运营效率、降低管理成本、实现数据驱动决策。
             </p>

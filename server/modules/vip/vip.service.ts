@@ -88,14 +88,17 @@ export class VipService {
     const currentAccounts = Number(accountCountResult[0]?.count ?? 0);
 
     const now = new Date();
+    // Persisted status may lag expiry; report the effective state without
+    // mutating the account or treating missing expiry as an expired date.
+    const effectiveStatus = user.vipStatus === 'active' && user.vipExpiresAt && user.vipExpiresAt.getTime() <= now.getTime() ? 'expired' : user.vipStatus;
     let remainingDays = 0;
-    if (user.vipExpiresAt && user.vipStatus === 'active') {
+    if (user.vipExpiresAt && effectiveStatus === 'active') {
       const diffMs = user.vipExpiresAt.getTime() - now.getTime();
       remainingDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
     }
 
     return {
-      status: user.vipStatus,
+      status: effectiveStatus,
       planName,
       planCode,
       expiresAt: user.vipExpiresAt ? user.vipExpiresAt.toISOString() : undefined,

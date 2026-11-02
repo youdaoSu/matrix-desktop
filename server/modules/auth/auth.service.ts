@@ -6,7 +6,6 @@ import {
   UnauthorizedException,
   NotFoundException,
   ConflictException,
-  NotImplementedException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { eq, desc, sql, and } from 'drizzle-orm';
@@ -16,7 +15,6 @@ import type { AppUser } from '@shared/api.interface';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ActivateCodeDto } from './dto/activate-code.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { signToken } from './jwt-auth.guard';
 
 function mapUser(row: typeof appUsers.$inferSelect & { vipPlanName?: string }): AppUser {
@@ -126,6 +124,7 @@ export class AuthService {
       userId: user.id,
       role: 'user',
       username: user.username,
+      authVersion: user.authVersion,
     });
 
     // 查套餐名
@@ -236,10 +235,6 @@ export class AuthService {
       return { user: result[0], planName: plan.name };
     });
     return mapUser({ ...activated.user, vipPlanName: activated.planName });
-  }
-
-  async forgotPassword(_dto: ForgotPasswordDto): Promise<void> {
-    throw new NotImplementedException('安全邮箱验证码服务尚未配置，请登录后修改密码或联系管理员重置');
   }
 
   async getMe(userId: string): Promise<AppUser> {

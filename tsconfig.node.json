@@ -3,6 +3,7 @@
   "compilerOptions": {
     "baseUrl": "./",
     "outDir": "./dist",
+    "resolveJsonModule": true,
     "preserveWatchOutput": true,
     "paths": {
       "@server/*": ["server/*"],
@@ -12,7 +13,7 @@
   "watchOptions": {
     "excludeDirectories": ["node_modules/**"]
   },
-  "include": ["server/**/*", "shared/**/*.ts"],
+  "include": ["server/**/*", "shared/**/*.ts", "desktop/publish-capabilities.json"],
   // MCP UI 是独立浏览器工程，不使用服务端的 TypeScript 配置。
   "exclude": ["server/mcp/ui", "node_modules", "dist", "client", "source_package", "**/*.spec.ts", "**/*.e2e-spec.ts"],
 }

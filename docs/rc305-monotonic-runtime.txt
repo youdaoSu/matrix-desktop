@@ -1,0 +1,69 @@
+RC305 — 2026-10-31 — runtime clock correction (candidate in verification)
+
+Observed failure
+The previous native host used Date.now() for its 45-second authenticated
+liveness lease. An isolated test advanced only that process's wall clock by
+one hour. A healthy worker was incorrectly retired and replaced (2 starts,
+expected 1). The original failing output is retained as
+matrix-rc305-clock-first-failure.txt. No Windows clock was changed.
+
+Change
+The native host and worker now measure liveness using performance.now().
+The worker's in-memory minimum-send reservations use the same monotonic clock
+within that worker. The 45-second lease and 4.5-second minimum interval are
+unchanged. Calendar schedules, persisted timestamps and message dates retain
+their existing wall-clock meanings. This does not claim that every clock in
+every subsystem has been replaced, or that real OS suspend/resume was tested.
+The renderer and native heartbeat-request throttle already used monotonic time.
+There is no UI, schema, platform-rate or real account configuration change.
+
+Targeted verification
+13 checks passed against the actual native host, an actual isolated worker,
+and the actual worker reservation function. Forward wall-clock correction
+does not discard a fresh lease; backward correction does not keep a stale
+lease alive; wall-clock jumps cannot shorten or extend the tested minimum
+send interval. The existing 25-check native-heartbeat regression also passed.
+
+Test-harness issue and cleanup
+The first post-fix fixture waited for an exit without performing the worker
+host's explicit drain/termination step. Only its verified isolated Node
+process 68924 was stopped. The harness was corrected to close and drain its
+own worker, then terminate that thread. This was not an application failure
+or a forced exit of the user's application. The original fixture is retained.
+Cleanup of its synthetic directory yx-operations-clock-rCP0gi was rejected
+with "blocked by policy", with no specific reason. No cleanup retry was made.
+The directory remains for manual cleanup; no effective approval entry exists
+in this approval_policy=never session. Independent verification continued.
+
+Delivery status (09:55 Beijing)
+The 217-suite source gate passed, as did the 440-second hidden-window and
+560-second synthetic heartbeat-loss/recovery checks. Source fingerprint:
+7a77d15e27abc46d2e33885553f5e6fa342d890c1315741c413133314b115744 (870 files).
+Candidate output is D:/codexworck/yuanxiao-rc305-final; the installer is built
+and actual package verification is still running.
+The user closed the monitoring dialog. A new read-only activity check found
+one publishing header and no active publication; no input was sent. Metadata
+estimate of the pending business backup is 577702057 bytes / 24837 files;
+capacity is sufficient with the 30 GiB reserve, subject to cold recheck.
+The installer helper now checks all 37 physical worker dependencies before
+installation, correcting its stale 35-file count. PS5.1 syntax/ASCII passed.
+No actual backup, installation or platform submission has occurred yet.
+The RC304 90-minute packaged observation is separate and does not count as
+90 minutes of RC305 verification.
+
+Build output correction (10:21 Beijing)
+E: was identified as a removable volume and the owned incomplete builder was
+stopped after exact PID/path/parent/start-time checks. Its output and failure
+log remain. No user application was stopped. C: headroom check rejected the
+proposed temporary location before changes. A fresh D: capacity check found
+37 GiB available, enough for the candidate plus business backup and reserve.
+The final local build completed. No backup or installation has occurred yet.
+
+RC305 packaged verification completed
+217 source suites and 67 actual-package checks passed. The packed hidden
+renderer produced 29 heartbeats during 440 seconds, maximum gap 19.473s;
+background throttling was restored after close. All sends were synthetic.
+ASAR: 698d7bbc0fd336a2e8a84c4e4216de4345696d4ce9f3e1fb47d5c04900d6f570
+Setup: a50cbeb422695a0b2ad626982caa47289cc3390685a59e2495c77031d58371a5
+Final output: D:/codexworck/yuanxiao-rc305-final
+Installation and cold backup are the next separate steps, not yet claimed.

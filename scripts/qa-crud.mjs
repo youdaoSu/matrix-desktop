@@ -34,7 +34,8 @@ await check('注册→登录后改密→阻止不安全找回→新密码登录'
   await call('POST', '/api/auth/register', { username, password: 'QaPass123!', nickname: 'QA用户', email });
   const initialLogin = await call('POST', '/api/auth/login', { username, password: 'QaPass123!' });
   await call('POST', '/api/users/change-password', { oldPassword: 'QaPass123!', newPassword: 'QaPass456!' }, initialLogin.token);
-  await call('POST', '/api/auth/forgot-password', { username, email, newPassword: 'UnsafePass789!' }, undefined, [501]);
+  await call('POST', '/api/auth/forgot-password', { username, email, newPassword: 'UnsafePass789!' }, undefined, [400]);
+  await call('GET', '/api/auth/me', undefined, initialLogin.token, [401]);
   await call('POST', '/api/auth/login', { username, password: 'QaPass456!' });
 });
 

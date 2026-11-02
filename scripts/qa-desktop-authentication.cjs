@@ -1,0 +1,17 @@
+// In-flight deduplication only, no persistent authorization-result cache.
+const assert=require('node:assert/strict');const {createDesktopAuthentication}=require('../desktop/desktop-authentication.cjs');let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},pause=()=>new Promise(r=>setImmediate(r));
+const a='00000000-0000-4000-8000-000000000001',b='00000000-0000-4000-8000-000000000002';
+function fixture(){const reads=[],gates=[];let csrf='qa-csrf',origin='http://127.0.0.1:3210/app/';const auth=createDesktopAuthentication({getOrigin:()=>origin,getSession:()=>({}),readCsrf:async()=>csrf,fetchImpl:(url,options)=>{reads.push({url,options});return new Promise(resolve=>gates.push({url,resolve}));}});const finish=(status=200,patch)=>{for(const gate of gates.splice(0))gate.resolve({ok:status===200,json:async()=>({data:patch|| (gate.url.endsWith('/me')?{id:'qa-owner'}:{userId:'qa-owner',account:{id:gate.url.includes(a)?a:b,nickname:'QA'}})})});};return{auth,reads,finish,setCsrf:value=>csrf=value,setOrigin:value=>origin=value};}
+(async()=>{
+ let f=fixture(),one=f.auth('qa-token',a),two=f.auth('qa-token',a);await pause();eq(f.reads.length,1);eq(f.reads.map(r=>new URL(r.url).pathname),['/api/platform/accounts/'+a+'/desktop-context']);f.finish();const [first,second]=await Promise.all([one,two]);eq(first.userId,'qa-owner');eq(second.account.id,a);first.account.nickname='changed';eq(second.account.nickname,'QA');
+ one=f.auth('qa-token',a);await pause();eq(f.reads.length,2);f.finish();await one;
+ f=fixture();one=f.auth('qa-token',a);two=f.auth('qa-token',b);await pause();eq(f.reads.length,2);f.finish();eq((await one).account.id,a);eq((await two).account.id,b);
+ f=fixture();one=f.auth('qa-one',a);two=f.auth('qa-two',a);await pause();eq(f.reads.length,2);f.finish();await Promise.all([one,two]);
+ f=fixture();one=f.auth('qa-token',a);await pause();f.setCsrf('new-csrf');two=f.auth('qa-token',a);await pause();eq(f.reads.length,2);f.finish();await Promise.all([one,two]);
+ f=fixture();one=f.auth('qa-token',a);two=f.auth('qa-token',a);const failures=Promise.allSettled([one,two]);await pause();f.finish(401);eq((await failures).map(r=>r.status),['rejected','rejected']);one=f.auth('qa-token',a);await pause();eq(f.reads.length,2);f.finish();await one;
+ for(const patch of [{account:{id:a}},{userId:'qa-owner',account:{id:b}},{userId:5,account:{id:a}}]){f=fixture();one=f.auth('qa-token',a);const rejected=assert.rejects(()=>one,/账号不可访问/);await pause();f.finish(200,patch);await rejected;checks++;eq(f.reads.length,1);}
+ f=fixture();for(const token of ['',null,'x'.repeat(8193)]){await assert.rejects(()=>f.auth(token,a));checks++;}await assert.rejects(()=>f.auth('qa-token','wrong'));checks++;eq(f.reads.length,0);
+ for(const origin of ['https://public.invalid/','file:///C:/fixture','http://user:password@127.0.0.1:3210/']){f.setOrigin(origin);await assert.rejects(()=>f.auth('qa-token',a));checks++;}eq(f.reads.length,0);
+ f=fixture();one=f.auth('qa-token');await pause();eq(f.reads.length,1);f.finish();eq(await one,{userId:'qa-owner'});
+ console.log(JSON.stringify({desktopAuthChecks:checks,accountProofHttpRequestsBefore:2,accountProofHttpRequestsAfter:1,concurrentOnlyDeduplication:true,noCompletedProofReuse:true,tokenAccountCsrfIsolation:true,resultsNotSharedMutably:true,realProfileTouched:false,realRequests:0,realSends:0}));
+})().catch(error=>{console.error(error);process.exitCode=1;});

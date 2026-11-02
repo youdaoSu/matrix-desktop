@@ -1,5 +1,6 @@
 // Validate the actual packaged runtime with a fresh, disposable user-data directory.
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -27,10 +28,10 @@ async function wait(fn, label, timeout = 60000) {
   throw new Error(label);
 }
 async function targets() {
-  try { return await fetch(`http://127.0.0.1:${debugPort}/json/list`).then(response => response.json()); } catch { return []; }
+  try { return await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(3000) }).then(response => response.json()); } catch { return []; }
 }
 async function run(file, base) {
-  const child = spawn(process.execPath, [file, String(debugPort), base], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [file, String(debugPort), base, profile], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.on('data', data => { output += data; });
   child.stderr.on('data', data => { output += data; });
@@ -70,14 +71,35 @@ try {
   };
   await wait(() => evaluate("document.body?.innerText.includes('登录') && !!document.querySelector('input')"), 'Package rendered a blank first-run page');
   if (!fs.existsSync(path.join(profile, 'database/PG_VERSION'))) throw new Error('Built-in database did not initialize');
+  // Exercise the packaged recovery module, not just the development server.
+  // This disposable profile has no SMTP credentials; it must never claim mail was sent.
+  const recovery = await evaluate("(async()=>{const csrf=decodeURIComponent(/(?:^|; )suda-csrf-token=([^;]*)/.exec(document.cookie)?.[1]||'');const response=await fetch('/api/auth/password-recovery/status',{headers:{'x-suda-csrf-token':csrf},credentials:'same-origin'});if(!response.ok)throw Error('Packaged recovery readiness unavailable');return response.json();})()");
+  assert.equal(recovery.data.emailAvailable, false);
+  assert.equal(recovery.data.configured, false);
+  await call('Page.navigate', { url: `${base}/app/#/forgot-password` });
+  await wait(() => evaluate("!!document.querySelector('#recovery-code') && document.body.innerText.includes('尚未配置')"), 'Packaged recovery page did not show honest SMTP readiness');
+  assert.equal(await evaluate("document.querySelector('button[type=submit]').disabled"), true);
+  assert.equal(await evaluate("typeof window.matrixDesktop?.openRecoveryMailSettings"), 'function');
+  assert.equal(await evaluate("[...document.querySelectorAll('button')].some(b=>b.innerText.includes('配置邮件服务'))"), true);
+  console.log(JSON.stringify({ packagedRecoveryChecks: 6, configured: false, realEmailSent: false, settingsEditorOpened: false }));
   await run('scripts/qa-ui-auth.mjs', base);
+  await run('scripts/qa-feedback-api.mjs', base);
+  await run('scripts/qa-account-observation-api.mjs', base);
+  await run('scripts/qa-analytics-availability-api.mjs', base);
+  await run('scripts/qa-platform-logos.mjs', base);
   await run('scripts/qa-routes.mjs', base);
   await run('scripts/qa-embedded-auth.mjs', base);
+  await run('scripts/qa-platform-directory-ui.mjs', base);
+  await run('scripts/qa-module-boundaries.mjs', base);
+  await run('scripts/qa-official-data-ui.mjs', base);
   await call('Page.navigate', { url: `${base}/app/#/dashboard` });
   await wait(() => evaluate("!!document.querySelector('.matrix-shell')"), 'Packaged dashboard did not render');
   await call('Page.navigate', { url: `${base}/app/#/accounts` });
-  await wait(() => evaluate("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false"), 'Packaged unified account rail missing');
-  await evaluate("[...document.querySelectorAll('.matrix-add-platforms button')].find(button=>button.getClientRects().length && button.innerText.includes('抖音')).click(); true");
+  await wait(() => evaluate("location.hash==='#/accounts' && document.querySelector('.matrix-official-deck')?.hidden===false && !!document.querySelector('[data-account-management]')"), 'Packaged unified account manager missing');
+  await evaluate("[...document.querySelectorAll('[data-account-management] button')].find(button=>button.getClientRects().length && button.innerText.trim()==='添加账号').click();true");
+  await wait(() => evaluate("!!document.querySelector('[role=dialog]')"), 'Packaged binding dialog missing');
+  await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(button=>button.querySelector('strong')?.innerText==='抖音').click();true");
+  await evaluate("document.querySelector('[data-open-bind-provider]').click();true");
   await wait(() => evaluate("(async()=>{try{return await document.querySelector('webview')?.executeJavaScript(\"document.body.innerText.trim().length > 60\");}catch{return false;}})()"), 'Packaged official guest did not render content');
   // Guest DOM becomes ready before Chromium submits its first visible surface.
   await new Promise(resolve => setTimeout(resolve, 2000));
@@ -85,7 +107,7 @@ try {
   const screenshot = await call('Page.captureScreenshot', { format: 'png' });
   fs.mkdirSync('logs', { recursive: true });
   fs.writeFileSync('logs/qa-packaged-workspace.png', Buffer.from(screenshot.data, 'base64'));
-  fs.writeFileSync('logs/qa-packaged-results.json', JSON.stringify({ firstRun: true, embeddedDatabase: true, authenticationChecks: 5, routes: 64, officialGuestRendered: true }, null, 2));
+  fs.writeFileSync('logs/qa-packaged-results.json', JSON.stringify({ firstRun: true, embeddedDatabase: true, authenticationChecks: 5, recoveryChecks: 6, realRecoveryEmailSent: false, routes: 64, officialGuestRendered: true }, null, 2));
   console.log('Packaged first-run, built-in database, 5 authentication checks, 64 routes, and official guest rendering passed');
   await evaluate('window.close(); true').catch(() => {});
   await wait(() => desktop.exitCode !== null, 'Package did not shut down cleanly', 20000);

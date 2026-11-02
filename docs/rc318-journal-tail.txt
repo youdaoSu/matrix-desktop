@@ -1,0 +1,45 @@
+RC318 candidate: latest receipt/history reads from the journal tail
+
+Runtime scope: desktop/page-action-journal.cjs only. Find stops at the newest
+owner-and-ID matching append. History stops after the newest 80 matching
+records and restores chronological order. List ordering/cap, schema, append
+behavior, publication classification, cache caps and ownership are unchanged.
+Each query still checks file identity/revision. Reads inspect a fixed extent
+and only cache an unchanged file; short reads and concurrent truncation do
+not populate cache. UTF-8 fragments remain bytes until a complete line is
+available, avoiding repeated decoding of the entire file.
+
+Existing cache 24, page action 51 and follow-up 202 checks passed; new tail
+fixture 55 checks passed against a simple forward reference. Includes owner
+separation, missing records, 80-item ordering, long lines, emoji byte boundaries,
+unterminated/partial records, short reads, append during read, truncation and
+ordinary closed-file replacement of contents. First fixture open-file rename
+was rejected with EPERM; original failed source and result remain in workspace.
+That operation is not retried and live-file replacement remains unverified.
+No permission-mode change, user data or platform write was involved.
+
+Synthetic benchmark, 12000 rows, 24 append/find cycles, same host:
+RC317 content reads 87895065 bytes / 1344 calls, median 25.657 ms;
+candidate 1572864 bytes / 24 calls, median 5.761 ms.
+These are isolated journal results, not whole-app or mouse responsiveness.
+
+Pre-change installed RC317 timing sample: 45 seconds during native aggregate
+navigation, renderer delay p95 3.9 ms/max 265.7 ms, four long tasks max 266 ms.
+Main loop p95 41.88 ms/max 102.63 ms at 20 ms monitor resolution. Accessibility
+navigation may affect timings; utilization unavailable, not zero. Inspector
+49319 closed, PID59656 remains RC317. Driver exit-status check failed despite
+valid child output/results; original failure retained, cause not established.
+Full237 source suites subsequently passed (894files, source hash
+431bad81a7d13460e45cda25d17cd3bf1f140ec0356cfb00f6bf51c50e1c9da4).
+RC317 was normally closed after canonical no-active-publishing verification.
+Build passed the three-sample >=5GiB memory floor and frontend/backend build;
+packaging session13371 is live. Required93 actual package checks, source
+freezing, canonical backup/update and native acceptance remain pending.
+No RC318 installation yet. The open-file replacement EPERM remains recorded
+and unverified; no retry of that operation occurred.
+
+## 2026-11-01 09:24 RC318 installed and retired RC316 binaries removed
+RC318 source237 suites and actual package93 checks passed; frozen source431bad81a7d13460e45cda25d17cd3bf1f140ec0356cfb00f6bf51c50e1c9da4, installed ASAR4a03c591e242fe974c8c7f6da450b0bb70d5c1ac5d4865930e11e0cca4cb40ab. Canonical backup before-update-rc.318-20261101-091402 has27971 files/522832489 bytes; all unchanged after installation, original key unchanged. Normal mainPID62008, startup and four aggregate routes/account switching passed; accessibility timing includes probe overhead and is not mouse responsiveness proof. Evidence matrix-rc318-delivery-summary.json.
+Retired316 only three generated binary targets removed933175670 bytes, current318/rollback317/source/evidence/user backups retained. Cumulative logical removal113574309566 bytes/694 targets; installed759838934 bytes. No automatic cleaner; logical sizes are not guaranteed physical free-space gains.
+New isolated exactElectron33 fixture found backgroundThrottling=true alone did not stop initially-hidden default painting: baseline idle3s722 frames/121 timers; explicit hide idle0/3, active resume362/60, cursor/DOM retained. View visibility alternatives did not help. paintWhenInitiallyHidden=false suppressed active frames too and is rejected. These are synthetic observations, not a shipped fix. First paint experiment failed its active-frame assertion; Electron app.quit exit0 did not indicate success. Failure retained, revised parent requires structured measurementComplete. Live profile not touched. Next candidate should verify guarded hide on idle in reader-activity.cjs with real native reader lifecycle/continued RAF and preserved DOM; never hide visible user pages/publishers/IM. No source implementation yet.
+Open-file rename EPERM remains unverified and unretried. Original RC317 timing parent exit-check failure remains preserved; valid child timing is narrower evidence. No real sends/publishes/rule modifications or screenshots in this iteration. Performance goal remains active until11:00 Beijing; system stutter is not yet accepted as resolved.

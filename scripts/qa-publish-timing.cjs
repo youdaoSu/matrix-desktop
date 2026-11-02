@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const {publishJobTiming:timing}=require('./qa-load-typescript.cjs').loadTs('client/src/components/workspace/publish-timing.ts');
+const iso=seconds=>new Date(Date.UTC(2026,9,30,0,0,seconds)).toISOString();
+const base={stage:'confirmed',createdAt:iso(0),lastAttemptAt:iso(2),executionStartedAt:iso(10),completedAt:iso(30),history:[]};
+assert.equal(timing(base).duration,20);
+assert.equal(timing({...base,acceptedAt:iso(20)}).duration,10);
+assert.equal(timing({...base,executionStartedAt:undefined}).duration,28);
+assert.equal(timing({...base,executionStartedAt:undefined}).includesQueue,true);
+assert.equal(timing({...base,executionStartedAt:undefined,history:[{stage:'preparing',at:iso(12)}]}).duration,18);
+assert.equal(timing({...base,lastAttemptAt:iso(25),history:[{stage:'preparing',at:iso(10)}]}).started,undefined);
+assert.equal(timing({...base,lastAttemptAt:iso(25)}).duration,5);
+assert.equal(timing({...base,executionStartedAt:'bad',lastAttemptAt:'bad',attemptNumber:2}).duration,undefined);
+assert.equal(timing({...base,completedAt:iso(5)}).duration,undefined);
+assert.equal(timing({...base,completedAt:undefined,history:[{stage:'confirmed',at:iso(32)}]}).duration,22);
+console.log(JSON.stringify({publicationTimingChecks:10,legacyQueueTimeLabelled:true,invalidAndOldAttemptTimesRejected:true}));

@@ -1,68 +1,44 @@
-import { createContext,createElement,useCallback,useContext,useEffect,useRef,useState,type ReactNode } from 'react';
-import type { PlatformAccount } from '@shared/api.interface';
-import { displayedCommentTime } from '@shared/douyin-monitor';
-import { getAuthToken,getUser } from '@/api';
-import { Button } from '@/components/ui/button';
+import { useMemo } from 'react';
 import { useOfficialWorkspace } from './OfficialWorkspace';
-import { loadPublishAccounts } from './publish-preferences';
-type Row={author:string;content:string;authorProfileUrl?:string;displayTime?:string};
-type Snapshot={records:Row[];capturedAt?:string;partial?:boolean;error?:string};
-type Job={key:string;owner:string;account:PlatformAccount;session:MatrixDesktopSession;running:boolean;total:number;done:number;phase:string;inventoryPartial?:boolean;snapshots:Record<string,Snapshot>};
-type MonitorContext={jobs:Job[];start(account:PlatformAccount):Promise<void>;stop(key:string):void};
-const Context=createContext<MonitorContext|null>(null);
-export function DouyinCommentMonitorProvider({children}:{children:ReactNode}){
-  const [jobs,setJobs]=useState<Job[]>([]);
-  const update=useCallback((key:string,patch:Partial<Job>)=>setJobs(items=>items.map(job=>job.key===key?{...job,...patch}:job)),[]);
-  const start=async(account:PlatformAccount)=>{
-    const owner=getUser()?.id;
-    if(!owner||!account.connectorSessionId||!window.matrixDesktop?.douyinCommentScan)throw Error('请使用新版桌面端并绑定抖音账号');
-    const key=owner+':'+account.id;
-    if(jobs.some(job=>job.key===key&&job.running))return;
-    const session=await window.matrixDesktop.preparePlatformLogin('douyin',account.connectorSessionId);
-    if('error'in session)throw Error(session.error);
-    setJobs(items=>[...items.filter(job=>job.key!==key),{key,owner,account,session,running:true,total:0,done:0,phase:'正在读取全部公开视频目录',snapshots:{}}]);
-  };
-  return <Context.Provider value={{jobs,start,stop:key=>update(key,{running:false,phase:'已暂停'})}}>{children}{jobs.filter(job=>job.running).map(job=><MonitorGuest key={job.key} job={job} update={update}/>)}</Context.Provider>;
+import { useDouyinInteractionData } from './DouyinInteractionData';
+import type { PlatformAccount } from '@shared/api.interface';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { uiPage, uiText, useWorkspacePreference } from './WorkspaceUiState';
+import { commentCountsByWork } from './comment-counts';
+import { orderDouyinWorks } from '@shared/douyin-work-order';
+export { DouyinInteractionDataProvider as DouyinCommentMonitorProvider } from './DouyinInteractionData';
+
+// The management page chooses one stable work ID, not a title or a comment's
+// incidental presence. Zero-comment and currently unavailable works stay listed.
+export function DouyinCommentWorkRail({ account, selected, onSelect }: { account: PlatformAccount | null; selected: string; onSelect(id: string): void }) {
+  const workspaceLocked = useOfficialWorkspace().jobsLocked;
+  const data = useDouyinInteractionData('comments'), entry = account ? data.entry(account, 'comments') : undefined;
+  const counts = useMemo(() => commentCountsByWork(entry?.rows || []), [entry?.rows]);
+  const scope = `${account?.id || 'none'}.${account?.connectorSessionId || ''}.${account?.nativeAccountKey || ''}`;
+  const [query, setQuery] = useWorkspacePreference(`interaction.comments.douyin.works.${scope}.query`, '', uiText);
+  const [page, setPage] = useWorkspacePreference(`interaction.comments.douyin.works.${scope}.page`, 1, uiPage);
+  const works = orderDouyinWorks(entry?.works || []).filter(w => `${w.title} ${w.platformId}`.toLowerCase().includes(query.toLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(works.length / 20)), currentPage = Math.min(page, totalPages);
+  return <aside className="matrix-interaction-posts" aria-label="关联作品列表">
+    <header><strong>作品列表</strong><span title={entry?.progress?.catalogReadError || (entry?.progress?.worksCatalogComplete === true ? '本轮作品目录已读至末页，评论继续独立同步' : '当前已发现的作品数量，并非账号作品总数')}>{entry?.works.length || 0}{entry?.progress?.catalogReadError?' · 目录暂停':entry && !entry.complete && entry.progress?.worksCatalogComplete !== true ? ' · 目录读取中' : ''}</span><Button size="sm" variant="ghost" disabled={!account || workspaceLocked || entry?.phase === '已请求刷新，已有缓存保留'} onClick={()=>{if(account){data.refresh(account,'comments');setQuery('');setPage(1);}}}>刷新作品</Button></header>
+    {account && <Input aria-label="搜索抖音作品" placeholder="搜索标题或作品编号" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} />}
+    <div className="matrix-post-list">{!account ? <p className="matrix-interaction-empty">请先选择账号，再选择作品查看评论</p> : <>{works.slice((currentPage - 1) * 20, currentPage * 20).map(work => <button type="button" key={work.platformId} data-interaction-post-id={work.platformId} aria-pressed={selected === work.platformId} className={selected === work.platformId ? 'is-active' : ''} onClick={() => onSelect(work.platformId)}>{work.coverUrl ? <img src={work.coverUrl} alt="作品封面" loading="lazy" referrerPolicy="no-referrer" onError={e => { e.currentTarget.hidden = true; }} /> : <span className="matrix-post-thumbnail">作品</span>}<div><strong>{work.title || '作品 ' + work.platformId}</strong><small title={work.readError}>{counts.get(work.platformId) || 0} 条已缓存评论{work.readError ? ' · 获取失败' : work.readComplete ? ' · 本轮已同步' : ' · 同步中'}</small></div></button>)}{!works.length && <p className="matrix-interaction-empty">{query ? '没有符合搜索的作品' : entry?.error ? '作品获取失败，已缓存的作品仍会保留' : entry?.complete ? '该账号暂无作品' : '正在读取作品列表…'}</p>}</>}</div>
+    {works.length > 20 && <footer><Button size="sm" variant="ghost" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</Button><span>{currentPage}/{totalPages}</span><Button size="sm" variant="ghost" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>下一页</Button></footer>}</aside>;
 }
-function MonitorGuest({job,update}:{job:Job;update(key:string,patch:Partial<Job>):void}){
-  const view=useRef<any>(null),started=useRef(false),alive=useRef(true),latest=useRef(job);latest.current=job;
-  useEffect(()=>{alive.current=true;const element=view.current;const pause=(ms:number)=>new Promise<void>(resolve=>{const until=Date.now()+ms;const tick=()=>{if(!alive.current||Date.now()>=until)resolve();else setTimeout(tick,200);};tick();});
-    const active=()=>alive.current&&latest.current.running&&getUser()?.id===job.owner;
-    const input=()=>({platform:'douyin' as const,sessionId:job.session.sessionId,accountId:job.account.id,webContentsId:element.getWebContentsId(),accessToken:getAuthToken()||''});
-    const run=async()=>{if(started.current)return;started.current=true;
-      try{while(active()){
-        const inventory=await window.matrixDesktop!.douyinCommentScan({...input(),operation:'inventory'});
-        if(!active())return;if(inventory.error)throw Error(inventory.error);
-        const urls=inventory.urls||[];
-        update(job.key,{total:urls.length,done:0,inventoryPartial:inventory.partial,phase:urls.length?'逐篇检查当前评论':'该账号没有可读取的公开视频'});
-        if(!urls.length){update(job.key,{running:false});return;}
-        for(let index=0;index<urls.length&&active();index++){
-          const videoUrl=urls[index],result=await window.matrixDesktop!.douyinCommentScan({...input(),operation:'scan',videoUrl});
-          if(!active())return;
-          const previous=latest.current.snapshots;
-          const snapshot=result.error?{...(previous[videoUrl]||{records:[]}),error:result.error}:{records:result.records||[],capturedAt:result.capturedAt,partial:result.partial||result.capped};
-          const snapshots={...previous,[videoUrl]:snapshot};
-          latest.current={...latest.current,snapshots};
-          update(job.key,{snapshots,done:index+1,phase:result.error?`作品读取失败：${result.error}`:`本轮已检查 ${index+1}/${urls.length} 篇作品`});
-          if(result.error?.includes('验证'))throw Error(result.error);
-          await pause(1200);
-        }
-        if(active())update(job.key,{phase:(inventory.partial?'作品目录未明确显示结束，可能不完整；':'')+'本轮完成，60 秒后更新目录并继续检查'});
-        await pause(60000);
-      }}catch(error){if(alive.current)update(job.key,{running:false,phase:error instanceof Error?error.message:'监控已暂停，请核对官方登录'});}
-    };
-    element.addEventListener('dom-ready',run);
-    return()=>{alive.current=false;element.removeEventListener('dom-ready',run);};
-  },[job.key,job.owner,job.account.id,job.session.sessionId,update]);
-  return <div aria-hidden="true" style={{position:'fixed',left:-20000,top:0,width:1280,height:900}}>{createElement('webview',{ref:view,src:'https://www.douyin.com/user/self',partition:job.session.partition,style:{display:'flex',width:'100%',height:'100%'}})}</div>;
-}
-export function DouyinCommentMonitorPanel(){
-  const monitor=useContext(Context),workspace=useOfficialWorkspace();
-  const [accounts,setAccounts]=useState<PlatformAccount[]>([]),[selected,setSelected]=useState(''),[error,setError]=useState('');
-  useEffect(()=>{let active=true;void loadPublishAccounts().then(items=>{if(active)setAccounts(items.filter(a=>a.platform==='douyin'&&a.connectorSessionId));}).catch(()=>setError('抖音账号加载失败'));return()=>{active=false;};},[]);
-  if(!monitor)return null;
-  const ownJobs=monitor.jobs.filter(job=>job.owner===getUser()?.id);
-  const rows=ownJobs.flatMap(job=>Object.entries(job.snapshots).flatMap(([videoUrl,snapshot])=>snapshot.records.map((row,index)=>({job,videoUrl,snapshot,row,index,time:displayedCommentTime(row.displayTime,snapshot.capturedAt||'')})))).sort((a,b)=>(b.time??0)-(a.time??0));
-  const openVideo=async(job:Job,url:string)=>{if(await workspace.openAccount(job.account,'manage'))setTimeout(()=>workspace.openPage('douyin-'+job.session.sessionId,url),200);};
-  return <section className="rounded-lg border bg-background p-4 space-y-3" aria-label="抖音全部视频评论监控"><h2 className="font-semibold">抖音全部公开视频 · 评论监控</h2><p className="text-xs text-muted-foreground">逐篇检查本人主页当前列出的作品，按可识别的评论时间展示新近内容。切换模块继续运行；关闭软件或退出账号会停止。分页未加载完整的作品会标注“部分评论”，不代表全量实时事件。</p><div className="flex flex-wrap gap-2"><select aria-label="选择抖音评论监控账号" className="rounded border p-2" value={selected} onChange={e=>setSelected(e.target.value)}><option value="">选择已登录抖音账号</option>{accounts.map(a=><option value={a.id} key={a.id}>{a.nickname}</option>)}</select><Button disabled={!selected} onClick={()=>{const account=accounts.find(a=>a.id===selected);if(account)void monitor.start(account).catch(e=>setError(e.message));}}>监控该账号全部视频</Button></div>{error&&<p role="alert">{error}</p>}{ownJobs.map(job=><div key={job.key} className="flex flex-wrap gap-3 items-center text-sm"><strong>{job.account.nickname}</strong><span>{job.done}/{job.total} · {job.phase}</span>{job.running&&<Button variant="outline" size="sm" onClick={()=>monitor.stop(job.key)}>暂停监控</Button>}</div>)}<div className="max-h-80 overflow-auto divide-y">{rows.map(({job,videoUrl,snapshot,row,index})=><article className="py-2 space-y-1" key={job.key+videoUrl+index}><strong>{row.author}</strong><p className="text-sm">{row.content}</p><small className="text-muted-foreground">{job.account.nickname} · {row.displayTime||'时间未识别'} · {snapshot.partial?'部分评论':'当前页已显示结束'}{snapshot.error?' · 上次读取失败，以下为旧快照':''}</small><Button size="sm" variant="ghost" onClick={()=>void openVideo(job,videoUrl)}>打开原视频处理</Button></article>)}</div></section>;
+
+// Uses the same owner-scoped monitor as the primary comments list. No hidden
+// persistent webview, nickname identity check, separate scan or manual restart.
+export function DouyinCommentMonitorPanel({ account }: { account?: PlatformAccount | null }) {
+  const workspace = useOfficialWorkspace(), data = useDouyinInteractionData('comments');
+  const accounts = workspace.accounts.filter(a => a.platform === 'douyin' && a.connectorSessionId && (!account || a.id === account.id));
+  const allWorks = accounts.flatMap(a => {const entry=data.entry(a,'comments'),counts=commentCountsByWork(entry?.rows||[]);return orderDouyinWorks(entry?.works||[]).map(w=>({...w,account:a,entry,count:counts.get(w.platformId)||0}));});
+  const [page,setPage]=useWorkspacePreference(`interaction.comments.monitor.${account?.id||'all'}.${account?.connectorSessionId||''}.page`,1,uiPage);
+  const totalPages=Math.max(1,Math.ceil(allWorks.length/100)),currentPage=Math.min(page,totalPages),works=allWorks.slice((currentPage-1)*100,currentPage*100);
+  if (!allWorks.length) return null;
+  return <section aria-label="抖音作品评论监控" className="space-y-2">
+    <h2 className="font-semibold">作品评论监控</h2><p className="text-sm text-muted-foreground">{allWorks.length} 个本机缓存作品 · 每页最多展示 100 个，不增加重复采集</p>
+    {works.length ? works.map(w => <article key={w.account.id + '/' + w.platformId} className="flex gap-3 rounded border p-3 text-sm">{w.coverUrl && <img src={w.coverUrl} alt="作品封面" loading="lazy" referrerPolicy="no-referrer" className="h-20 w-16 shrink-0 rounded object-cover" onError={e => { e.currentTarget.hidden = true; }} />}<div><a href={`https://creator.douyin.com/creator-micro/work-management/work-detail/${w.platformId}`} target="_blank" rel="noreferrer" aria-label={'查看作品首页：' + (w.title || w.platformId)}><strong>{w.title || '作品 ' + w.platformId}</strong></a><small className="block text-muted-foreground" title={w.readError}>{w.account.nickname} · 已缓存 {w.count} 条评论{w.readError ? ' · 此作品无法读取，悬停查看原因' : w.readComplete ? ' · 本轮读取完成，持续监控' : w.entry?.error ? ' · 同步暂停，已有评论保留' : ' · 正在同步'}{w.entry?.newCount ? ' · 该账号发现新评论 ' + w.entry.newCount + '条' : ''}</small></div></article>) : <p className="text-sm text-muted-foreground">作品读取成功后自动加入监控，结果直接显示在评论管理。</p>}
+    {totalPages>1&&<footer className="flex items-center gap-2"><Button size="sm" variant="outline" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>上一页</Button><span>{currentPage}/{totalPages}</span><Button size="sm" variant="outline" disabled={currentPage===totalPages} onClick={()=>setPage(currentPage+1)}>下一页</Button></footer>}
+  </section>;
 }

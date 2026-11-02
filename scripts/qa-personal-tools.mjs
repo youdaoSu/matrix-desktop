@@ -95,7 +95,7 @@ try {
     if (route === 'messages-agg') { assert.equal(await evaluate("(() => { const panel=document.querySelector('.matrix-message-panel'), sessions=document.querySelector('.matrix-message-sessions'); return !!panel && !!sessions && Math.abs(sessions.getBoundingClientRect().width/panel.getBoundingClientRect().width-.35)<.01; })()"), true); checks++; }
   }
   await navigate('/engage/followers', "!!document.querySelector('.matrix-followers-layout') && !!document.querySelector('.matrix-interaction-accounts')");
-  assert.equal(await evaluate("Math.abs(document.querySelector('.matrix-interaction-accounts').getBoundingClientRect().width-280)<1"), true); checks++;
+  assert.equal(await evaluate("Math.abs(document.querySelector('.matrix-interaction-accounts').getBoundingClientRect().width-180)<1"), true); checks++;
   await navigate('/engage/batch-tasks', "!!document.querySelector('[data-matrix-personal-tasks]') && !document.querySelector('[role=status]')");
   await click('新建待办'); await wait("document.querySelectorAll('[role=dialog] fieldset input[type=checkbox]').length === 4", 'Task account picker missing');
   await evaluate("[...document.querySelectorAll('[role=dialog] fieldset input[type=checkbox]')].slice(0,2).forEach(el=>el.click())");
@@ -110,9 +110,11 @@ try {
   await wait("!!document.querySelector('#personal-task-note')", 'Task editor missing');
   await fill('#personal-task-content', 'QA manual edited'); await fill('#personal-task-note', 'QA reviewed'); await click('保存个人待办');
   await wait("!document.querySelector('[role=dialog]') && document.querySelector('.matrix-page-content')?.innerText.includes('QA manual edited')", 'Task edit not saved'); checks++;
-  await evaluate("window.confirm=()=>false;document.querySelector('[data-task-id=\"'+localStorage.getItem('qa_task_id')+'\"] button:nth-of-type(4)').click()");
+  await evaluate("document.querySelector('[data-task-id=\"'+localStorage.getItem('qa_task_id')+'\"] button:nth-of-type(4)').click()");
+  await wait("!!document.querySelector('[role=dialog]')", 'Status confirmation missing'); await click('返回');
   assert.equal((await api('GET', '/api/personal/tasks?pageSize=100')).body.data.items.find(t=>t.id===savedTasks[0].id).status, 'pending'); checks++;
-  await evaluate("window.confirm=()=>true;document.querySelector('[data-task-id=\"'+localStorage.getItem('qa_task_id')+'\"] button:nth-of-type(4)').click()");
+  await evaluate("document.querySelector('[data-task-id=\"'+localStorage.getItem('qa_task_id')+'\"] button:nth-of-type(4)').click()");
+  await wait("!!document.querySelector('[role=dialog]')", 'Status confirmation missing'); await click('确认记录状态');
   await wait(`!document.querySelector('[data-task-id="${savedTasks[0].id}"]')`, 'Completed manual task stayed pending');
   assert.equal((await api('GET', '/api/personal/tasks?pageSize=100')).body.data.items.find(t=>t.id===savedTasks[0].id).status, 'done'); checks++;
   await navigate('/analytics/notify-monitor', "!!document.querySelector('[data-matrix-personal-tasks]') && !document.querySelector('[role=status]')");

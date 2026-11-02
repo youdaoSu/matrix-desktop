@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, FileText, Heart, MessageCircle, MessageSquare, RefreshCw, Users } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { axiosForBackend } from '@/api';
+import { axiosForBackend, getAuthToken, getUser } from '@/api';
+import { followerPresentation, type FollowerCoverage } from '@shared/account-metrics';
+import { useOwnerRequest } from '@/components/workspace/use-owner-request';
+import { useAccountDataRefresh } from '@/components/workspace/account-data-events';
 import { Alert, AlertDescription } from '@client/src/components/ui/alert';
 import { Button } from '@client/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@client/src/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
-import { toast } from 'sonner';
+import { uiOneOf, useWorkspacePreference } from '@/components/workspace/WorkspaceUiState';
+import DesktopRecordOverview from '@/components/workspace/DesktopRecordOverview';
 
 interface Overview {
   totalFollowers: number;
@@ -14,67 +18,74 @@ interface Overview {
   totalEngagement: number;
   totalMessages: number;
   totalComments: number;
+  followerCoverage?: FollowerCoverage;
 }
 
 interface FollowerPoint { date: string; followers: number; newFollowers: number }
 interface EngagementPoint { date: string; likes: number; comments: number; shares: number }
-interface AccountComparison { accountId: string; nickname?: string; platform: string; followers: number; posts: number; engagement: number }
+interface AccountComparison { accountId: string; nickname?: string; platform: string; followers: number|null; followersObservedAt?:string; posts: number; engagement: number }
 interface RankingItem { id: string; title?: string; platform: string; accountNickname?: string; engagement: number; likeCount: number; commentCount: number; shareCount: number }
 
-const emptyOverview: Overview = { totalFollowers: 0, totalPosts: 0, totalEngagement: 0, totalMessages: 0, totalComments: 0 };
 const platformLabels: Record<string, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
 
-function errorMessage(error: any, fallback: string) {
-  return error?.response?.data?.error?.message || error?.response?.data?.message || error?.message || fallback;
-}
-
 export default function AnalyticsPage() {
-  const [days, setDays] = useState('30');
+  return <AnalyticsWorkspace key={getUser()?.id || 'signed-out'} />;
+}
+function AnalyticsWorkspace() {
+  const [days, setDays] = useWorkspacePreference<string>('analytics.days', '30', uiOneOf(['7', '30', '90']));
   const [loading, setLoading] = useState(true);
-  const [overview, setOverview] = useState<Overview>(emptyOverview);
+  const [overview, setOverview] = useState<Overview>();
   const [followers, setFollowers] = useState<FollowerPoint[]>([]);
   const [engagement, setEngagement] = useState<EngagementPoint[]>([]);
   const [accounts, setAccounts] = useState<AccountComparison[]>([]);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
+  const [loadErrors,setLoadErrors]=useState<string[]>([]);
+  const beginRequest=useOwnerRequest(),owner=getUser()?.id,token=getAuthToken();
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const request=beginRequest();if(!request.authorized){request.finish();setLoading(false);return;}
     setLoading(true);
-    try {
-      const [overviewResult, followerResult, engagementResult, accountResult, rankingResult] = await Promise.all([
-        axiosForBackend.get('/api/analytics/overview'),
-        axiosForBackend.get('/api/analytics/follower-trend', { params: { days } }),
-        axiosForBackend.get('/api/analytics/engagement-trend', { params: { days } }),
-        axiosForBackend.get('/api/analytics/account-comparison'),
-        axiosForBackend.get('/api/analytics/content-ranking', { params: { limit: 10 } }),
-      ]);
-      setOverview(overviewResult.data?.data || emptyOverview);
-      setFollowers(followerResult.data?.data || []);
-      setEngagement(engagementResult.data?.data || []);
-      setAccounts(accountResult.data?.data || []);
-      setRanking(rankingResult.data?.data || []);
-    } catch (error: any) {
-      toast.error(errorMessage(error, '加载真实统计数据失败'));
-    } finally {
-      setLoading(false);
-    }
-  };
+    const labels=['统计概览','粉丝记录趋势','内容互动记录','账号对比','内容排行'];
+    const results=await Promise.allSettled([
+      axiosForBackend.get('/api/analytics/overview',{signal:request.signal}),
+      axiosForBackend.get('/api/analytics/follower-trend',{params:{days},signal:request.signal}),
+      axiosForBackend.get('/api/analytics/engagement-trend',{params:{days},signal:request.signal}),
+      axiosForBackend.get('/api/analytics/account-comparison',{signal:request.signal}),
+      axiosForBackend.get('/api/analytics/content-ranking',{params:{limit:10},signal:request.signal}),
+    ]);request.finish();if(!request.current())return;
+    const setters=[setOverview,setFollowers,setEngagement,setAccounts,setRanking];
+    const errors:string[]=[];
+    results.forEach((result,index)=>{
+      if(result.status==='rejected'){errors.push(labels[index]);return;}
+      const data=result.value.data?.data;
+      if(index===0){if(data&&['totalPosts','totalEngagement','totalMessages','totalComments'].every(key=>Number.isSafeInteger(data[key])&&data[key]>=0))setOverview(data);else errors.push(labels[index]);}
+      else if(Array.isArray(data)) (setters[index] as (value: unknown[])=>void)(data);
+      else errors.push(labels[index]);
+    });
+    setLoadErrors(errors);setLoading(false);
+  },[beginRequest,days]);
 
-  useEffect(() => { void load(); }, [days]);
+  useEffect(()=>{setOverview(undefined);setFollowers([]);setEngagement([]);setAccounts([]);setRanking([]);setLoadErrors([]);void load();},[load,owner,token]);
+  useAccountDataRefresh(load);
+  const followerMetric=followerPresentation(overview?.followerCoverage);
 
   const cards = useMemo(() => [
-    { label: '粉丝总量', value: overview.totalFollowers, icon: Users },
-    { label: '内容总数', value: overview.totalPosts, icon: FileText },
-    { label: '累计互动', value: overview.totalEngagement, icon: Heart },
-    { label: '私信记录', value: overview.totalMessages, icon: MessageSquare },
-    { label: '评论记录', value: overview.totalComments, icon: MessageCircle },
-  ], [overview]);
+    { label: '已采集粉丝小计', value: followerMetric.value, icon: Users },
+    { label: '本地内容记录', value: overview?.totalPosts, icon: FileText },
+    { label: '已保存互动数', value: overview?.totalEngagement, icon: Heart },
+    { label: '本地私信记录', value: overview?.totalMessages, icon: MessageSquare },
+    { label: '本地评论记录', value: overview?.totalComments, icon: MessageCircle },
+  ], [overview,followerMetric.value]);
 
   return (
-    <div className="space-y-6">
+    <div className="matrix-analytics space-y-6">
+      <DesktopRecordOverview />
       <Alert className="border-primary/20 bg-primary/5">
         <BarChart3 className="h-4 w-4 text-primary" />
-        <AlertDescription>本页只展示本地数据库已同步的真实记录；平台尚未授权的数据会显示为 0，不再生成演示数值。</AlertDescription>
+        <AlertDescription>本页汇总当前用户已保存的记录，不等同于平台实时总量。粉丝未采集时显示“—”，真实采集到 0 才显示 0；部分采集只显示已采集小计。互动趋势按内容日期汇总，不代表当日新增互动。</AlertDescription>
       </Alert>
+      {loadErrors.length>0&&<div role="alert" className="rounded border border-orange-300 p-3 text-sm">未能刷新：{loadErrors.join('、')}。没有把失败请求记作 0；已有部分保留上次结果，可重新刷新。</div>}
+      <p className="text-xs text-muted-foreground" role="status">{followerMetric.detail}{overview?.followerCoverage?.latestObservedAt?`；最近样本 ${new Date(overview.followerCoverage.latestObservedAt).toLocaleString('zh-CN')}`:''}</p>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -98,7 +109,7 @@ export default function AnalyticsPage() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         {cards.map(({ label, value, icon: Icon }) => (
-          <Card key={label}><CardContent className="p-4"><div className="flex items-center justify-between text-xs text-muted-foreground"><span>{label}</span><Icon className="h-4 w-4" /></div><div className="mt-3 text-2xl font-bold">{Number(value || 0).toLocaleString()}</div></CardContent></Card>
+          <Card key={label}><CardContent className="p-4"><div className="flex items-center justify-between text-xs text-muted-foreground"><span>{label}</span><Icon className="h-4 w-4" /></div><div className="mt-3 text-2xl font-bold">{loading||value===undefined||value===null?'—':value.toLocaleString()}</div></CardContent></Card>
         ))}
       </div>
 
@@ -106,13 +117,13 @@ export default function AnalyticsPage() {
         <Card>
           <CardHeader><CardTitle className="text-base">粉丝记录趋势</CardTitle></CardHeader>
           <CardContent className="h-72">
-            {followers.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={followers}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend /><Line type="monotone" dataKey="followers" name="累计记录" stroke="hsl(221 83% 53%)" /><Line type="monotone" dataKey="newFollowers" name="新增记录" stroke="hsl(130 54% 42%)" /></LineChart></ResponsiveContainer> : <Empty text="当前没有已同步的粉丝记录" />}
+            {followers.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={followers}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend /><Line isAnimationActive={false} type="monotone" dataKey="followers" name="累计记录" stroke="hsl(221 83% 53%)" /><Line isAnimationActive={false} type="monotone" dataKey="newFollowers" name="新增记录" stroke="hsl(130 54% 42%)" /></LineChart></ResponsiveContainer> : <Empty text="当前没有已同步的粉丝记录" />}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">内容互动趋势</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">按内容日期汇总互动</CardTitle></CardHeader>
           <CardContent className="h-72">
-            {engagement.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={engagement}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend /><Line type="monotone" dataKey="likes" name="点赞" stroke="hsl(350 85% 60%)" /><Line type="monotone" dataKey="comments" name="评论" stroke="hsl(26 90% 49%)" /><Line type="monotone" dataKey="shares" name="分享" stroke="hsl(200 90% 55%)" /></LineChart></ResponsiveContainer> : <Empty text="当前没有已同步的内容互动记录" />}
+            {engagement.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={engagement}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend /><Line isAnimationActive={false} type="monotone" dataKey="likes" name="点赞" stroke="hsl(350 85% 60%)" /><Line isAnimationActive={false} type="monotone" dataKey="comments" name="评论" stroke="hsl(26 90% 49%)" /><Line isAnimationActive={false} type="monotone" dataKey="shares" name="分享" stroke="hsl(200 90% 55%)" /></LineChart></ResponsiveContainer> : <Empty text="当前没有已同步的内容互动记录" />}
           </CardContent>
         </Card>
       </div>
@@ -120,8 +131,9 @@ export default function AnalyticsPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">账号对比</CardTitle></CardHeader>
+          {!!accounts.length&&<p className="px-6 text-xs text-muted-foreground">粉丝已采集 {accounts.filter(account=>account.followers!==null).length}/{accounts.length} 个账号；未采集账号不按 0 绘制。</p>}
           <CardContent className="h-72">
-            {accounts.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={accounts}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="nickname" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend /><Bar dataKey="followers" name="粉丝" fill="hsl(221 83% 53%)" /><Bar dataKey="engagement" name="互动" fill="hsl(26 90% 49%)" /></BarChart></ResponsiveContainer> : <Empty text="请先绑定并同步平台账号" />}
+            {accounts.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={accounts}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="nickname" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend /><Bar isAnimationActive={false} dataKey="followers" name="粉丝" fill="hsl(221 83% 53%)" /><Bar isAnimationActive={false} dataKey="engagement" name="互动" fill="hsl(26 90% 49%)" /></BarChart></ResponsiveContainer> : <Empty text="请先绑定并同步平台账号" />}
           </CardContent>
         </Card>
         <Card>

@@ -16,6 +16,7 @@ release/
 .env
 .env.*
 !.env.*.example
+mail-settings.env
 
 # Logs
 *.log
@@ -74,3 +75,16 @@ pnpm-lock.yaml
 .npm_cache
 .spark/
 .swc-cache/
+
+# Local release outputs and QA artifacts
+/release-*/
+/qa-output/
+# Account stores, private keys and backup archives
+*.sqlite
+*.sqlite3
+*.db
+*.pfx
+*.p12
+*.key
+*.pem
+/backups/

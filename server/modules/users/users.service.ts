@@ -114,39 +114,14 @@ export class UsersService {
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
-    const users = await this.db
-      .select()
-      .from(appUsers)
-      .where(eq(appUsers.id, userId))
-      .limit(1);
-
-    if (users.length === 0) {
-      throw new NotFoundException('用户不存在');
-    }
-
-    const user = users[0];
-    const isOldPasswordValid = await bcrypt.compare(dto.oldPassword, user.passwordHash);
-    if (!isOldPasswordValid) {
-      throw new BadRequestException('原密码错误');
-    }
-
-    if (dto.oldPassword === dto.newPassword) {
-      throw new BadRequestException('新密码不能与原密码相同');
-    }
-
-    const newPasswordHash = await bcrypt.hash(dto.newPassword, 10);
-    await this.db
-      .update(appUsers)
-      .set({ passwordHash: newPasswordHash })
-      .where(eq(appUsers.id, userId));
-
-    await this.db.insert(operationLogs).values({
-      operatorType: 'user',
-      operatorId: userId,
-      action: 'change_password',
-      targetType: 'user',
-      targetId: userId,
-      detail: '修改密码',
+    await this.db.transaction(async tx => {
+      const [user] = await tx.select().from(appUsers).where(eq(appUsers.id, userId)).limit(1).for('update');
+      if (!user) throw new NotFoundException('用户不存在');
+      if (!await bcrypt.compare(dto.oldPassword, user.passwordHash)) throw new BadRequestException('原密码错误');
+      if (dto.oldPassword === dto.newPassword) throw new BadRequestException('新密码不能与原密码相同');
+      const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+      await tx.update(appUsers).set({ passwordHash, authVersion: sql`${appUsers.authVersion} + 1` }).where(eq(appUsers.id, userId));
+      await tx.insert(operationLogs).values({ operatorType: 'user', operatorId: userId, action: 'change_password', targetType: 'user', targetId: userId, detail: '修改密码；旧登录已失效' });
     });
   }
 

@@ -1,0 +1,32 @@
+// Actual main IPC + encrypted worker; all identities, storage and events are synthetic.
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto'),{Worker}=require('node:worker_threads');
+const {registerAccountOperations}=require('../desktop/account-operations.cjs'),{cipher}=require('../desktop/account-operations-crypto.cjs');
+(async()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'yx-paged-intake-')),owner=crypto.randomUUID(),workspaceId=crypto.randomUUID(),codec=cipher(crypto.randomBytes(32),'synthetic');
+ const accounts=[0,1].map(n=>({id:crypto.randomUUID(),platform:'douyin',nickname:'fixture-'+n,connectorSessionId:crypto.randomUUID(),nativeAccountKey:'fixture-'+n})),sender={},handlers=new Map(),buffered=[];
+ let host,hold=false,platformActions=0,checks=0,activeRpc=0,peakRpc=0,completed=0;
+ const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},flush=()=>new Promise(r=>setImmediate(r)),noPlatform=()=>{platformActions++;throw Error('No platform actions');};
+ const api=(command,args,accountIds=accounts.map(a=>a.id))=>handlers.get('matrix:account-operations')({sender},{command,args,accountIds,accessToken:'fixture',workspaceId});
+ const rows=(start,count)=>Array.from({length:count},(_,i)=>({platformId:String(800000000000000000n+BigInt(start+i)),workId:'777777777777777777',platformUserId:String(start+i+1000),author:'synthetic',content:'event '+(start+i),displayTime:new Date(Date.now()+1000).toISOString()}));
+ const observe=(records,index=0)=>host.observe({userId:owner,account:accounts[index],ownUid:'100',records});
+ const release=()=>{hold=false;for(const send of buffered.splice(0))send();};
+ const waitHeld=async()=>{const until=Date.now()+5000;while(!buffered.length&&Date.now()<until)await flush();assert(buffered.length,'fixture did not intercept an observation');checks++;};
+ try{
+  host=registerAccountOperations({workerFactory:(file,options)=>{const worker=new Worker(file,options),ids=new Map(),post=worker.postMessage.bind(worker);worker.postMessage=value=>{if(['observe','observe-batch'].includes(value.command)){ids.set(value.id,value.command==='observe'?1:value.args.length);activeRpc++;peakRpc=Math.max(peakRpc,activeRpc);if(hold){buffered.push(()=>post(value));return;}}return post(value);};worker.on('message',value=>{if(value.type==='result'&&ids.has(value.id)){completed+=ids.get(value.id);ids.delete(value.id);activeRpc--;}});return worker;},ipcMain:{handle:(key,value)=>handlers.set(key,value)},getWindow:()=>({webContents:sender,isDestroyed:()=>false}),authenticate:async(token,id)=>{assert.equal(token,'fixture');const account=id?accounts.find(a=>a.id===id):undefined;if(id&&!account)throw Error('Unknown fixture account');return{userId:owner,...(account?{account}:{})};},safeStorage:{isEncryptionAvailable:()=>true,encryptString:codec.protect,decryptString:codec.unprotect},userData:directory,getInbox:noPlatform,getInteractions:noPlatform});
+  eq((await api('configure')).result,true);
+  const original=rows(0,350),start=performance.now(),first=await observe(original);eq(first.status,'complete');eq(first.confirmed,350);eq(first.unprocessed,0);eq((await api('snapshot')).result.totalMessages,350);
+  eq((await observe(original)).confirmed,350);eq((await api('snapshot')).result.totalMessages,350);
+  const parallel=await Promise.all([observe(rows(1000,600)),observe(rows(2000,600),1),api('snapshot'),api('heartbeat')]);
+  eq(parallel.slice(0,2).map(p=>[p.status,p.confirmed]),[['complete',600],['complete',600]]);eq(parallel[2].error,undefined);eq(parallel[3].result,true);eq((await api('snapshot')).result.totalMessages,1550);eq(peakRpc,1);
+  // Producer cap is explicit and bounded, while all admitted pages finish.
+  hold=true;const pages=Array.from({length:8},(_,i)=>observe(rows(3000+i*16,16)));const refused=await observe(rows(4000,1));eq(refused.status,'partial');await waitHeld();release();eq((await Promise.all(pages)).every(p=>p.status==='complete'&&p.confirmed===16),true);eq((await api('snapshot')).result.totalMessages,1678);
+  // Failed batch preserves valid neighbors, stops before the next batch, and
+  // never describes uncertain processing as either successful or replayable.
+  const malformed=rows(5000,32);malformed[5].content='x'.repeat(100001);const partial=await observe(malformed);eq(partial.status,'partial');eq(partial.confirmed,0);eq(partial.unconfirmed,16);eq(partial.unprocessed,16);eq((await api('snapshot')).result.totalMessages,1693);
+  const ignored=rows(6000,4);ignored[0].displayTime='2000-01-01';ignored[1].platformUserId='';ignored[2].authorIdentityAvailable=false;ignored[3].content=' ';eq((await observe(ignored)).skipped,4);eq((await api('snapshot')).result.totalMessages,1693);
+  hold=true;const rebound=observe(rows(7000,600),1);await waitHeld();const controller=new AbortController(),aborted=host.observe({userId:owner,account:accounts[0],ownUid:'100',records:rows(9000,20),signal:controller.signal});await flush();controller.abort();const cancelled=await aborted;eq(cancelled.status,'partial');eq(cancelled.confirmed,0);eq(cancelled.unprocessed,20);eq((await api('configure',undefined,[accounts[0].id])).result,true);release();const revoked=await rebound;eq(revoked.status,'partial');eq(revoked.confirmed,0);eq(revoked.unprocessed+revoked.unconfirmed,600);eq((await api('snapshot')).result.totalMessages,1693);
+  eq((await api('configure')).result,true);hold=true;const stopped=observe(rows(8000,600));await waitHeld();const closing=host.close();let timer;const closedReceipt=await Promise.race([stopped,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Admission did not settle on close')),1000))]).finally(()=>clearTimeout(timer));eq(closedReceipt.status,'partial');eq(closedReceipt.confirmed,0);eq(closedReceipt.unconfirmed+closedReceipt.unprocessed,600);release();await closing;host=undefined;
+  eq(platformActions,0);eq(activeRpc,0);
+  console.log(JSON.stringify({passed:true,checks,initialInput:350,initialStored:350,concurrentPages:[600,600],durableBeforeClose:1693,peakObservationRpc:peakRpc,completedObservationRows:completed,elapsedMs:performance.now()-start,closeAndRebindSettle:true,realPlatformActions:0}));
+ }finally{release();await host?.close();assert.equal(path.dirname(fs.realpathSync(directory)),fs.realpathSync(os.tmpdir()));assert(path.basename(directory).startsWith('yx-paged-intake-'));fs.rmSync(directory,{recursive:true,force:true});}
+})().catch(error=>{console.error(error);process.exitCode=1;});

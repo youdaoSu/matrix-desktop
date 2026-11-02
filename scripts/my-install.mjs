@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 矩效 Matrix 自定义安装器：绕过 npm 的不稳定网络，用 node 直连稳定下载
+// 远效 自定义安装器：绕过 npm 的不稳定网络，用 node 直连稳定下载
 import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
+import { openPlatformDirectory } from '@/components/workspace/AdditionalPlatformWorkspaces';
 import {
   Plus,
   Search,
@@ -620,7 +621,7 @@ const AccountsPage = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-152px)] min-h-[520px]">
+    <div data-account-management className="flex flex-col h-[calc(100vh-152px)] min-h-[520px]">
       {/* 平台接入状态 */}
       <Alert
         variant="default"
@@ -811,6 +812,7 @@ const AccountsPage = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
 
+              {workspace.tabs.some(tab => !tab.background && tab.scope === '/accounts') && <Button variant="outline" onClick={() => workspace.show('manage')}>继续账号页面</Button>}
               <Button onClick={() => setBindDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-1" />
                 绑定账号
@@ -1511,20 +1513,22 @@ const AccountsPage = () => {
               </div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground leading-6">
-              <p>1. 点击上方平台，直接在矩效内显示官方登录页。</p>
-              <p>2. 按官方页面扫码登录；小红书创作后台当前使用手机号短信登录。</p>
-              <p>3. 登录成功后，确认账号信息并完成绑定。</p>
-              <p className="mt-2 text-xs">二维码由官方实时提供；失效后可刷新登录页。矩效不会生成仿制二维码，也不会获取手机验证码。</p>
+              <p>1. 点击上方平台，直接在远效内显示官方登录页。</p>
+              <p>2. 根据官方页扫码或短信登录；遇到本人验证需要你本人完成，远效不会绕过验证。</p>
+              <p>3. 稳定识别到本人昵称和头像后自动绑定；仅收到手机通知或保存工作区不算登录成功。</p>
+              <p>视频号：Windows 原生 Edge 内嵌，首次使用新会话需要扫码。B站：从同一会话的官方个人中心核对本人昵称。</p>
+              <p className="mt-2 text-xs">二维码由官方实时提供；失效后可刷新登录页。远效不会生成仿制二维码，也不会获取手机验证码。</p>
             </div>
           </div>
           <DialogFooter>
+            <Button variant="outline" onClick={() => { setBindDialogOpen(false); openPlatformDirectory(); }}>更多平台（29 类）</Button>
             <Button variant="outline" onClick={() => setBindDialogOpen(false)}>取消</Button>
             <Button
               className={window.matrixDesktop?.isDesktop ? "hidden" : undefined}
               disabled={startingOAuth || !platformAvailable(bindPlatform)}
               onClick={() => void startOAuth(bindPlatform)}
             >
-              {startingOAuth ? '正在打开…' : window.matrixDesktop?.isDesktop ? '在矩效中打开官方授权' : '前往官方授权'}
+              {startingOAuth ? '正在打开…' : window.matrixDesktop?.isDesktop ? '在远效中打开官方授权' : '前往官方授权'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1549,7 +1553,7 @@ const AccountsPage = () => {
               disabled={startingOAuth || !reAuthAccount || !platformAvailable(reAuthAccount.platform)}
               onClick={() => reAuthAccount && void startOAuth(reAuthAccount.platform, reAuthAccount.connectorSessionId, 'reauthorize')}
             >
-              {startingOAuth ? '正在打开…' : window.matrixDesktop?.isDesktop ? '在矩效中重新授权' : '前往官方重新授权'}
+              {startingOAuth ? '正在打开…' : window.matrixDesktop?.isDesktop ? '在远效中重新授权' : '前往官方重新授权'}
             </Button>
           </DialogFooter>
         </DialogContent>

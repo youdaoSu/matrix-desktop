@@ -1,0 +1,65 @@
+RC311 candidate: interaction loading responsiveness (2026-11-01)
+
+Status: RC311 installed and startup verified on 2026-11-01 around 02:12 Beijing.
+All 228 source suites, type checking and 77 packaged checks passed. Normal app
+shutdown preceded the backup of 26331 files / 571677030 bytes; all file hashes
+were verified. Backup: D:/MatrixUserBackups/before-update-rc.311-20261101-020955.
+Installed data and original protected key were verified unchanged before launch.
+Native startup proof confirms version 2.10.0-rc.311 and HTTP 200 for local HTML,
+bundle /assets/index-uNa8q77I.js and favicon. No platform publish actions occurred.
+Actual sustained interaction-loading responsiveness still requires validation;
+isolated benchmarks below are not proof that all live mouse stutter is resolved.
+User deadline: Beijing 2026-11-01 11:00. Persistent loading lag, rather than only
+a short route transition, is the priority. No real test messages/posts are sent.
+
+Changes:
+1. Inbox sidebar retains every conversation in data but mounts visible rows plus
+   overscan. Memoized projection and stable thread references avoid status-only
+   rebuilding. Keyboard navigation, selected-thread restoration and scroll anchors
+   remain available. This does not virtualize every message timeline.
+2. Read indexes retain unchanged conversation buckets across archive revisions.
+   Int64 ordering, hidden/control records, removals and reordering are compared
+   against a fresh index. No unread state, account identity or cursors are changed.
+3. Large inbox saves use asynchronous level-1 gzip before the existing OS
+   encryption. New envelope YXINBOX-GZIP-1 is lossless and bounded on decode.
+   Legacy JSON remains readable; incompressible/small data retains legacy format.
+   Atomic fsync/replace, rollback, cancellation and ACK ordering remain enforced.
+   Older app builds cannot read the new envelope: rollback needs the matched
+   pre-update backup. Keys are not replaced and no plaintext archive is written.
+
+Measured isolated evidence, not a claim of resolved whole-machine lag:
+- 5000 synthetic conversations: 20000 descendants / 5000 buttons became
+  45 descendants / 11 buttons in the same initial viewport. First observed max
+  heartbeat gap 537 ms became 29 ms. Initial mount timing includes a 60 ms
+  settling wait, so it is not a pure render benchmark.
+- 51200 synthetic messages, 24 revisions: read-index median 34.07 -> 19.59 ms;
+  total 839.32 -> 485.01 ms. 24 unchanged buckets retained instead of zero.
+- Actual Electron 33 safeStorage, 42000 synthetic messages, four saves:
+  archive 23432920 -> 1215470 bytes; encryption 45.29-68.05 -> 2.56-3.52 ms;
+  total save wall time 928.28 -> 763.71 ms; max heartbeat gap 93.42 -> 46.28 ms.
+- Plain Node mock encryption did not benefit: save 108.96 -> 131.87 ms.
+  Compression trades CPU work for smaller synchronous OS crypto and disk writes;
+  no blanket claim of faster processing on every machine or lower resident RAM.
+- Startup decompression is bounded but remains synchronous; image-cache I/O and
+  broader comment/follower loading still require further profiling.
+
+Failures retained:
+- Initial virtual list useRef type errors fixed before the passing type check.
+- An old async-archive fixture lacked the now-required accountOperations shutdown
+  stub and failed with finish is not a function. The stub was corrected; product
+  shutdown code was not changed. The corrected 64-check fixture passed.
+- Early after-compression fixture output still used the obsolete label
+  byteIdenticalFormat. It checked decoded equality, not unchanged physical format.
+  The runner now emits exactDecodedArchive and legacyReadPreserved instead.
+
+Disk cleanup separately authorized by the user:
+Deleted 258 retired RC214-300 generated targets (72829563930 logical bytes) and
+397 legacy release-next generated targets (28895724544 bytes): total
+101725288474 bytes (~101.7 GB / 94.7 GiB). Exact target/ancestor checks, no links,
+running-executable exclusion and installed RC310 archive identity were verified.
+Source, installed app, RC309/310 rollback installers, keys, messages, media and
+all business backups remain. Small historical build metadata remains; references
+to removed old binaries in historical reports no longer imply files are present.
+Inventory found 58.885 GiB of older internal backups, which were not deleted.
+Plans/results are matrix-rc311-retired-build-* and matrix-rc311-legacy-build-* in
+D:/codexworck/软件.

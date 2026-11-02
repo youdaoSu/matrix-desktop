@@ -11,7 +11,7 @@ export default function SettingsDataPage() {
 
   const createBackup = async () => {
     if (!window.matrixDesktop?.isDesktop) {
-      toast.error('请在矩效桌面版中使用数据库备份');
+      toast.error('请在远效桌面版中使用数据库备份');
       return;
     }
     setBackingUp(true);
@@ -28,7 +28,7 @@ export default function SettingsDataPage() {
 
   const openDataFolder = async () => {
     if (!window.matrixDesktop?.isDesktop) {
-      toast.error('请在矩效桌面版中打开数据目录');
+      toast.error('请在远效桌面版中打开数据目录');
       return;
     }
     const result = await window.matrixDesktop.openDataFolder();
@@ -37,14 +37,14 @@ export default function SettingsDataPage() {
 
   const restoreBackup = async () => {
     if (!window.matrixDesktop?.isDesktop) {
-      toast.error('请在矩效桌面版中恢复数据库备份');
+      toast.error('请在远效桌面版中恢复数据库备份');
       return;
     }
     setRestoring(true);
     try {
       const result = await window.matrixDesktop.restoreDatabaseBackup();
       if (result.error) toast.error(result.error);
-      else if (result.restored) toast.success('恢复完成，矩效正在重新启动');
+      else if (result.restored) toast.success('恢复完成，远效正在重新启动');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '恢复失败');
     } finally {

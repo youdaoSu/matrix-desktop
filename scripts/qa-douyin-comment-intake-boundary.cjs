@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+const {registerDouyinInteractions}=require('../desktop/douyin-interactions.cjs');
+(async()=>{
+ let checks=0,clock=10000,owner='fixture-owner',handler,calls=0,callbacks=0,release,mode='wait',aborted=false;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},flush=()=>new Promise(r=>setImmediate(r));
+ const account={id:'00000000-0000-4000-8000-000000000001',platform:'douyin',connectorSessionId:'00000000-0000-4000-8000-000000000002',nativeAccountKey:'synthetic'},webContents={},ownUid='100',workId='777777777777777777';
+ const service=registerDouyinInteractions({ipcMain:{handle:(name,fn)=>{if(name==='matrix:douyin-interactions')handler=fn;}},getWindow:()=>({webContents}),authenticate:async(_token,id)=>{eq(id,account.id);return{userId:owner,account:{...account}};},session:{fromPartition:()=>({})},now:()=>clock,transportFactory:async()=>({ownUid,close(){},async readWeb(kind,args){calls++;if(kind==='works')return{aweme_list:[{aweme_id:workId,author:{uid:ownUid},desc:'synthetic'}],has_more:0};const n=Number(args.cursor||0)+1;return{comments:[{cid:String(800000000000000000n+BigInt(n)),aweme_id:workId,text:'synthetic '+n,create_time:1793390000,user:{uid:'200',nickname:'synthetic'}}],has_more:1,cursor:String(n)};}}),onComments:async source=>{if(!source.records.length)return;callbacks++;if(mode==='throw')throw Error('private-fixture-error');if(mode==='timeout')return new Promise(resolve=>source.signal.addEventListener('abort',()=>{aborted=true;resolve({kind:'operations-intake',status:'partial'});},{once:true}));if(mode==='partial')return{kind:'operations-intake',status:'partial',received:1,eligible:1,confirmed:0,unconfirmed:1,unprocessed:0,skipped:-1,privateValue:'must-not-return'};return new Promise(resolve=>release=()=>resolve({kind:'operations-intake',status:'complete',received:1,eligible:1,confirmed:1,unconfirmed:0,unprocessed:0,skipped:0}));}});
+ const input={accessToken:'synthetic',accountId:account.id,kind:'comments'},event={sender:webContents};
+ try{
+  const catalog=await handler(event,input);eq(catalog.error,undefined);assert(catalog.nextCursor);checks++;
+  clock+=5000;let settled=false;const pending=handler(event,{...input,cursor:catalog.nextCursor}).then(value=>{settled=true;return value;});
+  for(let i=0;i<100&&!release;i++)await flush();eq(typeof release,'function');eq(settled,false);const count=calls;
+  clock+=5000;assert((await handler(event,{...input,cursor:catalog.nextCursor})).error);checks++;eq(calls,count);release();const page=await pending;eq(page.automationIntake.status,'complete');eq(page.automationIntake.confirmed,1);
+  clock+=5000;const replay=await handler(event,{...input,cursor:catalog.nextCursor});eq(replay,page);eq(calls,count);eq(callbacks,1);
+  mode='partial';clock+=5000;const partial=await handler(event,{...input,cursor:page.nextCursor});eq(partial.error,undefined);eq(partial.records.length,1);eq(partial.automationIntake,{status:'partial',received:1,eligible:1,confirmed:0,unconfirmed:1,unprocessed:0});
+  clock+=5000;eq(await handler(event,{...input,cursor:page.nextCursor}),partial);eq(callbacks,2);
+  mode='throw';clock+=5000;const failed=await handler(event,{...input,cursor:partial.nextCursor});eq(failed.error,undefined);eq(failed.records.length,1);eq(failed.automationIntake,{status:'partial'});eq(JSON.stringify(failed).includes('private-fixture-error'),false);
+  mode='timeout';clock+=5000;const timeoutStarted=performance.now(),timed=await handler(event,{...input,cursor:failed.nextCursor});eq(aborted,true);eq(timed.error,undefined);eq(timed.records.length,1);eq(timed.automationIntake,{status:'partial'});assert(performance.now()-timeoutStarted>=11000);checks++;
+  mode='wait';release=undefined;clock+=5000;const changed=handler(event,{...input,cursor:timed.nextCursor});for(let i=0;i<100&&!release;i++)await flush();eq(typeof release,'function');owner='other-fixture-owner';release();const denied=await changed;assert(denied.error);checks++;eq(denied.records,undefined);eq(denied.automationIntake,undefined);
+  console.log(JSON.stringify({passed:true,checks,awaitsIntakeBeforeReturning:true,cachedReplayDoesNotReplayIntake:true,partialRetainsReadRecords:true,ownerChangeDenied:true,actualTwelveSecondIntakeTimeout:true,realPlatformActions:0}));
+ }finally{service.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

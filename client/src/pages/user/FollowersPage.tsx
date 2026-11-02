@@ -1,69 +1,79 @@
 import { useEffect, useRef, useState } from 'react';
+import { RefreshCw, Search } from 'lucide-react';
+import type { FollowerRecord, PlatformAccount } from '@shared/api.interface';
+import { axiosForBackend } from '@/api';
 import { InteractionAccountRail } from '@/components/workspace/InteractionPanels';
 import { OfficialInteractionManager } from '@/components/workspace/OfficialInteractionManager';
-import { RefreshCw, Search, Users } from 'lucide-react';
-import type { FollowerRecord, PlatformAccount, PlatformType } from '@shared/api.interface';
-import { axiosForBackend } from '@/api';
-import { Alert, AlertDescription } from '@client/src/components/ui/alert';
-import { Avatar, AvatarFallback, AvatarImage } from '@client/src/components/ui/avatar';
-import { Badge } from '@client/src/components/ui/badge';
-import { Button } from '@client/src/components/ui/button';
-import { Card, CardContent } from '@client/src/components/ui/card';
-import { Input } from '@client/src/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@client/src/components/ui/table';
+import { InteractionLiveFeed } from '@/components/workspace/InteractionLiveFeed';
+import { InteractionEmpty, InteractionTools, useInteractionFilters } from '@/components/workspace/InteractionUi';
+import { useInteractionAccount, useInteractionPlatform } from '@/components/workspace/InteractionState';
+import { uiText, useWorkspaceIdentity, useWorkspacePreference } from '@/components/workspace/WorkspaceUiState';
+import { useOwnerRequest } from '@/components/workspace/use-owner-request';
+import { platformLabels } from '@/components/workspace/OfficialWorkspace';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 
-const platformLabels: Record<PlatformType, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
-function errorMessage(error: any, fallback: string) { return error?.response?.data?.error?.message || error?.response?.data?.message || error?.message || fallback; }
-
 export default function FollowersPage() {
-  const [followers, setFollowers] = useState<FollowerRecord[]>([]);
-  const [accounts, setAccounts] = useState<PlatformAccount[]>([]);
-  const [search, setSearch] = useState('');
-  const [platform, setPlatform] = useState('all');
-  const [accountId, setAccountId] = useState('all');
-  const [loading, setLoading] = useState(true);
+  const [platform, setPlatform] = useInteractionPlatform();
+  const filters = useInteractionFilters(platform, 'followers');
+  const accounts = filters.accounts;
+  const [account, setAccount] = useInteractionAccount(platform, 'followers', accounts, filters.loaded);
+  const accountId = account?.id || 'all';
+  const lease = useWorkspaceIdentity();
+  const readScope = `${lease}/${platform}/${accountId}/${account?.connectorSessionId || ''}`;
+  const [snapshot, setSnapshot] = useState<{ scope: string; items: FollowerRecord[] }>({ scope: '', items: [] });
+  const followers = snapshot.scope === readScope ? snapshot.items : [];
+  const setFollowers = (items: FollowerRecord[]) => setSnapshot({ scope: readScope, items });
+  const [search, setSearch] = useWorkspacePreference(`interaction.followers.${platform}.search`, '', uiText);
+  const [selectedId, setSelectedId] = useState('');
+  const [readStatus, setReadStatus] = useState<{ scope: string; loading: boolean; error: string }>({ scope: '', loading: true, error: '' });
+  const loading = readStatus.scope !== readScope || readStatus.loading;
+  const error = readStatus.scope === readScope ? readStatus.error : '';
   const generation = useRef(0);
-
+  const beginRequest = useOwnerRequest();
   const load = async () => {
+    if (!filters.loaded || platform === 'douyin') return;
+    const request = beginRequest(); if (!request.authorized) { request.finish(); return; }
+    window.dispatchEvent(new CustomEvent('matrix:interaction-refresh-request', { detail: { kind: 'followers' } }));
     const current = ++generation.current;
-    setLoading(true);
-    setFollowers([]);
+    setReadStatus({ scope: readScope, loading: true, error: '' }); setFollowers([]); setSelectedId('');
     try {
-      const params: Record<string, string | number> = { page: 1, pageSize: 100 };
-      if (search.trim()) params.keyword = search.trim();
-      if (platform !== 'all') params.platform = platform;
-      if (accountId !== 'all') params.accountId = accountId;
-      const [followerResponse, accountResponse] = await Promise.all([
-        axiosForBackend.get('/api/platform/followers', { params }),
-        axiosForBackend.get('/api/platform/accounts', { params: { page: 1, pageSize: 100 } }),
-      ]);
-      if (current === generation.current) {
-        setFollowers(followerResponse.data?.data?.items || []);
-        setAccounts(accountResponse.data?.data?.items || []);
+      const params = { page: 1, pageSize: 100, ...(search.trim() ? { keyword: search.trim() } : {}), platform, ...(accountId !== 'all' ? { accountId } : {}) };
+      const followerResponse = await axiosForBackend.get('/api/platform/followers', { params, signal: request.signal });
+      if (request.current() && current === generation.current) {
+        const allowed = new Set(accounts.filter(item => accountId === 'all' || item.id === accountId).map(item => item.id));
+        const items = followerResponse.data?.data?.items;
+        if (!Array.isArray(items)) throw Error('粉丝响应不完整');
+        setFollowers(items.filter((item: FollowerRecord) => allowed.has(item.accountId)));
       }
-    } catch (error: any) {
-      if (current === generation.current) toast.error(errorMessage(error, '加载粉丝记录失败'));
-    } finally { if (current === generation.current) setLoading(false); }
+    } catch { if (request.current() && current === generation.current) { setReadStatus({ scope: readScope, loading: false, error: '粉丝记录加载失败，请刷新重试' }); toast.error('粉丝记录加载失败'); } }
+    finally { request.finish(); if (request.current() && current === generation.current) setReadStatus(previous => previous.scope === readScope ? { ...previous, loading: false } : previous); }
   };
-
-  useEffect(() => { void load(); return () => { generation.current++; }; }, [platform, accountId]);
-  const accountName = (id: string) => accounts.find((account) => account.id === id)?.nickname || '未知账号';
-
-  return <div className="matrix-interaction-layout matrix-followers-layout"><InteractionAccountRail platform={platform} selected={accountId === 'all' ? undefined : accountId} onSelect={a => setAccountId(a?.id || 'all')} /><section className="matrix-interaction-content space-y-3">
-    <OfficialInteractionManager account={accounts.find(item => item.id === accountId)} kind="followers" />
-    <Alert className="border-primary/20 bg-primary/5"><Users className="h-4 w-4 text-primary" /><AlertDescription>下方仅显示已通过获批平台接口同步的粉丝；上方工作台可读取可识别的官方页面快照，不代表完整粉丝名单。</AlertDescription></Alert>
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">粉丝管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {followers.length} 条已同步记录</p></div><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div>
-    <Card><CardContent className="flex flex-wrap gap-3 p-4">
-      <div className="relative min-w-56 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void load()} placeholder="搜索昵称或标签，回车查询" /></div>
-      <Select value={platform} onValueChange={(value) => { setPlatform(value); setAccountId('all'); }}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部平台</SelectItem>{Object.entries(platformLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
-      <Select value={accountId} onValueChange={setAccountId}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部账号</SelectItem>{accounts.filter((account) => platform === 'all' || account.platform === platform).map((account) => <SelectItem key={account.id} value={account.id}>{account.nickname || '未命名账号'}</SelectItem>)}</SelectContent></Select>
-      <Button onClick={() => void load()}>查询</Button>
-    </CardContent></Card>
-    <Card><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>粉丝</TableHead><TableHead>平台</TableHead><TableHead>所属账号</TableHead><TableHead>标签</TableHead><TableHead>地区</TableHead><TableHead>关注时间</TableHead></TableRow></TableHeader><TableBody>
-      {followers.map((follower) => <TableRow key={follower.id}><TableCell><div className="flex items-center gap-2"><Avatar className="h-8 w-8"><AvatarImage src={follower.avatarUrl} /><AvatarFallback>{(follower.nickname || '粉').slice(0, 1)}</AvatarFallback></Avatar><span>{follower.nickname || '未命名粉丝'}</span>{follower.isMutual && <Badge variant="secondary">互关</Badge>}</div></TableCell><TableCell>{platformLabels[follower.platform]}</TableCell><TableCell>{accountName(follower.accountId)}</TableCell><TableCell><div className="flex flex-wrap gap-1">{(follower.tags || []).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div></TableCell><TableCell>{follower.location || '—'}</TableCell><TableCell>{follower.followedAt ? new Date(follower.followedAt).toLocaleString('zh-CN') : '—'}</TableCell></TableRow>)}
-      {!loading && followers.length === 0 && <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">暂无真实粉丝记录。平台接口获批并执行同步后会显示在这里。</TableCell></TableRow>}
-    </TableBody></Table></CardContent></Card>
-  </section></div>;
+  useEffect(() => { setFollowers([]); setSelectedId(''); void load(); return () => { generation.current++; }; }, [platform, accountId, account?.connectorSessionId, filters.loaded, lease]);
+  const selected = followers.find(follower => follower.id === selectedId && follower.platform === platform && accounts.some(item => item.id === follower.accountId));
+  return <div data-interaction-view="followers" data-interaction-platform={platform} className="matrix-interaction-layout matrix-followers-layout">
+    <InteractionAccountRail platform={platform} selected={account?.id} onPlatformChange={setPlatform} onSelect={setAccount} />
+    <section className="matrix-interaction-content">
+      <div className="matrix-interaction-toolbar"><h1>粉丝管理</h1></div>
+      <InteractionLiveFeed kind="followers" syncPlatform platform={platform} account={accounts.find(item => item.id === accountId)} />
+      {platform !== 'douyin' && <InteractionTools title="本机历史粉丝与手动读取工具（非实时来源）">
+      <div className="matrix-interaction-toolbar"><strong>历史粉丝筛选</strong><div className="matrix-interaction-search"><Search size={15} /><Input aria-label="搜索粉丝" value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && void load()} placeholder="搜索本机历史昵称 / 标签" /></div><Button variant="outline" onClick={() => void load()}>查询历史</Button><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw size={14} />刷新历史</Button></div>
+      <div className="matrix-follower-browser">
+        <section className="matrix-follower-list" aria-label="粉丝记录">
+          {loading && <p role="status">正在加载粉丝…</p>}{error && <p role="alert">{error}</p>}
+          {followers.map(follower => <button key={follower.id} data-follower-id={follower.id} className={selectedId === follower.id ? 'is-active' : ''} onClick={() => setSelectedId(follower.id)}><Avatar><AvatarImage src={follower.avatarUrl} /><AvatarFallback>{(follower.nickname || '粉').slice(0, 1)}</AvatarFallback></Avatar><div><strong>{follower.nickname || '未命名粉丝'}</strong><small>{follower.followerPlatformId}</small></div>{follower.isMutual && <Badge variant="secondary">互关</Badge>}</button>)}
+          {!loading && !error && !followers.length && <InteractionEmpty>暂无已同步粉丝</InteractionEmpty>}
+          <footer className="matrix-interaction-rail-footer">本次历史记录: {loading || error ? '—' : followers.length}<small>本次最多加载 100 条，不代表平台粉丝总数</small></footer>
+        </section>
+        <section className="matrix-follower-profile" aria-label="粉丝详情">
+          {selected ? <><div className="matrix-follower-profile-title"><Avatar><AvatarImage src={selected.avatarUrl} /><AvatarFallback>{(selected.nickname || '粉').slice(0, 1)}</AvatarFallback></Avatar><strong>{selected.nickname || '未命名粉丝'}</strong></div><dl><dt>平台 ID</dt><dd>{selected.followerPlatformId}</dd><dt>平台 / 所属账号</dt><dd>{platformLabels[selected.platform]} · {accounts.find(account => account.id === selected.accountId)?.nickname || '未知账号'}</dd><dt>关注时间</dt><dd>{selected.followedAt ? new Date(selected.followedAt).toLocaleString('zh-CN') : '未同步'}</dd><dt>地区</dt><dd>{selected.location || '未同步'}</dd><dt>标签</dt><dd>{selected.tags?.join('、') || '未设置'}</dd><dt>备注</dt><dd>{selected.remark || '未设置'}</dd></dl><p className="matrix-interaction-hint">此处为已同步记录；关注、取关和私信操作请核对官方账号页面。</p></> : <InteractionEmpty>选择粉丝查看详情 · 尚未读取到主页链接</InteractionEmpty>}
+        </section>
+      </div>
+      <InteractionTools title="官方页面粉丝快照工作台"><OfficialInteractionManager account={accounts.find(account => account.id === accountId)} kind="followers" /></InteractionTools>
+      </InteractionTools>}
+    </section>
+  </div>;
 }

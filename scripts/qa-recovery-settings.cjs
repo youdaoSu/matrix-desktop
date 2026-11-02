@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const {readRecoveryMailSettings,registerRecoveryMailSettings}=require('../desktop/recovery-settings.cjs');
+const folder=fs.mkdtempSync(path.join(os.tmpdir(),'matrix-mail-settings-qa-')),file=path.join(folder,'mail-settings.env');
+let checks=0,handler,answer=0,opens=0,confirmations=0,url='http://127.0.0.1:3296/app/#/forgot-password';
+const frame={},contents={mainFrame:frame,getURL:()=>url},win={webContents:contents};
+const event={sender:contents,senderFrame:frame};
+registerRecoveryMailSettings({ipcMain:{handle:(name,fn)=>{assert.equal(name,'matrix:recovery-mail-settings');handler=fn;}},app:{getPath:()=>folder},getWindow:()=>win,getAppUrl:()=> 'http://127.0.0.1:3296/app/',dialog:{showMessageBox:async()=>{confirmations++;return{response:answer};}},shell:{openPath:async p=>{assert.equal(p,file);opens++;return'';}}});
+(async()=>{
+  assert.deepEqual(readRecoveryMailSettings(folder),{});checks++;
+  assert.ok((await handler({...event,sender:{...contents}})).error);assert.ok((await handler({...event,senderFrame:{}})).error);assert.equal(confirmations,0);checks+=3;
+  url='https://example.invalid/app/#/forgot-password';assert.ok((await handler(event)).error);url='http://127.0.0.1:3296/app/#/accounts';assert.ok((await handler(event)).error);checks+=2;
+  url='http://127.0.0.1:3296/app/#/forgot-password';assert.equal((await handler(event)).cancelled,true);assert.equal(fs.existsSync(file),false);checks+=2;
+  answer=1;const opened=await handler(event);assert.equal(opened.opened,true);assert.equal(opened.restartRequired,true);assert.equal(opens,1);checks+=3;
+  const fixture='MATRIX_SMTP_HOST=smtp.example.invalid\nMATRIX_SMTP_PASSWORD="fixture-only-secret"\nJWT_SECRET=must-not-override\nSUDA_DATABASE_URL=must-not-override\n';fs.writeFileSync(file,fixture);
+  const settings=readRecoveryMailSettings(folder);assert.equal(settings.MATRIX_SMTP_PASSWORD,'fixture-only-secret');assert.equal(settings.JWT_SECRET,undefined);assert.equal(settings.SUDA_DATABASE_URL,undefined);checks+=3;
+  const again=await handler(event);assert.equal(again.opened,true);assert.equal(fs.readFileSync(file,'utf8'),fixture);assert.ok(!JSON.stringify(again).includes('fixture-only-secret'));checks+=3;
+  let secretReads=0;const bad={existsSync:()=>true,lstatSync:()=>({isFile:()=>true,isSymbolicLink:()=>true,size:10}),readFileSync:()=>{secretReads++;return fixture;}};
+  assert.deepEqual(readRecoveryMailSettings(folder,bad),{});assert.equal(secretReads,0);checks+=2;
+  let release;let calls=0;registerRecoveryMailSettings({ipcMain:{handle:(_,fn)=>handler=fn},app:{getPath:()=>folder},getWindow:()=>win,getAppUrl:()=> 'http://127.0.0.1:3296/app/',dialog:{showMessageBox:()=>{calls++;return new Promise(r=>release=r);}},shell:{openPath:async()=>''}});
+  const first=handler(event);assert.ok((await handler(event)).error);assert.ok((await handler(event)).error);assert.equal(calls,1);release({response:0});await first;checks+=3;
+  console.log(JSON.stringify({localMailConfigurationChecks:checks,mainFrameAndOriginRequired:true,nativeApprovalRequired:true,existingSettingsNeverOverwritten:true,credentialsNotReturnedToRenderer:true,unrelatedEnvironmentKeysIgnored:true,userDataTouched:false,realEditorOpened:false}));
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { axiosForBackend } from '@/api';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { axiosForBackend, getAuthToken, getUser } from '@/api';
+import { useWorkspaceIdentity } from '@/components/workspace/WorkspaceUiState';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -39,22 +40,30 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
   const navigate = useNavigate();
   const preferences = useAppPreferences();
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loadError, setLoadError] = useState(false);
+  const lease = useWorkspaceIdentity();
+  const [snapshot, setSnapshot] = useState<{lease:string; notifications:Notification[]; loadError:boolean; listLoaded:boolean; unreadCount:number|null; total:number|null}>({lease:'',notifications:[],loadError:false,listLoaded:false,unreadCount:null,total:null});
+  const { notifications, loadError, listLoaded, unreadCount, total } = snapshot.lease === lease ? snapshot : { notifications: [], loadError: false, listLoaded: false, unreadCount: null, total: null };
+  const leaseCurrent = () => JSON.stringify([getUser()?.id, getAuthToken()]) === lease;
+  const revision = useRef(0);
   const refresh = useCallback(async () => {
-    try {
-      const response = await axiosForBackend.get('/api/notifications', { params: { page: 1, pageSize: 100 } });
-      setNotifications(response.data?.data?.items || []);
-      setLoadError(false);
-    } catch { setLoadError(true); }
-  }, []);
-  useEffect(() => { void refresh(); }, [refresh, open]);
+    const current = ++revision.current;
+    if (!lease || !leaseCurrent()) return;
+    const [list, count] = await Promise.allSettled([
+      axiosForBackend.get('/api/notifications', { params: { page: 1, pageSize: 100 } }),
+      axiosForBackend.get('/api/notifications/unread-count'),
+    ]);
+    if (current !== revision.current || !leaseCurrent()) return;
+    const data = list.status === 'fulfilled' ? list.value.data?.data : undefined;
+    const value = count.status === 'fulfilled' ? count.value.data?.data?.count : undefined;
+    const validList = Array.isArray(data?.items) && Number.isSafeInteger(data?.total) && data.total >= 0;
+    const validCount = Number.isSafeInteger(value) && value >= 0;
+    setSnapshot(previous => {
+      const prior = previous.lease === lease ? previous : {lease, notifications:[], loadError:false, listLoaded:false, unreadCount:null, total:null};
+      return {lease, notifications:validList ? data.items : prior.notifications, total:validList ? data.total : prior.total, listLoaded:validList || prior.listLoaded, unreadCount:validCount ? value : null, loadError:!validList || !validCount};
+    });
+  }, [lease]);
+  useEffect(() => { void refresh(); return () => { revision.current++; }; }, [refresh, open]);
   const [activeTab, setActiveTab] = useState<string>('all');
-
-  const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.isRead).length,
-    [notifications]
-  );
 
   const filteredNotifications = useMemo(() => {
     if (activeTab === 'all') return notifications;
@@ -62,20 +71,23 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
   }, [notifications, activeTab]);
 
   const handleMarkAllRead = async () => {
+    if (!lease || !leaseCurrent()) return;
+    revision.current++;
     try { await axiosForBackend.post('/api/notifications/read-all'); }
-    catch { toast.error('标记已读失败，请重试'); return; }
-    setNotifications((prev) =>
-      prev.map((n) => ({ ...n, isRead: true }))
-    );
+    catch { if (leaseCurrent()) { toast.error('标记已读失败，请重试'); void refresh(); } return; }
+    if (!leaseCurrent()) return;
+    setSnapshot(previous => previous.lease === lease ? {...previous, notifications:previous.notifications.map(n => ({...n,isRead:true})), unreadCount:null} : previous);
+    void refresh();
   };
 
   const handleNotificationClick = async (notification: Notification) => {
+    if (!lease || !leaseCurrent()) return;
+    revision.current++;
     try { await axiosForBackend.post(`/api/notifications/${notification.id}/read`); }
-    catch { toast.error('标记已读失败，请重试'); return; }
+    catch { if (leaseCurrent()) { toast.error('标记已读失败，请重试'); void refresh(); } return; }
+    if (!leaseCurrent()) return;
     // 标记为已读
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n))
-    );
+    setSnapshot(previous => previous.lease === lease ? {...previous, notifications:previous.notifications.map(n => n.id === notification.id ? {...n,isRead:true} : n), unreadCount:null} : previous);
     setOpen(false);
 
     // 根据类型跳转到对应模块
@@ -122,7 +134,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
           aria-label="通知"
         >
           <Bell className="w-5 h-5" />
-          {preferences.unreadBadges && unreadCount > 0 && (
+          {preferences.unreadBadges && unreadCount !== null && unreadCount > 0 && (
             <Badge
               variant="default"
               className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 text-[10px] rounded-full bg-destructive text-white border-0 justify-center items-center flex font-medium"
@@ -142,7 +154,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
         <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-card">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-foreground">通知中心</span>
-            {unreadCount > 0 && (
+            {unreadCount !== null && unreadCount > 0 && (
               <Badge
                 variant="default"
                 className="text-[10px] h-4 min-w-4 px-1 rounded-full bg-destructive text-white border-0 justify-center items-center flex"
@@ -151,7 +163,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
               </Badge>
             )}
           </div>
-          {unreadCount > 0 && (
+          {((unreadCount ?? 0) > 0 || (unreadCount === null && notifications.some(n => !n.isRead))) && (
             <Button
               variant="ghost"
               size="sm"
@@ -186,7 +198,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
           {filteredNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
               <Bell className="w-10 h-10 mb-2 opacity-30" />
-              <p className="text-sm">暂无通知</p>
+              <p className="text-sm">{loadError ? '通知读取不完整，请重试' : listLoaded ? '暂无通知' : '正在读取通知'}</p>
             </div>
           ) : (
             <div className="py-1">
@@ -247,6 +259,7 @@ const NotificationCenter = ({ className }: NotificationCenterProps) => {
 
         {/* Footer */}
         <div className="px-4 py-2.5 border-t border-border bg-card">
+          {total !== null && total > notifications.length && <p className="text-xs text-muted-foreground">仅显示最近 {notifications.length} 条，共 {total} 条</p>}
           <Button
             variant="ghost"
             size="sm"

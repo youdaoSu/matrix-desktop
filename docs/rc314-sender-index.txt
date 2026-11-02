@@ -1,0 +1,48 @@
+RC314 candidate: reuse inbox sender identities across thread-only revisions
+2026-11-01 Beijing. Complete regression is running; NOT built or installed yet.
+
+RC313 actual main-process sample: 15.156288 seconds / 1464 samples; idle 68.93%,
+copyRecords 3.10%, name-refresh anonymous frame 2.48%, prepareEngineAsync 1.76%,
+encoder 1.46%, GC 1.23%, validSec 0.96%. Only derived function timings saved in
+matrix-rc313-cpu-live.json; inspector closed and port 49313 independently absent.
+Normal close/relaunch matched installed archive and no active publishing.
+This is a live observation, not an identical-workload comparison with RC312.
+
+The existing message-index grouping pass now builds unique sender/identifier
+pairs in first-occurrence order and their thread memberships. Thread-only
+changes reuse candidates; changed message/person maps rebuild their dependent
+indexes. Identity conflicts remain sets and never choose an arbitrary identity.
+Name discovery iterates unique pairs. Profile invalidation uses the CURRENT
+committed index inside its transaction, including messages received while the
+profile request was outstanding. Alias rules, profile TTL, request batching,
+retry interval, unread state, cursor/ACK durability and sending are unchanged.
+Index lifetime is one engine's current immutable state, bounded by the existing
+50000-message archive capacity. This trades bounded derived metadata for less
+repeated work; it is not a claim of minimum possible memory or zero latency.
+
+Synthetic checks passed: 699 new sender-index/in-flight assertions, 132 existing
+read-index/resume assertions, 23 nickname assertions and 921 incremental-index
+assertions. In 30000 messages / 40 thread-only updates, sender-identifier reads
+were 1200000 before and 0 after; observed wall times 262.0508 versus 8.467 ms.
+The 51200-message incremental synthetic index test observed 812.89 ms before
+versus 547.71 ms after over 24 changes. These are local synthetic observations,
+not live user latency or controlled whole-application resource measurements.
+
+Baseline index bytes came from frozen RC313; shared codec/visibility modules
+were hash-matched. The snapshot omits vendor assets, so directly executing it
+first failed for missing protobufjs and then im.proto. The comparison helper
+compiles the unchanged baseline index with matched current shared dependencies;
+it does not alter the frozen snapshot. An early new in-flight fixture used an
+invalid group conversation ID; corrected to the codec's numeric group IDs.
+Those exploratory failures are not claimed as product defects or passing runs.
+
+Current installed application remains RC313 and was normally closed for this
+regression/build. RC314 will require 232 complete source suites and 86 actual
+package checks, canonical D-drive backup, data/key verification and real UI
+checks before delivery. Hidden reader-window resource usage remains open;
+source indexing improvements do not establish that the entire lag is fixed.
+
+Delivered after 232 source suites / 86 package checks. See workspace
+matrix-rc314-delivery-summary.json for hashes, backup and actual UI results.
+All backed-up user data/key verified. Whole-app performance remains open: quiet
+main sample 200.54% of one core, hidden windows 18; no lag acceptance claim.

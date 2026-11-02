@@ -1,0 +1,73 @@
+// Synthetic own accounts and injected transports only. No real sends/likes,
+// account profiles, sessions, archives, or notification/read-state operations.
+const assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const c=require('../desktop/douyin-inbox-codec.cjs'),{sendRequest,sendReceipt}=require('../desktop/douyin-inbox-send.cjs'),{createEngine}=require('../desktop/douyin-inbox-engine.cjs'),{allowCommentRequest}=require('../desktop/douyin-comment-actions.cjs'),{creatorBlocked,createCreatorReader}=require('../desktop/douyin-creator-reader.cjs'),{readPage,initial,comment,projectLikeReceipt}=require('../desktop/douyin-interactions.cjs'),{createInteractionCache}=require('../desktop/douyin-interaction-cache.cjs');
+let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},bad=async(fn,re)=>{await assert.rejects(fn,re);checks++;};
+const own='9007199254740993',peer='9007199254740995',thread={id:`0:1:${own}:${peer}`,shortId:'9007199254740997',type:1,history:{done:true,cursor:'0'}},text='QA deliberate text',requestId=crypto.randomUUID();
+const response=(body={},patch={})=>c.encode('Response',{cmd:100,sequenceId:'9',statusCode:0,body:{sendMessageBody:{clientMessageId:requestId,...body}},...patch});
+(async()=>{
+ const request=sendRequest({thread,ownUid:own,text,requestId,sequence:9,now:1234567890123});
+ eq(request.path,'/v1/message/send');const decoded=c.decode('Request',request.bytes);eq(decoded.cmd,100);eq(decoded.inboxType,0);eq(decoded.authType,1);eq(decoded.deviceId,'0');eq(decoded.body.sendMessageBody.conversationId,thread.id);eq(decoded.body.sendMessageBody.conversationShortId,thread.shortId);eq(decoded.body.sendMessageBody.messageType,7);eq(JSON.parse(decoded.body.sendMessageBody.content),{aweType:700,type:0,richTextInfos:[],text});eq(decoded.body.sendMessageBody.clientMessageId,requestId);
+ for(const patch of [{text:''},{text:'a'.repeat(2001)},{text:'\u0000bad'},{requestId:'not-uuid'},{thread:{...thread,id:'0:1:111:222'}},{ownUid:'111'}]){assert.throws(()=>sendRequest({thread,ownUid:own,text,requestId,sequence:9,...patch}));checks++;}
+ let receipt=sendReceipt(response({status:0,serverMessageId:'9007199254740999'}),9,requestId);eq(receipt.state,'confirmed');eq(receipt.messageId,'9007199254740999');
+ for(const body of [{},{status:0,serverMessageId:'0'},{status:0,serverMessageId:'123',isAsyncSend:true},{status:0,serverMessageId:'123',checkCode:'10502'}])eq(sendReceipt(response(body),9,requestId).state,'unknown');
+ for(const status of [1,2,3,4,5]){receipt=sendReceipt(response({status,checkMessage:JSON.stringify({tips:'QA平台真实拒绝'})}),9,requestId);eq(receipt.state,'failed');eq(receipt.message.includes('QA平台真实拒绝'),true);eq(receipt.message.includes('发送码 '+status),true);}
+ eq(sendReceipt(response({status:0,serverMessageId:'123',checkCode:'8610'}),9,requestId).state,'failed');eq(sendReceipt(response({status:0,serverMessageId:'123',clientMessageId:crypto.randomUUID()}),9,requestId).state,'unknown');eq(sendReceipt(response({status:0,serverMessageId:'123'}),10,requestId).state,'unknown');
+ receipt=sendReceipt(response({}, {statusCode:403,errorDesc:'QA no permission'}),9,requestId);eq(receipt.state,'failed');eq(receipt.message.includes('403'),true);eq(receipt.message.includes('QA no permission'),true);
+ receipt=sendReceipt(response({}, {statusCode:1,errorDesc:'cookie=PRIVATE_SESSION'}),9,requestId);eq(JSON.stringify(receipt).includes('PRIVATE_SESSION'),false);
+ let state={threads:{[thread.id]:thread},messages:{},init:{done:true},strangers:{done:true},frontier:{},revision:0},count=0,clock=10000,owner=true,failStore=false,hold;
+ const store={get:()=>state,commit(fn){if(failStore)throw Error('QA存档失败');const next=structuredClone(state);fn(next);next.revision++;state=next;}},guard=async()=>{if(!owner)throw Error('账号已变化');};
+ const transport={ownUid:own,close(){},sendText:async args=>{count++;eq(state.outbox[args.requestId].receipt.state,'unknown');return{state:'confirmed',requestId:args.requestId,messageId:'123',message:'QA confirmed'};}};
+ let engine=createEngine({transport,store,assertCurrent:guard,now:()=>clock});
+ receipt=await engine.sendText(thread.id,text,requestId);eq(receipt.state,'confirmed');eq(count,1);eq(await engine.sendText(thread.id,text,requestId),receipt);eq(count,1);await bad(()=>engine.sendText(thread.id,text+'different',requestId),/其他正文/);await bad(()=>engine.sendText('other',text,crypto.randomUUID()),/不属于/);
+ engine.close();engine=createEngine({transport,store,assertCurrent:guard,now:()=>clock});eq((await engine.sendText(thread.id,text,requestId)).state,'confirmed');eq(count,1);
+ await bad(()=>engine.sendText(thread.id,text,crypto.randomUUID()),/过于频繁/);clock+=5000;failStore=true;await bad(()=>engine.sendText(thread.id,text,crypto.randomUUID()),/存档失败/);eq(count,1);failStore=false;
+ const lostId=crypto.randomUUID();transport.sendText=async()=>{count++;throw Error('网络连接超时');};eq((await engine.sendText(thread.id,text,lostId)).state,'unknown');eq(count,2);eq((await engine.sendText(thread.id,text,lostId)).state,'unknown');eq(count,2);
+ clock+=5000;const concurrentId=crypto.randomUUID();transport.sendText=async args=>{count++;return new Promise(resolve=>hold=()=>resolve({state:'confirmed',requestId:args.requestId,message:'QA confirmed'}));};const pending=engine.sendText(thread.id,text,concurrentId);while(!hold)await new Promise(r=>setImmediate(r));eq((await engine.sendText(thread.id,text,concurrentId)).state,'unknown');eq(count,3);hold();await pending;
+ owner=false;clock+=5000;await bad(()=>engine.sendText(thread.id,text,crypto.randomUUID()),/账号已变化/);eq(count,3);engine.close();owner=true;
+ engine=createEngine({transport:{ownUid:own,close(){}},store,assertCurrent:guard,now:()=>clock});await bad(()=>engine.sendText(thread.id,text,crypto.randomUUID()),/仅载入本机缓存/);engine.close();
+ const work='9007199254740100001',cid='#'+'a'.repeat(64),base={url:'https://creator.douyin.com/aweme/v1/creator/comment/action/',method:'POST',webContentsId:42};
+ const intent=()=>({action:'like',liked:true,workId:work,commentId:cid,webContentsId:42,expires:Date.now()+20000,used:false});
+ const post=(values,patch={})=>({...base,uploadData:[{bytes:Buffer.from(JSON.stringify(values))}],...patch});
+ let target=intent();const valid=post({comment_Id:cid,action_type:1});eq(creatorBlocked(valid),true);eq(allowCommentRequest(valid,target),true);eq(allowCommentRequest(valid,target),false);
+ for(const values of [{comment_Id:'other',action_type:1},{comment_Id:cid,action_type:3},{comment_Id:cid,action_type:1,item_id:'999'}])eq(allowCommentRequest(post(values),intent()),false);
+ for(const patch of [{method:'GET'},{webContentsId:43},{url:'https://creator.douyin.com/aweme/v1/creator/comment/delete/'},{url:'https://evil.test/aweme/v1/creator/comment/action/'}])eq(allowCommentRequest(post({comment_Id:cid,action_type:1},patch),intent()),false);
+ eq(allowCommentRequest(valid,{...intent(),expires:0}),false);eq(allowCommentRequest(valid,undefined),false);
+ const reply={...intent(),action:'reply',text:'QA reply'};eq(allowCommentRequest(post({comment_Id:cid,item_id:work,text:'wrong'},{url:'https://creator.douyin.com/aweme/v1/creator/comment/reply/'}),reply),false);eq(allowCommentRequest(post({comment_Id:cid,item_id:work,text:'QA reply'},{url:'https://creator.douyin.com/aweme/v1/creator/comment/reply/'}),reply),true);
+ for(const route of ['/mark_read','/clear_unread','/aweme/v1/creator/user_message/notice/','/aweme/v1/creator/follower/list','/web/api/creator/msg/top'])eq(creatorBlocked({...base,url:'https://creator.douyin.com'+route,method:'GET'}),true);
+ const cp=comment({cid:'123',text:'QA',aweme_id:work,user:{uid:peer,nickname:'QA'},user_digged:false,digg_count:'3',reply_comment_total:2},{id:work,title:'QA'});eq(cp.liked,false);eq(cp.likeCount,3);eq(cp.replyCount,2);eq(comment({cid:'123',text:'QA',user:{uid:peer}}, {id:work}).liked,undefined);
+ for(const desired of [true,false]){
+  for(const previous of [true,false,undefined]){const cached={...cp,liked:previous,likeCount:3},copy=structuredClone(cached);const projected=projectLikeReceipt(cached,{state:'confirmed',liked:desired,likeCount:17,message:'QA exact website count'},desired);eq(projected.row.liked,desired);eq(projected.row.likeCount,17);eq(projected.receipt.likeCount,17);eq(cached,copy);
+   const absent=projectLikeReceipt(cached,{state:'confirmed',message:'QA no count'},desired);eq(absent.row.likeCount,3);eq(absent.receipt.likeCount,undefined);eq(absent.receipt.liked,desired);
+  }
+  for(const value of [-1,NaN,Infinity,1.5,'17',null,undefined]){const projected=projectLikeReceipt(cp,{state:'confirmed',likeCount:value},desired);eq(projected.row.likeCount,3);eq(projected.receipt.likeCount,undefined);}
+  eq(projectLikeReceipt(cp,{state:'confirmed',liked:desired,likeCount:0},desired).row.likeCount,0);
+  for(const liked of [!desired,'true',null,0]){const projected=projectLikeReceipt(cp,{state:'confirmed',liked,likeCount:17},desired);eq(projected.receipt.state,'unknown');eq(projected.row,undefined);}
+  for(const state of ['failed','unknown']){const receipt={state,message:'QA original refusal'};eq(projectLikeReceipt(cp,receipt,desired),{receipt});}
+ }
+ assert.throws(()=>projectLikeReceipt(cp,{state:'confirmed'},undefined),/目标状态无效/);checks++;
+ // A delayed rendered click cannot retain a write permit after its native
+ // client closes. Exercise the actual reader's request-policy closure.
+ let beforeRequest,releaseClick,windowId=50;const fakeWindows=[];
+ const fakeSource={webRequest:{onBeforeRequest(fn){beforeRequest=fn;},onCompleted(){}}};
+ const fakeReader=createCreatorReader({acquireIdentity:async()=>({ownUid:own,check:async()=>{},verify:async()=>{},close(){}}),createWindow:()=>{
+  let url='',destroyed=false;const window={isDestroyed:()=>destroyed,destroy(){destroyed=true;},async loadURL(value){url=value;},webContents:{id:++windowId,setAudioMuted(){},setWindowOpenHandler(){},on(){},getURL:()=>url,async executeJavaScript(script){
+   if(script.includes('function creatorPage'))return script.includes('"kind":"works"')?{status_code:0,aweme_list:[{aweme_id:work,author:{uid:own}}],has_more:false,max_cursor:'0'}:{status_code:0,comments:[],has_more:false,cursor:'0'};
+   if(script.includes('function commentControl')){const step=/"step":"([a-z-]+)"/.exec(script)?.[1];if(step==='inspect')return{found:true,liked:false};if(step==='like')return new Promise(resolve=>releaseClick=()=>resolve({submitted:true}));}
+   if(script.includes('.receipt'))return{state:'confirmed',liked:true,message:'QA confirmed'};return true;
+  }}};fakeWindows.push(window);return window;
+ }});
+ let fakeClient=await fakeReader.acquire({accountSession:fakeSource,assertCurrent:async()=>{}});await fakeClient.readWeb('works',{cursor:'0'});
+ let delayed=fakeClient.actComment({workId:work,commentId:cid,action:'like',liked:true,nonce:'qa-one'},async()=>{});while(!releaseClick)await new Promise(resolve=>setImmediate(resolve));
+ const policyInput=post({comment_Id:cid,action_type:1},{webContentsId:fakeWindows[1].webContents.id});let cancel;
+ beforeRequest(policyInput,result=>cancel=result.cancel);eq(cancel,false);releaseClick();await delayed;fakeClient.close();
+ fakeClient=await fakeReader.acquire({accountSession:fakeSource,assertCurrent:async()=>{}});releaseClick=undefined;delayed=fakeClient.actComment({workId:work,commentId:cid,action:'like',liked:true,nonce:'qa-two'},async()=>{});while(!releaseClick)await new Promise(resolve=>setImmediate(resolve));fakeClient.close();beforeRequest(policyInput,result=>cancel=result.cancel);eq(cancel,true);releaseClick();eq((await delayed).state,'unknown');fakeReader.close();
+ let calls=[];const client={ownUid:own,readWeb:async(kind,args)=>{calls.push([kind,args]);if(kind==='works')return{aweme_list:['1','2','3'].map(n=>({aweme_id:n,author:{uid:own},desc:'QA'+n})),has_more:false,max_cursor:'0'};return{comments:[{cid:'11'+args.workId,text:'QA',user:{uid:peer},reply_comment_total:1}],has_more:false,cursor:'0'};}};
+ let page=await readPage(client,initial('comments'),{previewFirst:true});const original=structuredClone(page.next);page=await readPage(client,page.next,{previewFirst:true,priorityWorkId:'2'});eq(calls.at(-1)[1].workId,'2');eq(original.works[0].id,'1');eq(page.records[0].pageCursor,'0');
+ page=await readPage(client,page.next,{previewFirst:true,priorityWorkId:'999'});eq(calls.at(-1)[1].workId,'1');eq(calls.at(-1)[0],'comments');eq(calls.some(([,a])=>a.workId==='999'),false);
+ const inventoryClient={...client,readWeb:async(kind,args)=>{calls.push([kind,args]);return kind==='works'?{aweme_list:[{aweme_id:args.cursor==='0'?'1':'4',author:{uid:own},desc:'QA page'}],has_more:args.cursor==='0',max_cursor:args.cursor==='0'?'20':'0'}:client.readWeb(kind,args);}};
+ let inventory=await readPage(inventoryClient,initial('comments'),{previewFirst:true,priorityWorkId:'4'});eq(inventory.next.works[0].id,'1');inventory=await readPage(inventoryClient,inventory.next,{previewFirst:true,priorityWorkId:'4'});eq(calls.at(-1)[0],'works');eq(calls.at(-1)[1].cursor,'20');eq(inventory.next.works.map(w=>w.id),['1','4']);inventory=await readPage(inventoryClient,inventory.next,{previewFirst:true,priorityWorkId:'4'});eq(calls.at(-1)[1].workId,'4');
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'matrix-actions-only-')),protect=s=>Buffer.from('QA:'+s),unprotect=b=>b.toString().slice(3),config={directory,scope:'qa-only-followers',protect,unprotect};const cache=createInteractionCache(config),f=id=>({platformId:id,platformUserId:id,author:'QA',content:''});
+ cache.merge({records:[f('1'),f('2')],complete:true,kind:'followers'});cache.merge({records:[f('3')],complete:false,kind:'followers'});eq(cache.get().records.map(r=>r.platformId),['1','2','3']);cache.merge({records:[f('4')],complete:true,kind:'followers',followerRosterVerified:true,currentFollowerIds:['3','4']});eq(cache.get().records.filter(row=>row.isCurrentFollower!==false).map(r=>r.platformId),['3','4']);eq(cache.get().records.map(r=>r.platformId),['1','2','3','4']);cache.action(requestId,{fingerprint:'qa',receipt:{state:'unknown'}});eq(createInteractionCache(config).action(requestId).receipt.state,'unknown');eq(createInteractionCache(config).get().records.filter(row=>row.isCurrentFollower!==false).map(r=>r.platformId),['3','4']);
+ console.log(JSON.stringify({checks,syntheticOnly:true,exactSendEnvelope:true,durableAtMostOneAttempt:true,unknownIsNotFailure:true,exactCommentWriteScope:true,selectedOwnedWorkPriority:true,completeRosterOnlyReconciliation:true,realPlatformRequests:0,realBusinessWrites:0,realProfilesTouched:false}));
+})().catch(e=>{console.error(e);process.exitCode=1;});

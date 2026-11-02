@@ -1,0 +1,24 @@
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '..'), { brand, configureBrand } = require('../desktop/brand.cjs');
+const pkg = require('../package.json'), lock = require('../package-lock.json');
+assert.equal(brand.name, '远效');assert.equal(pkg.build.productName, brand.name);assert.equal(pkg.build.nsis.shortcutName, brand.name);
+assert.equal(pkg.name, brand.legacyDataName);assert.equal(pkg.build.appId, brand.appId);assert.equal(pkg.build.executableName, brand.legacyExecutableName);assert.equal(lock.version, pkg.version);assert.equal(lock.packages[''].version, pkg.version);
+const main = fs.readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8');
+assert(main.indexOf('configureBrand(app)') < main.indexOf('registerDesktopSettings('));assert(main.indexOf('configureBrand(app)') < main.indexOf('requestSingleInstanceLock('));
+function fixture(isPackaged, argv, expected) {
+  const calls = [], paths = { appData: path.resolve('qa-roaming'), userData: path.resolve('qa-development') };
+  const app = { isPackaged, getPath: name => paths[name], setPath: (name, value) => { calls.push(name);paths[name] = value; }, setName: name => { assert.equal(name, brand.name);calls.push('name'); }, setAppUserModelId: id => assert.equal(id, brand.appId) };
+  assert.equal(configureBrand(app, argv), expected);assert.equal(paths.userData, expected);assert.equal(paths.sessionData, expected);assert.deepEqual(calls, ['userData', 'sessionData', 'name']);
+}
+fixture(true, [], path.join(path.resolve('qa-roaming'), brand.legacyDataName));
+fixture(false, [], path.resolve('qa-development'));
+fixture(true, ['--matrix-user-data-dir=' + path.resolve('qa-isolated')], path.resolve('qa-isolated'));
+assert.throws(() => configureBrand({ isPackaged: true }, ['--matrix-user-data-dir=relative']), /资料目录无效/);
+const { svg } = require('./build-brand-icons.cjs');
+for (const file of ['desktop/assets/icon.svg', 'client/public/favicon.svg']) assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), svg());
+for (const name of ['UserLayout', 'AuthLayout', 'AdminLayout', 'DocsLayout']) assert(fs.readFileSync(path.join(root, 'client/src/layouts/' + name + '.tsx'), 'utf8').includes('<AppBrandMark'));
+const ico = fs.readFileSync(path.join(root, 'desktop/assets/icon.ico'));assert.equal(ico.readUInt16LE(2), 1);assert.equal(ico.readUInt16LE(4), 9);
+const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];let offset = 6 + sizes.length * 16;
+sizes.forEach((size, n) => { const at = 6 + n * 16, length = ico.readUInt32LE(at + 8);assert.equal(ico[at] || 256, size);assert.equal(ico[at + 1] || 256, size);assert.equal(ico.readUInt32LE(at + 12), offset);assert.equal(ico.readUInt32LE(offset),40);assert.equal(ico.readInt32LE(offset+4),size);assert.equal(ico.readInt32LE(offset+8),size*2);assert.equal(ico.readUInt16LE(offset+14),32);assert.equal(length,40+size*size*4+Math.ceil(size/32)*4*size);offset += length; });assert.equal(offset, ico.length);
+const html = fs.readFileSync(path.join(root, 'client/index.html'), 'utf8');assert(html.includes('<title>远效</title>'));assert(!/矩效/.test(html));
+console.log(JSON.stringify({ brand: brand.name, iconFrames: sizes, existingProfilePreserved: true, upgradeIdentityPreserved: true, layoutMarks: 4, externalActions: 0 }));

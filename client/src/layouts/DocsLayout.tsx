@@ -4,10 +4,10 @@ import { BookOpen, Search, ArrowLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import { PublishProgressButton } from '@/components/workspace/PublishQueue';
+import AppBrandMark from '@/components/AppBrandMark';
 
 const docItems = [
   { to: '/docs/overview', label: '产品框架总览' },
-  { to: '/docs/requirements', label: '功能需求清单' },
   { to: '/docs/non-functional', label: '非功能需求' },
   { to: '/docs/roadmap', label: '扩展路线图' },
   { to: '/docs/testing', label: '测试方案' },
@@ -23,15 +23,13 @@ const DocsLayout = () => {
       {/* Left sidebar */}
       <aside className="w-60 bg-sidebar border-r border-sidebar-border flex flex-col h-screen sticky top-0">
         <div className="h-14 flex items-center px-4 border-b border-sidebar-border gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
-            <BookOpen className="w-5 h-5" />
-          </div>
+          <AppBrandMark className="shrink-0" />
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-foreground leading-tight">
               文档中心
             </span>
             <span className="text-[10px] text-muted-foreground leading-tight">
-              Matrix Docs
+              远效文档
             </span>
           </div>
         </div>

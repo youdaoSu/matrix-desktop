@@ -11,7 +11,9 @@ for (const [platform, domain] of Object.entries(platformDomains)) for (const int
   assert.equal(target.protocol, 'https:'); assert.ok(target.hostname === domain || target.hostname.endsWith('.' + domain)); assert.ok(operation.instruction.length > 10);
 }
 assert.equal(officialOperation('douyin', 'comments').url, 'https://creator.douyin.com/creator-micro/content/manage');
-assert.equal(officialOperation('douyin', 'messages').url, 'https://www.douyin.com/');
+assert.equal(officialOperation('douyin', 'messages').url, 'https://creator.douyin.com/creator-micro/data/following/chat');
+assert.match(officialOperation('douyin', 'messages').instruction,/本人ID未核验/);
+assert.match(officialOperation('douyin', 'messages').instruction,/不自动打开聊天入口或选择联系人/);
 console.log('16 official operation mappings and 2 verified Douyin entry checks passed; these do not claim a successful platform submission');
 const { selectUploadInput, registerPersonalAssist, isEditableTarget } = require('../desktop/personal-assist.cjs');
 const editor = { tagName: 'TEXTAREA', getBoundingClientRect: () => ({ width: 50, height: 30 }), getAttribute: () => '' };
@@ -34,24 +36,27 @@ assert.throws(() => selectUploadInput([{ ...video, accept: '' }], 'video', 1));
 console.log('8 upload control selection and fail-safe checks passed; no platform uploads performed');
 async function testIpc() {
   const handlers = {};
-  let authenticated = true;
+  let authenticated = true, sessionProfile = {};
   let url = 'https://member.bilibili.com/platform/upload/video/frame';
   let file = '/test/video.mp4';
   let dialogs = 0;
   let attached = false;
   let transfers = 0;
-  let modified = 1, cancelled = false;
+  const events = new (require('node:events').EventEmitter)();
+  let modified = 1, cancelled = false, mutateDuringResolve = false, inaccessible = false;
   const isolated = {};
   const guest = { id: 22, hostWebContents: { id: 11 }, session: isolated, isDestroyed: () => false, getURL: () => url,
-    debugger: { isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; }, sendCommand: async method => {
+    debugger: { on: events.on.bind(events), removeListener: events.removeListener.bind(events), isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; }, sendCommand: async method => {
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'fixture-frame' } } };
+      if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 };
       if (method === 'DOM.getDocument') return { root: { nodeId: 1 } };
       if (method === 'DOM.querySelectorAll') return { nodeIds: [2] };
       if (method === 'DOM.resolveNode') return { object: { objectId: 'upload' } };
-      if (method === 'Runtime.callFunctionOn') return { result: { value: { accept: 'video/mp4', visible: true, multiple: false } } };
+      if (method === 'Runtime.callFunctionOn') { if(mutateDuringResolve){modified++;mutateDuringResolve=false;} queueMicrotask(()=>events.emit('message',{},'Page.fileChooserOpened',{frameId:'fixture-frame',backendNodeId:22})); return { result: { value: true, objectId: 'upload' } }; }
       if (method === 'DOM.setFileInputFiles') transfers++;
       return {};
     } } };
-  registerPersonalAssist({ ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } }, dialog: { showOpenDialog: async () => { dialogs++; return { canceled: cancelled, filePaths: [file] }; } }, webContents: { fromId: id => id === 22 ? guest : undefined }, session: { fromPartition: partition => partition.endsWith('a'.repeat(16)) ? isolated : {} }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { bilibili: { domain: 'bilibili.com' } }, inspectPlatformSession: async () => ({ authenticated }), statFile: () => ({ isFile: () => true, size: 1024, mtimeMs: modified }) });
+  registerPersonalAssist({ ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } }, dialog: { showOpenDialog: async () => { dialogs++; return { canceled: cancelled, filePaths: [file] }; } }, webContents: { fromId: id => id === 22 ? guest : undefined }, session: { fromPartition: partition => partition.endsWith('a'.repeat(16)) ? isolated : {} }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { bilibili: { domain: 'bilibili.com' } }, inspectPlatformSession: async () => ({ authenticated,profile:sessionProfile }), statFile: () => { if(inaccessible)throw Error('ENOENT private absolute /secret/real-user-video.mp4'); return { isFile: () => true, size: 1024, mtimeMs: modified }; } });
   const handler = handlers['matrix:upload-media'];
   const input = { platform: 'bilibili', sessionId: 'a'.repeat(16), webContentsId: 22, mediaType: 'video' };
   const invoke = changes => handler({ sender: { id: 11 } }, { ...input, ...changes });
@@ -60,10 +65,19 @@ async function testIpc() {
   assert.ok((await invoke({ webContentsId: 99 })).error);
   url = 'https://example.com/upload'; assert.ok((await invoke()).error);
   url = 'https://member.bilibili.com/platform/upload/video/frame'; authenticated = false; assert.ok((await invoke()).error);
+  const progress=()=>handlers['matrix:sync-publish-form']({sender:{id:11}},{...input,command:'progress'});
+  assert.match((await progress()).error,/账号状态尚未就绪/);
+  sessionProfile={verificationRequired:true};assert.match((await progress()).error,/要求本人验证/);
+  sessionProfile={accountIssue:{kind:'restricted'}};assert.match((await progress()).error,/账号状态异常/);
+  sessionProfile={loginVisible:true};assert.match((await progress()).error,/请先登录/);
+  sessionProfile={};url='https://member.bilibili.com/platform/upload/login';assert.match((await progress()).error,/请先登录/);
+  url='https://member.bilibili.com/platform/upload/video/frame';
+  assert.equal(transfers,0);assert.equal(dialogs,0);
+  console.log('7 upload-progress session classification checks passed; no auth bypass, DOM read or file handoff on unverified sessions');
   assert.equal(dialogs, 0); assert.equal(transfers, 0);
   authenticated = true; file = '/test/not-media.exe'; assert.ok((await invoke()).error); assert.equal(transfers, 0);
   file = '/test/video.mp4'; const result = await invoke();
-  assert.equal(result.uploadStarted, true); assert.equal(transfers, 1); assert.equal(attached, false); assert.equal(result.published, undefined);
+  assert.equal(result.uploadStarted, true); assert.equal(transfers, 1); assert.equal(attached, true); assert.equal(result.published, undefined);
   console.log('7 mocked IPC ownership, session, domain, login, file validation and upload-handoff checks passed; no real upload or publishing performed');
   let inserted = '';
   let editable = true;
@@ -103,5 +117,9 @@ async function testIpc() {
   const dropped = await drop(); assert.equal(dropped.selection.files[0].name, 'drop.mp4'); assert.ok(!JSON.stringify(dropped).includes('/test/'));
   assert.equal((await invoke({ selectionId: dropped.selection.id })).uploadStarted, true);
   console.log('7 dropped-media assertions passed; no real platform upload');
+  const lateSelection=(await drop()).selection,beforeLate=transfers;mutateDuringResolve=true;
+  const changed=await invoke({selectionId:lateSelection.id});assert.ok(changed.error?.includes('已移动或修改'));assert.equal(changed.uploadStarted,false);assert.equal(transfers,beforeLate);
+  inaccessible=true;const unreadable=await drop();assert.ok(unreadable.error?.includes('本地素材无法读取'));assert.ok(!unreadable.error.includes('/secret/'));
+  console.log('5 last-moment file integrity and error-path privacy checks passed; no real upload');
 }
 testIpc().catch(error => { console.error(error); process.exitCode = 1; });

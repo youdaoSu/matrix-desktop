@@ -21,6 +21,7 @@ import {
 
 } from '@client/src/components/ui/dropdown-menu';
 import { clearAdminToken, getAdminToken, getAdminUser } from '@client/src/api';
+import AppBrandMark from '@/components/AppBrandMark';
 
 const menuItems = [
   { to: '/admin/dashboard', label: '运营总览', icon: LayoutDashboard },
@@ -28,6 +29,7 @@ const menuItems = [
   { to: '/admin/codes', label: '授权码管理', icon: KeyRound },
   { to: '/admin/plans', label: '套餐管理', icon: CreditCard },
   { to: '/admin/logs', label: '操作日志', icon: ScrollText },
+  { to: '/admin/publish-errors', label: '发布错误反馈', icon: ScrollText },
   { to: '/admin/settings', label: '系统配置', icon: Settings },
 ];
 
@@ -50,13 +52,11 @@ const AdminLayout = () => {
       <aside className="w-60 bg-[hsl(220_14%_14%)] text-[hsl(220_14%_90%)] flex flex-col h-screen sticky top-0">
         {/* Logo */}
         <div className="h-14 flex items-center px-4 border-b border-white/10 gap-2">
-          <div className="w-8 h-8 rounded-lg bg-[hsl(221_83%_53%)] flex items-center justify-center text-white">
-            <Shield className="w-5 h-5" />
-          </div>
+          <AppBrandMark className="shrink-0" />
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">管理后台</span>
             <span className="text-[10px] text-white/50 leading-tight">
-              Matrix Admin
+              远效管理
             </span>
           </div>
         </div>

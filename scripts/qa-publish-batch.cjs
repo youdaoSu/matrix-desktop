@@ -12,12 +12,15 @@ assert.equal(validatePublishConfig(common), null); assert.ok(validatePublishConf
 const { registerPageActions } = require('../desktop/page-actions.cjs');
 const handlers = {}, records = [], clicks = [];
 let dialogs = 0, approval = 1, outcome = 'confirmed', authorized = true;
-let cancelAfterFirst = false;
+let cancelAfterFirst = false, rejectFirstBeforeClick = false,acceptedNotice=false;
+let privacy = '仅自己可见';
 const guests = [1, 2].map(id => ({ id: id + 20, hostWebContents: { id: 11 }, session: { id }, isDestroyed: () => false, getURL: () => 'https://creator.douyin.com/creator-micro/content/post/video',
   executeJavaScriptInIsolatedWorld: async (_world, scripts) => {
+    if (scripts[0].code.includes('function publishValidation')) return {version:1,inspected:true,errors:[]};
+    if (scripts[0].code.includes('function publishVisibility')) return { visibility: privacy };
     if (scripts[0].code.includes(')("inspect",')) return { fields: [{ label: '标题', value: 'QA only' }], candidates: [{ index: 0, label: '发布' }], pageUrl: 'https://creator.douyin.com/qa' };
-    if (scripts[0].code.includes(')("submit",')) { clicks.push(id); if (cancelAfterFirst && id === 1) await handlers['matrix:cancel-publish-batch'](event, { batchId: 'cancel-test', accessToken: 'QA only' }); return { clicked: true }; }
-    return { status: outcome, message: outcome };
+    if (scripts[0].code.includes(')("submit",') || scripts[0].code.includes(')("submit-checked",')) { if(rejectFirstBeforeClick&&id===1)return{clicked:false,rejectedBeforeClick:true,error:'提交按钮被弹窗遮挡'}; clicks.push(id); if (cancelAfterFirst && id === 1) await handlers['matrix:cancel-publish-batch'](event, { batchId: 'cancel-test', accessToken: 'QA only' }); return { clicked: true }; }
+    return { status: outcome, accepted:acceptedNotice, message: outcome };
   } }));
 registerPageActions({ ipcMain: { handle: (name, fn) => { handlers[name] = fn; } }, dialog: { showMessageBox: async () => { dialogs++; return { response: approval }; } }, webContents: { fromId: id => guests.find(g => g.id === id) }, session: { fromPartition: name => guests[Number(name.slice(-1)) - 1]?.session }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { douyin: { label: '抖音', domain: 'douyin.com' } }, inspectPlatformSession: async () => ({ authenticated: true, profile: { nickname: 'QA creator' } }), authenticate: async (_token, accountId) => { if (!authorized) throw Error('Unauthorized'); return { userId: 'QA', account: { platform: 'douyin', connectorSessionId: 'aaaaaaaaaaaaaaa' + accountId } }; }, journal: { write: r => records.push({ ...r }), list: () => records }, sleep: async () => {} });
 const progressEvents = [];
@@ -27,15 +30,23 @@ const plans = async () => Promise.all(inputs.map(async input => ({ ...input, non
 (async () => {
   assert.ok((await batch([])).error);
   let entries = await plans(); assert.ok((await batch([entries[0], entries[0]])).error); assert.equal(clicks.length, 0);
-  approval = 0; assert.equal((await batch(entries)).cancelled, true); assert.equal(clicks.length, 0);
-  approval = 1; const before = dialogs; let result = await batch(entries);
-  assert.equal(result.results.length, 2); assert.ok(result.results.every(r => r.receipt.status === 'confirmed')); assert.equal(dialogs - before, 1); assert.deepEqual(clicks, [1, 2]);
+  approval = 0; const before = dialogs; let result = await batch(entries);
+  assert.equal(result.results.length, 2); assert.ok(result.results.every(r => r.receipt.status === 'confirmed')); assert.equal(dialogs - before, 0,'The user already clicked Publish/Retry; do not ask again'); assert.deepEqual(clicks, [1, 2]);
   assert.ok((await batch(entries)).error); assert.equal(clicks.length, 2);
   outcome = 'unknown'; entries = await plans(); result = await batch(entries); assert.equal(result.results.length, 1); assert.deepEqual(result.remaining, ['2']); assert.equal(clicks.length, 3);
   authorized = false; assert.ok((await batch(await plans())).error); assert.equal(clicks.length, 3);
   authorized = true; outcome = 'confirmed'; cancelAfterFirst = true;
   result = await batch(await plans(), 'cancel-test'); assert.equal(result.results.length, 1); assert.deepEqual(result.remaining, ['2']); assert.equal(clicks.length, 4); assert.deepEqual(progressEvents.map(event => event.status), ['submitting', 'confirmed']);
   cancelAfterFirst = false; await handlers['matrix:cancel-publish-batch'](event, { batchId: 'pre-cancel', accessToken: 'QA only' }); result = await batch(await plans(), 'pre-cancel'); assert.equal(result.cancelled, true); assert.equal(clicks.length, 4);
+  const privateInput = { ...inputs[0], expectedVisibility:'仅自己可见' };
+  privacy='公开';assert.ok((await handlers['matrix:inspect-page-action'](event,privateInput)).error);assert.equal(clicks.length,4);
+  privacy='仅自己可见';const privatePlan=await handlers['matrix:inspect-page-action'](event,privateInput);assert.equal(privatePlan.visibility,'仅自己可见');
+  privacy='公开';result=await batch([{...privateInput,nonce:privatePlan.nonce,index:0}],'private-changed');assert.ok(result.results[0].error.includes('可见范围'));assert.equal(clicks.length,4);
+  privacy='仅自己可见';const finalPlan=await handlers['matrix:inspect-page-action'](event,privateInput);result=await batch([{...privateInput,nonce:finalPlan.nonce,index:0}],'private-success');assert.equal(result.results[0].receipt.visibility,'仅自己可见');assert.equal(clicks.length,5);
+  rejectFirstBeforeClick=true;result=await batch(await plans(),'independent-preclick-failure');assert.equal(result.results.length,2);assert.equal(result.results[0].receipt.status,'failed');assert.equal(result.results[0].receipt.clicked,false);assert.equal(result.results[1].receipt.status,'confirmed');assert.deepEqual(result.remaining,[]);assert.equal(clicks.length,6);rejectFirstBeforeClick=false;
+  outcome='unknown';acceptedNotice=true;result=await batch(await plans(),'independent-review-pending');assert.equal(result.results.length,2);assert.ok(result.results.every(item=>item.receipt.status==='confirmed'&&item.receipt.acceptedAt&&item.receipt.verification.state==='processing'));assert.deepEqual(result.remaining,[]);assert.equal(clicks.length,8);assert.equal(dialogs,0);console.log(JSON.stringify({acceptedReviewDoesNotBlockOtherSelectedAccounts:5,noSecondPublishDialog:true,realSubmissions:false}));
+  console.log(JSON.stringify({provenPreclickFailureDoesNotBlockOtherAccountChecks:6,realSubmissions:false}));
+  console.log(JSON.stringify({ nativePrivateSubmissionGuardChecks:7 }));
   console.log(JSON.stringify({ batchCancellationAndProgressChecks: 6 }));
   console.log(JSON.stringify({ publishConfigAndBatchAssertions: 20, realSubmissions: false }));
 })().catch(error => { console.error(error); process.exitCode = 1; });

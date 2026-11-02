@@ -10,7 +10,7 @@ import {
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { eq, and, desc, sql, or, like, gte, lt, inArray, count } from 'drizzle-orm';
 import * as bcrypt from 'bcryptjs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import {
   adminUsers,
   appUsers,
@@ -22,7 +22,6 @@ import {
   sensitiveWords,
   systemSettings,
   contentPosts,
-  followerRecords,
 } from '@server/database/schema';
 import type {
   AppUser,
@@ -44,7 +43,7 @@ const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 function generateRandomCode(length: number): string {
   let result = '';
   for (let i = 0; i < length; i += 1) {
-    result += CODE_CHARS.charAt(Math.floor(Math.random() * CODE_CHARS.length));
+    result += CODE_CHARS.charAt(randomInt(CODE_CHARS.length));
   }
   return result;
 }
@@ -557,7 +556,7 @@ export class AdminService {
     const temporaryPassword = `Mx!${randomBytes(9).toString('base64url')}9a`;
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
-    await this.db.update(appUsers).set({ passwordHash }).where(eq(appUsers.id, userId));
+    await this.db.update(appUsers).set({ passwordHash, authVersion: sql`${appUsers.authVersion} + 1` }).where(eq(appUsers.id, userId));
 
     await this.db.insert(operationLogs).values({
       operatorType: 'admin',
@@ -1247,14 +1246,9 @@ export class AdminService {
   }
 
   async testConnection(): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    const start = Date.now();
-    try {
-      await this.db.execute(sql`SELECT 1`);
-      const latencyMs = Date.now() - start;
-      return { success: true, message: '平台凭证连接测试成功', latencyMs };
-    } catch (error) {
-      return { success: false, message: '平台凭证连接测试失败', latencyMs: Date.now() - start };
-    }
+    // A database ping says nothing about third-party credentials. Do not
+    // report platform access until a real provider-specific check exists.
+    return { success: false, message: '平台凭证连接测试尚未接入，未验证平台连接', latencyMs: 0 };
   }
 
   // ==================== Admin Overview ====================
@@ -1267,13 +1261,17 @@ export class AdminService {
     expiringSoon: number;
     platformAccountDistribution: { platform: PlatformType; count: number }[];
     publishTrend: { date: string; count: number }[];
+    publishTrendBasis: 'published-at-utc';
     followerGrowthTrend: { date: string; newFollowers: number; lostFollowers: number }[];
+    followerGrowthAvailable: false;
   }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const sevenDaysAgo = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
+    const utcToday = new Date();
+    utcToday.setUTCHours(0, 0, 0, 0);
+    const sevenDaysAgo = new Date(utcToday.getTime() - 6 * 24 * 60 * 60 * 1000);
     const in7Days = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrow = new Date(utcToday.getTime() + 24 * 60 * 60 * 1000);
 
     const [
       totalUsersResult,
@@ -1304,13 +1302,13 @@ export class AdminService {
         .groupBy(platformAccounts.platform),
       this.db
         .select({
-          date: sql<string>`to_char(DATE(${contentPosts.createdAt}), 'YYYY-MM-DD')`,
+          date: sql<string>`to_char(DATE(timezone('UTC', ${contentPosts.publishedAt})), 'YYYY-MM-DD')`,
           count: count(),
         })
         .from(contentPosts)
-        .where(and(gte(contentPosts.createdAt, sevenDaysAgo), lt(contentPosts.createdAt, tomorrow)))
-        .groupBy(sql`DATE(${contentPosts.createdAt})`)
-        .orderBy(sql`DATE(${contentPosts.createdAt})`),
+        .where(and(eq(contentPosts.status, 'published'), gte(contentPosts.publishedAt, sevenDaysAgo), lt(contentPosts.publishedAt, tomorrow)))
+        .groupBy(sql`DATE(timezone('UTC', ${contentPosts.publishedAt}))`)
+        .orderBy(sql`DATE(timezone('UTC', ${contentPosts.publishedAt}))`),
     ]);
 
     // Build publish trend for last 7 days
@@ -1320,37 +1318,9 @@ export class AdminService {
     }
     const publishTrend: { date: string; count: number }[] = [];
     for (let i = 6; i >= 0; i -= 1) {
-      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const d = new Date(utcToday.getTime() - i * 24 * 60 * 60 * 1000);
       const dateStr = d.toISOString().split('T')[0];
       publishTrend.push({ date: dateStr, count: publishMap.get(dateStr) ?? 0 });
-    }
-
-    // Follower growth trend (mock from follower_records)
-    const followerTrendResult = await this.db
-      .select({
-        date: sql<string>`to_char(DATE(${followerRecords.createdAt}), 'YYYY-MM-DD')`,
-        newCount: sql<number>`count(*) filter (where ${followerRecords.status} = 'active')`,
-        lostCount: sql<number>`count(*) filter (where ${followerRecords.status} != 'active')`,
-      })
-      .from(followerRecords)
-      .where(and(gte(followerRecords.createdAt, sevenDaysAgo), lt(followerRecords.createdAt, tomorrow)))
-      .groupBy(sql`DATE(${followerRecords.createdAt})`)
-      .orderBy(sql`DATE(${followerRecords.createdAt})`);
-
-    const followerMap = new Map<string, { newFollowers: number; lostFollowers: number }>();
-    for (const row of followerTrendResult) {
-      followerMap.set(row.date, { newFollowers: Number(row.newCount), lostFollowers: Number(row.lostCount) });
-    }
-    const followerGrowthTrend: { date: string; newFollowers: number; lostFollowers: number }[] = [];
-    for (let i = 6; i >= 0; i -= 1) {
-      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
-      const dateStr = d.toISOString().split('T')[0];
-      const entry = followerMap.get(dateStr);
-      followerGrowthTrend.push({
-        date: dateStr,
-        newFollowers: entry?.newFollowers ?? 0,
-        lostFollowers: entry?.lostFollowers ?? 0,
-      });
     }
 
     return {
@@ -1364,7 +1334,11 @@ export class AdminService {
         count: Number(row.count),
       })),
       publishTrend,
-      followerGrowthTrend,
+      publishTrendBasis: 'published-at-utc',
+      // The cache creation/status fields are not verified follow/unfollow
+      // events. An empty series plus explicit availability is not a zero trend.
+      followerGrowthTrend: [],
+      followerGrowthAvailable: false,
     };
   }
 

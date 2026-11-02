@@ -66,6 +66,8 @@ export class PlatformController {
       nickname: string;
       avatarUrl?: string;
       pageUrl?: string;
+      nativeAccountKey?:string;
+      groupId?: string;
     },
   ) {
     const result = await this.platformService.addDesktopAccount(req.user.userId, body);
@@ -80,6 +82,11 @@ export class PlatformController {
     return { code: 0, message: 'success', data: null };
   }
 
+  @Post('accounts/:id/desktop-observation')
+  async desktopObservation(@Req() req:AuthenticatedRequest,@Param('id') id:string,@Body() body:{sessionId:string;nickname:string;avatarUrl?:string;nativeAccountKey?:string;observedAt?:number;metrics?:{followersCount?:number;followingCount?:number;likesCount?:number};metricEvidence?:import('@shared/account-metrics').AccountMetricEvidence;metricsError?:string}){
+    return {code:0,data:await this.platformService.syncDesktopObservation(req.user.userId,id,body)};
+  }
+
   @Post('accounts/:id/reauthorize')
   async reauthorizeAccount(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const userId = req.user.userId;
@@ -92,6 +99,14 @@ export class PlatformController {
     const userId = req.user.userId;
     const result = await this.platformService.getAccountDetail(userId, id);
     return { code: 0, message: 'success', data: result };
+  }
+
+  // Authorization hot path: do not run dashboard aggregates for an IPC guard.
+  // JwtAuthGuard still checks the current user status/authVersion on EVERY read.
+  @Get('accounts/:id/desktop-context')
+  async getDesktopContext(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    const account = await this.platformService.getDesktopAccount(req.user.userId, id);
+    return { code: 0, data: { userId: req.user.userId, account } };
   }
 
   @Post('accounts/:id/health-check')
@@ -122,7 +137,7 @@ export class PlatformController {
   async updateGroup(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() body: { groupName?: string; sortOrder?: number },
+    @Body() body: { groupName?: string; sortOrder?: number; color?: string },
   ) {
     const userId = req.user.userId;
     const result = await this.platformService.updateGroup(userId, id, body);

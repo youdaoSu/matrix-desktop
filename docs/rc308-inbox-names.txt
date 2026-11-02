@@ -1,0 +1,16 @@
+RC308 中文软件名导致私信请求创建失败的修复
+
+RC307实机四个账号均返回transport/TypeError/ERR_INVALID_CHAR，位置douyin-inbox-transport.cjs:37。只读Cookie字段校验118项正常；独立真实Electron33.4.11调用app.setName('远效')后，session.getUserAgent()包含中文产品名，直接交给Node请求头验证稳定复现ERR_INVALID_CHAR。此前普通UA/模拟网络回归没有覆盖该组合，不把旧测试通过等同实机接入正常。
+
+新增browserUserAgent，对User-Agent内非ASCII产品字符作UTF-8百分号编码，保留原ASCII内容、系统/Chrome/Electron版本，拒绝控制字符与无效UTF-16。HTTPS网页身份核对/联系人资料与WebSocket握手共用同一序列化；Cookie、账号身份、请求顺序、设备编号、频率、登录和加密密钥不改。
+
+真实Electron新回归30项：先复现原UA非法，再验证正常UA到达Node原生请求创建及取消路径（隔离未连接Socket，无外部网络）、网页本人回退/联系人资料/WS路径使用合法UA、原Cookie字节不变、ASCII UA不变、补充Unicode及危险输入拒绝。首次Duplex夹具缺setTimeout而失败，改真实未连接net.Socket；首次父进程通过计数预期失配也保留，最终父进程必须收到完整成功回执且退出正常，不以退出0单独认定通过。
+
+完整219组回归、71项实际包核验和安装后实机结果以相应报告为准。未发送测试私信、评论或发布内容。当前仍不能承诺全量历史与实时新消息已验证，须看实际连接与分页回执。
+
+安装后复核（2026-10-31，RC308）
+219组完整回归和71项实际包核验均通过。最终ASAR为0c48f5adec957b0dd47a437c0a0b521ca36701e3ad1dab4e91b98aa13984fd15；872项源码输入指纹75424851b72c98c642f0dc525d9e83718d8e06ac812fa5d49458c8b390e60cfa。冻结快照与候选包不因本记录追加而改变。
+正常退出RC307，备份D:/MatrixUserBackups/before-update-rc.308-20261031-151104后安装，业务数据逐字节及原密钥校验通过；实际HTML、index-DzLvfUgV.js和图标均200且摘要匹配。主进程76664，Electron仍33.4.11。
+实机最新只读状态：四账号均实时通道已连接。肆宇33会话/24500消息/昵称29/29；可瑞吉crazy2043会话/28675消息/昵称1964/2038，74个缺联系人资料编号；Siyu肆1为209会话/6907消息/207/207；可瑞吉求职4为200会话/361消息/200/200。与RC306可瑞吉1238/1917相比，资料补读实际恢复，不能把剩余74个写成已补齐。
+原生用户日志有transport-connected及push-message-saved，证明已接入并存储官方推送数据；没有发送测试私信，未做收发全链路或完整历史验收。肆宇历史返回平台码2并保留断点暂停，具体平台拒绝原因尚未确定，不把它直接断定为登录失效。日志另有一次history/type-error后重新接入记录，未取得该异常完整栈，不称其根因已修复。此前CPU/内存偏高仍待独立分析。
+证据位于D:/codexworck/软件/matrix-rc308-package-proof.json、matrix-rc308-complete.json、matrix-rc308-startup-proof.json、matrix-rc308-inbox-state-latest.json和matrix-rc308-live-diagnostics.json。初始工具视图密钥指纹与原生用户视图不同的失败断言保留；最终用原生用户视图复核原密钥未变，没有修改密钥。原有清理策略拒绝没有重试。

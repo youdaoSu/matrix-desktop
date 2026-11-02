@@ -1,0 +1,75 @@
+RC313 installed: bounded reuse of immutable inbox archive segments
+2026-11-01 Beijing. Installed after 231 source suites and 85 package checks.
+Native navigation checked; overall real-workload performance is NOT accepted.
+
+Evidence: RC312 live main profile 15.210 s / 1443 samples attributed 15.08%
+to full inbox serialize, 6.57% GC, 6.25% buffer.write and 4.26% prepareEngine.
+Only derived code timings were saved, inspector closed, no business sends.
+
+Changed two desktop modules: inbox storage codec and store. Large immutable
+message/person records are grouped into 256-record gzip members. Unchanged
+members reuse compressed bytes, while changed records rebuild only their block.
+Each store retains at most 8 MiB of estimated compressed-buffer/reference/key
+cache cost; candidate and old cache can coexist transiently during a transaction.
+This is not a bound on the complete application or archive memory footprint.
+Map copy/equality work yields between batches; decoded 64 MiB safety limit,
+capacity, scope, original OS encryption and atomic fsync/rename remain unchanged.
+Cache publication follows successful rename. Generic synchronous commits clear
+the cache; records use the existing internal immutable replacement contract.
+
+Existing YXINBOX-GZIP-1 envelope and exact JSON remain readable by the prior
+decoder. Concatenated gzip members are documented by Node.js since 5.9.0:
+https://nodejs.org/download/release/v18.18.2/docs/api/zlib.html#class-zlibgunzip
+Actual Electron 33.4.11 native safeStorage reopen also verified the format.
+
+Isolated samples, not universal performance claims:
+- 42k messages, four frontier-only saves: earlier frozen RC311 678.31 ms;
+  segment prototype 243.97 ms, max 16-ms timer gap 17.75 ms.
+- Fresh same-runtime comparison, 42k + four pages of 100 messages:
+  frozen RC312 954.22 ms / max gap 55.47 ms;
+  segments 413.59 ms / 35.72 ms;
+  segments plus yielding copy/equality 295.32 ms / 33.77 ms.
+- Final native page archive 1,277,742 bytes vs baseline 1,221,682 bytes:
+  approximately 4.6% larger compressed output is the reuse trade-off. Both
+  remain far smaller than the 23,432,898-byte initial legacy fixture.
+- Encoder-only 42k frontier update reused all records; 1.12 ms sample excludes
+  filesystem/encryption/other store work, so it is not an end-to-end UI claim.
+- Four fresh account archives concurrently appending four 100-message pages
+  each (169600 final records): frozen RC312 2309.24 ms, candidate 821.05 ms.
+  Process RSS sampled every 16 ms during saves peaked at 722665472 vs
+  282914816 bytes. These are process RSS samples, not whole-app private memory
+  or exact peaks. Largest timer gap remained 94.46 vs 82.82 ms; this limitation
+  prevents claiming all responsiveness problems eliminated. Both fixtures
+  reopened every archive, exited normally and removed their temporary trees.
+
+23 encoder assertions, 24 async-copy assertions and 64 existing async-archive
+checks passed, including exact data, capacity, mixed-map cache bounds, prototype
+keys, cancellation, rollback, durable ACK and shutdown drain. Complete source
+regression subsequently passed 231 suites including client/server types, source
+888 files / baedb831109273423ee8208c0c1f16a768ec8c857fef9c06edc2dead89db6463.
+The later 85 package checks and native navigation checks passed; overall live
+performance work remains open, as recorded below.
+
+Preserved exploratory work: simple async-promise elimination did not show a
+meaningful benefit and was not integrated. An early prototype fast-cache reuse
+path could exceed the shared bound after another map grew; fixed before source
+integration and covered by mixed-map cache-budget regression. No affected build
+was installed. No platform request-frequency increase or real send test.
+
+Installed evidence: matrix-rc313-delivery-summary.json and package/startup/
+complete/verify proofs. Current archive 9a83e58ab95193393554ccdb76d015a6dd1fecda98e1a16f796a6a0f74f931af.
+Canonical D-drive backup and every backed-up data byte/key verified before
+normal Explorer launch. No test messages, publishing, rule/settings edits.
+Four aggregate routes responded without white screen. Native account switching
+read 336 / 5884 / 6232 cached rows. Control actions returned in 5-6 ms, but this
+is NOT click-to-paint or mouse latency: full probes include MSAA traversal and
+explicit waits. Initial count probe missed split accessible text; v2 handles
+siblings and passed; original failed probe preserved.
+Live snapshot still showed 18 hidden windows, 24 rendering processes with
+6015.6 MiB private memory and main CPU 10.1% (Electron normalized metric).
+Different workload from prior release, NOT a controlled memory comparison.
+Continue profiling hidden reader lifetimes/concurrency and remaining main work.
+RC311 generated binaries retired only after RC313 checks, freeing another
+933157488 logical bytes. Current RC313 and rollback RC312 binaries, all source,
+evidence, business data and backups retained. Total cleanup now
+104516091181 logical bytes across 664 explicitly checked targets.

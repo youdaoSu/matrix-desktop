@@ -1,0 +1,11 @@
+RC273：原评论置顶结果读取
+
+RC272唯一置顶POST被官方接受，用户确认官网已置顶，但本程序读回未知。状态17与身份检查已分开，旧列表对该原评论仍不可用；不能把本人实际置顶与匿名公开可见性混为一谈。
+增加精确原评论reply_control.is_up_top===true读取：核对原ID、作品、作者UID、一级层级和正文之后才采用。只接受严格布尔true，不把管理员置顶、投票置顶、字符串或数字当作UP主置顶。状态0/缺省/17之外仍保守处理。官方top.upper/upper.top中的精确原评论可证明置顶，与公开可见性分开。
+已有评论只核对时可读取置顶信息，不再被状态17提前返回；旧列表缺失时保持未知，不写成确定失败。单次置顶后旧列表未确认，可额外补读一次原评论详情，不重试POST。候选新增逻辑没有扩大自动发评后的写入范围，也不会让只读verify发送写请求。
+字段参考：ReplyControl.is_up_top，https://protodoc.io/SocialSisterYi/bilibili-API-collect/bilibili.main.community.reply.v1；实际网页使用此字段的作者源代码：https://greasyfork.org/zh-CN/scripts/479861-bilibili-%E9%A1%B5%E9%9D%A2%E5%87%80%E5%8C%96%E5%A4%A7%E5%B8%88/code 。这些不保证目标详情一定返回该字段；最终仍以本账号实机读回为准。
+隔离状态机331项、主进程202项通过；旧安装模块在新读回断言失败，保留logs/rc273-state-before.txt。完整回归/打包/安装与实机只读核对待完成。不手工修改任务成功状态。
+
+最终交付：完整169组与类型检查通过；git diff --check针对本次3个代码/测试文件通过。构建和安装包实际解包/原生夹具核验通过，只有desktop/bilibili-followup.cjs运行模块变化，ASAR 03af12fd985d4ff404fd98743438a354d081e6e12768e6dc0a3e16ba95126083。D盘before-update-rc.273-20261030-002500备份后正常更新；原业务数据逐字节校验、密钥不变、启动HTML/JS/favicon200。首次读取异步启动报告过早，文件未生成；没有重跑启动，随后既有报告完成通过。
+2026-10-30 00:30:08，仅调用原任务的“只核对追评与置顶（不发送）”。原评论322266422400、作品BV1mCsf65Ewe及身份均匹配；官方详情状态仍17，但置顶标记核对通过，主进程pinResult.status=confirmed，非手工改状态。本轮未再调用pin/add/delete/unpin或视频发布。
+随后真实MSAA只读检查任务列表：原评论ID正确、追评“已发表”、发布“发布成功”、置顶“已确认”，显示“已从官方置顶标记核对原评论ID、作品ID、作者UID和正文”；“仅处理置顶”按钮已不再出现。证据在工作区matrix-rc273-followup-receipts-1.json与matrix-rc273-followup-ui-Inspect-2.json。用户手工新增评论保留。匿名公开可见性未确认为正常，不把本人置顶确认扩大为所有访客可见或所有平台功能均验收。

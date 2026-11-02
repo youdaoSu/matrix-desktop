@@ -1,0 +1,31 @@
+// Actual sandboxed owned guest, production IPC, local offline API responses.
+const path=require('node:path'),root=path.resolve(__dirname,'..');
+if(!process.versions.electron){const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const r=require('node:child_process').spawnSync(path.join(root,'.desktop-deps/node_modules/electron/dist/electron.exe'),[__filename,...process.argv.slice(2)],{cwd:root,env,windowsHide:true,encoding:'utf8',timeout:35000});process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.exit(r.status??1);}else{
+ const {app,BrowserWindow,session,webContents}=require('electron'),fs=require('node:fs'),os=require('node:os'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+ let moduleRoot=root;if(process.argv[2]==='--packaged'){moduleRoot=path.join(root,'release-next/win-unpacked/resources/app.asar');assert.equal(crypto.createHash('sha256').update(require('original-fs').readFileSync(moduleRoot)).digest('hex'),process.argv[3]);}
+ const userData=fs.mkdtempSync(path.join(os.tmpdir(),'matrix-fan-response-native-'));app.setPath('userData',userData);
+ app.whenReady().then(async()=>{let win,native;try{
+  const {registerDouyinInteractions}=require(path.join(moduleRoot,'desktop/douyin-interactions.cjs')),{createOpenFollowerReader}=require(path.join(moduleRoot,'desktop/douyin-open-followers.cjs'));
+  const account={id:'qa-account',platform:'douyin',connectorSessionId:'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',nativeAccountKey:'qa-handle'},source=session.fromPartition('persist:matrix-douyin-'+account.connectorSessionId);
+  let mode='json',apiRequests=0,external=0,checks=0,clock=Date.now();const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},diagnostics=[];
+  source.webRequest.onBeforeRequest((d,done)=>{const u=new URL(d.url),ok=u.origin==='https://www.douyin.com'&&['/user/self','/aweme/v1/web/user/follower/list/'].includes(u.pathname);if(!ok)external++;done({cancel:!ok});});
+  source.protocol.handle('https',request=>{
+   const url=new URL(request.url);if(url.pathname==='/aweme/v1/web/user/follower/list/'){
+    apiRequests++;eq(request.method,'GET');eq(request.headers.get('authorization'),null);eq(url.searchParams.get('user_id'),'9007199254740993');eq(url.searchParams.get('sec_user_id'),'MS4wQaOwn');eq(url.searchParams.has('a_bogus'),false);eq(url.searchParams.has('msToken'),false);
+    const body=mode==='empty'?null:mode==='html'?'<html>QA private server refusal</html>':mode==='platform'?JSON.stringify({status_code:-999}):JSON.stringify({status_code:0,has_more:false,followers:[{uid:'201',nickname:'QA private fan'}]});
+    return new Response(body,{status:mode==='denied'?403:200,headers:{'content-type':mode==='html'?'text/html':'application/json'}});
+   }
+   return new Response(`<style>section{height:240px;width:600px;overflow:auto}</style><header><h1>QA owner</h1><span>抖音号：qa-handle</span></header><section data-e2e="user-fans-container"></section><script>document.querySelector('section').__reactFiber$qa={memoizedProps:{currentUserInfo:{uid:'9007199254740993',unique_id:'qa-handle',sec_uid:'MS4wQaOwn'},isSelf:true,activeTab:1,searchVal:'',userList:[]}};window.clicks=0;document.addEventListener('click',()=>window.clicks++);</script>`,{headers:{'content-type':'text/html;charset=utf-8'}});
+  });
+  win=new BrowserWindow({show:false,webPreferences:{webviewTag:true,sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});await win.loadURL('data:text/html,<main></main>');
+  const attached=new Promise(resolve=>win.webContents.once('did-attach-webview',(_event,guest)=>guest.once('dom-ready',()=>resolve(guest))));
+  await win.webContents.executeJavaScript(`(()=>{const v=document.createElement('webview');v.setAttribute('partition',${JSON.stringify('persist:matrix-douyin-'+account.connectorSessionId)});v.style='width:900px;height:700px';v.src='https://www.douyin.com/user/self';document.querySelector('main').appendChild(v);})()`);const guest=await attached;
+  const handlers=new Map(),event={sender:win.webContents},input={accessToken:'qa-app-token',accountId:account.id,webContentsId:guest.id};
+  native=registerDouyinInteractions({ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},getWindow:()=>win,authenticate:async()=>({userId:'qa-owner',account:{...account}}),session,userData,now:()=>clock,safeStorage:{isEncryptionAvailable:()=>true,encryptString:()=>{throw Error('Inspection must not write follower cache');},decryptString:()=>{throw Error('No fixture archive exists');}},diagnostics:{record:(_scope,event)=>diagnostics.push(event)},openFollowerReader:createOpenFollowerReader({getWindow:()=>win,session,webContents}),transportFactory:async()=>{throw Error('No hidden collector allowed');}});
+  const inspect=()=>handlers.get('matrix:douyin-followers-sync')(event,{...input,command:'inspect'}),cache=()=>handlers.get('matrix:douyin-interactions')(event,{accessToken:input.accessToken,accountId:account.id,kind:'followers',command:'cache'});
+  eq((await cache()).records,[]);
+  for(const sample of ['json','empty','html','platform','denied']){clock+=61000;mode=sample;const before=apiRequests,out=await inspect();eq(out.error,undefined);eq(apiRequests,before+1);eq(out.inspection.responseRosterShape,sample==='json');eq(out.inspection.responseJsonValid,['json','platform'].includes(sample));eq(out.inspection.responseBodyKind,sample==='empty'?1:sample==='html'?2:sample==='denied'?0:3);eq(JSON.stringify(out).includes('QA private'),false);eq((await cache()).records,[]);eq((await cache()).followerPanelSync,undefined);eq(await guest.mainFrame.executeJavaScript('window.clicks'),0);eq((await inspect()).error.includes('一分钟'),true);eq(apiRequests,before+1);}
+  eq(diagnostics.filter(e=>e.stage==='follower-api-inspect').length,5);eq(diagnostics.some(e=>e.code==='platform-denied'),true);eq(diagnostics.some(e=>e.code==='http-denied'),true);eq(external,0);
+  console.log(JSON.stringify({followerResponseNativeChecks:checks,actualSandboxedElectron:true,exactOwnedPanel:true,oneGetPerInspection:true,noRosterCacheWrites:true,noSignedOrAlternateRequests:true,realUserProfileTouched:false,externalPlatformRequests:0}));
+ }finally{native?.close();win?.destroy();}}).then(()=>app.exit(0)).catch(error=>{console.error(error.stack||error);app.exit(1);});
+}

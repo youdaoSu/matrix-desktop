@@ -1,0 +1,91 @@
+{
+  "repository": "https://github.com/zhinjs/douyin-im",
+  "commit": "f6eee669c39094224e00c6b877e1964d9da4e393",
+  "license": "MIT, retained in LICENSE.txt",
+  "rc148DisplayFacts": {
+    "reviewedAt": "2026-10-23",
+    "references": ["logs/rc119-public-creator/work-management.c9d22583.js", "https://raw.githubusercontent.com/TeamBreakerr/douyin-chat-export/2b3ed23ac47884069619f53a2c68350e093ac86c/frontend/src/lib/douyinMessage.js"],
+    "facts": "The public creator picker maps name/img entries from its fixed bee JSON resource to the fixed douyinstatic emoji directory. Explicit stickers/joker_stickers arrays can carry static_url resources even in otherwise system-typed payloads. The reference does not establish meanings of aweTypes100140/100145/100149.",
+    "implementation": "Independent bounded shortcode renderer and archived sticker-resource projection. No third-party code/artwork is copied or bundled; no generic recursive extraction, guessed join/leave text, authentication material or unknown JSON is displayed. Actual homepage order is read from already rendered own post links, before pin/date fallback; no new API or notification request is generated.",
+    "limits": "Public catalog availability and all unknown system variants still require runtime acceptance. The source reference has no declared code license and is used for schema facts only."
+  },
+  "rc142CommentMonitorCounts": {
+    "reviewedAt": "2026-10-23",
+    "artifact": "logs/rc119-public-creator/work-management.c9d22583.js",
+    "sha256": "a042534e40ffcc9c9bb96c13bd2bd8aa786903cce7833a150e3e55c03ff9b8dc",
+    "facts": "The publicly shipped creator frontend passes Number(t.metrics.comment_count) as commentCount to its comment view and sorts by metrics.comment_count. This is a work comment-count signal, not a follower count or proof that every comment/reply is accessible.",
+    "implementation": "Only exact nonnegative safe integers from normal observed own-work GET rows are projected. A change schedules the already owner-proven affected work for comment catch-up; an absent/rounded value is not zero or a deletion. No request generation, SDK execution or unread API is added. Static artifact inspected only; actual platform latency remains unverified."
+  },
+  "rc139CreatorProfileCounter": {
+    "reviewedAt": "2026-10-23",
+    "artifact": "logs/rc119-public-creator/main.ef4e89cd.js",
+    "sha256": "d6fcd662605b0d0cae0f137b0bf2acfe4b3406e4be34510e84ac266b77961198",
+    "facts": "Normal creator GETs /aweme/v1/creator/pc/user/info/ and /aweme/v1/creator/user/info/ provide own uid and user_profile; the public application uses user_profile.unique_id and follower_count. The own userInfo profile also uses follower_count; fan-index label configuration is separate.",
+    "implementation": "Independently implemented passive response-clone observer on the already loaded own homepage. It constructs no request, preserves the original website response and int64 UID lexemes in its clone, binds the response handle to the rendered own account, and projects only exact bounded counters plus owner evidence. Normal HTTP/platform refusal is not followed by another endpoint. No SDK/React closure, credential or challenge extraction.",
+    "verification": "Pure fixtures plus actual sandboxed Electron preload with first-inline fetch and XHR, exact zero, foreign identity, denial, stale response, late owner and private-field exclusion tests. Real large-account acceptance is not claimed from fixtures."
+  },
+  "rc138SystemDisplayFacts": {
+    "reviewedAt": "2026-10-23",
+    "repository": "https://github.com/TeamBreakerr/douyin-chat-export",
+    "commit": "2b3ed23ac47884069619f53a2c68350e093ac86c",
+    "references": ["frontend/src/lib/douyinMessage.js", "frontend/src/lib/douyinMessage.test.js"],
+    "license": "No license declared by repository API. No source implementation copied or imported; schema facts only.",
+    "facts": "System display can use explicit hint_text, or tips with numeric double-brace placeholders and template entries containing key and plain name. Plain non-JSON system content is also possible.",
+    "implementation": "Independent bounded display projection: one-pass numeric token substitution, exact plain name fields only, conflicting/missing names explicitly unavailable, no UID guessing, recursive interpolation, action execution or arbitrary JSON rendering. New projection applies to already encrypted archives without exporting raw user records.",
+    "limits": "Real fixed-vocabulary diagnostics also show aweTypes100140/100145/100149 with other shapes. Those events are not automatically assigned invented join/leave text. Not all1001 templates are claimed decoded."
+  },
+  "rc136DisplayAndUpdatesReview": {
+    "reviewedAt": "2026-10-23",
+    "creatorArtifact": "logs/rc119-public-creator/work-management.c9d22583.js",
+    "sha256": "a042534e40ffcc9c9bb96c13bd2bd8aa786903cce7833a150e3e55c03ff9b8dc",
+    "facts": "Static Gh projects comment image_list thumb_url/medium_url/crop_url/origin_url into display url_list; My renders the supplied images. The independent collector now preserves those display-only fields through normalized rows, encrypted cache and rendering. Public content.ts buildEmojiContent separates display_name from actual text; label-only stickers are not displayed twice. Avatar URL scalar/resource snake/camel representations are bounded display variants, not identity proof.",
+    "incremental": "Four independent account lanes, same-account single-flight and existing 4-second native safety floor. Fresh owned work inventory every 60 seconds while history remains; round-robin owned comment first pages and follower heads have 15-second eligibility, alternate with backfill, never rewind historical cursors or claim a head is a complete roster. Actual latency depends on account/work counts and platform response. Normal navigation/reload only, no signature/challenge bypass or read-state APIs.",
+    "systemNotices": "Unknown 1001 bodies are not claimed decoded. Local native projection provides only fixed-vocabulary field/type/count diagnostics, never arbitrary keys, IDs, bodies or media keys, so remaining schema work does not require exporting private chat JSON.",
+    "followerResearch": "https://developer.open-douyin.com/docs/resource/zh-CN/dop/develop/openapi/account-management/user-data/get-fans-list documents fans.list authorization and a 5000 query ceiling. This is NOT evidence of a 10000-follower owner visibility limit, nor evidence explaining a bound web-session failure. The user's own App screenshot demonstrates a visible roster above 10000."
+  },
+  "files": [{"upstream": "src/services/im/proto/im.proto", "local": "im.proto", "gitBlob": "2dbec18d348eb41c2ac69e42d14af7bced6c73d1"}],
+  "scope": "Protocol schema only. Runtime transport, persistence, read-only collectors, explicitly scoped user actions, synchronization and Matrix UI are independently implemented. No upstream executable or sending/mark-read implementation is imported.",
+  "explicitUserActionReview": {
+    "reviewedAt": "2026-10-23",
+    "references": ["https://raw.githubusercontent.com/zhinjs/douyin-im/f6eee669c39094224e00c6b877e1964d9da4e393/src/services/im/send.ts", "src/services/im/content.ts", "src/services/im/proto/im.proto"],
+    "facts": "Explicit text send uses command 100, inbox 0, /v1/message/send, an existing exact owner-bound conversation/short ID, UUID client-message ID and aweType 700 text. The response supplies server-message ID, status and optional audit/check explanation. Independent implementation reserves the request durably before one attempt and never retries unknown delivery. No read receipt or arbitrary peer/command/body API.",
+    "creatorControls": { "localArtifact": "logs/rc119-public-creator/work-management.c9d22583.js", "sha256": "a042534e40ffcc9c9bb96c13bd2bd8aa786903cce7833a150e3e55c03ff9b8dc", "bytes": 661623, "runtimeExecuted": false, "facts": "Static by/Gh/Jh component chain: user_digg is boolean; digg_count/reply_count are counts. Legacy action types 1/3 mean like/unlike, new digg types 1/2. Reply is a scoped rendered composer. The adapter clicks normal controls after exact comment/work proof; one matching POST only, and normal response clones provide the receipt. No copied upstream runtime, SDK closures, signatures or notification APIs." },
+    "verificationLimit": "Synthetic own-account fixtures and offline real Electron/React only. Real-account sends/likes were not performed. Unknown 1001 payloads are classified as system notices with explicit unparsed-body text, not claimed decoded. Phone-specific metadata absent from platform data is not fabricated."
+  },
+  "inboundContentReview": {
+    "reviewedAt": "2026-10-22",
+    "commit": "f6eee669c39094224e00c6b877e1964d9da4e393",
+    "references": ["src/services/im/content.ts", "src/services/im/content-inbound.test.ts", "src/services/im/notifications.ts", "src/services/im/notifications.test.ts"],
+    "scope": "Read-only schema facts: explicit text fields, wire-typed media URLs, work/comment/card fields, and known aweType group notices. Independent bounded display projection, not imported runtime. Unknown 1001 shapes remain explicitly unsupported and encrypted at rest; real-account validation is still required. No template execution or read receipts."
+  },
+  "ownedImagePreviewReview": {
+    "reviewedAt": "2026-10-22",
+    "commit": "f6eee669c39094224e00c6b877e1964d9da4e393",
+    "references": ["src/services/im/media.ts", "src/services/im/content.ts", "src/services/im/proto/im.proto"],
+    "facts": "Image resource_url supplies rendition URLs and a hex skey. Public media source describes an IV(12) + AES-256-GCM ciphertext + authentication tag(16) container. MessageBody supplies sender and sec_sender independently of message text.",
+    "implementation": "Independent bounded native preview, using only the exact authenticated account/thread/message archive reference and the key already supplied with that own message. No caller URL/key, cookie forwarding, redirects, arbitrary decrypt API or challenge/signature bypass. Two preview jobs; 8 MiB per image; per-connection memory cache; visible images/emojis preview automatically. Original image key/body are never returned to the renderer. No third-party code execution or uploads.",
+    "limits": "Fixtures verify the known container and plaintext formats, not all real account attachments. HTTP 401/403/429 stop candidate retries. Unsupported or missing image material remains an explicit failure. Recalled/invisible/deleted messages cannot return their old attachments."
+  },
+  "protocolReferences": ["src/services/im/inbox.ts", "src/services/im/desktop.ts", "src/services/im/credentials.ts", "src/services/im/frame.ts", "src/services/im/frontier-cursors.ts", "src/services/im/stranger.ts", "src/services/im/user-directory.ts"],
+  "interactionProtocolFacts": {
+    "reviewedAt": "2026-10-21",
+    "references": ["https://github.com/Johnserf-Seed/f2/blob/main/f2/apps/douyin/api.py", "https://github.com/Johnserf-Seed/f2/blob/main/f2/apps/douyin/model.py", "https://github.com/Johnserf-Seed/f2/blob/main/f2/apps/douyin/filter.py", "https://github.com/Johnserf-Seed/f2/blob/main/f2/apps/douyin/handler.py"],
+    "scope": "Endpoint paths, field meanings and source_type=1 follower pagination uses returned min_time. No upstream runtime, signing/token generation, crawling bypass, sending or mark-read implementation is imported. The independent adapter uses the bound session, verifies the numeric owner, stops on errors/challenges and does not claim inaccessible records were fetched."
+  },
+  "browserDirectoryReview": {
+    "reviewedAt": "2026-10-21",
+    "reference": "Local independently installed XiaoVCat 3.0.0 build 1122 program resource server/server.jsc",
+    "sha256": "495180ad2b333992f375dacb02f42e0b77f28a508564b5c36b8aea75891971a6",
+    "fileOffset": 11813524,
+    "evidence": "Static reference to https://www.douyin.com/aweme/v1/web/im/user/info/ and sec_user_ids. This identifies the browser endpoint, not an original function or a complete recovered implementation.",
+    "scope": "Independent browser-session directory adaptation only. Original bytecode was not executed/deserialized, source was not imported, private profiles were not read, and no signing/challenge bypass was attempted. Exact UID and secUID response association remains mandatory."
+  },
+  "browserPushProtocolReferences": {
+    "repository": "https://github.com/xiaoxiaodafeng/Douyin_messages",
+    "files": [
+      { "path": "send_dm/receiver.py", "gitBlob": "3bcb5d16060d607c599edddcc3079968c54da2be" },
+      { "path": "send_dm/client.py", "gitBlob": "e93c7c8d328f7771520e65e80595b26d4aa822f1" }
+    ],
+    "scope": "Read-only study of protocol facts: browser self/device-query endpoint, owner field, websocket endpoint/profile and public protocol constants. No Python implementation, signing code, security-token generation, sending or mark-read code is copied or imported. Matrix uses verified HTTPS, the actual bound session and exact numeric owner checks; it stops on challenges or missing device identity."
+  }
+}

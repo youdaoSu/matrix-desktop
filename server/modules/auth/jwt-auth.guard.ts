@@ -4,10 +4,14 @@ import {
   ExecutionContext,
   UnauthorizedException,
   SetMetadata,
+  Inject,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
+import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import { eq } from 'drizzle-orm';
+import { appUsers } from '@server/database/schema';
 
 export const PUBLIC_ROUTE_KEY = 'publicRoute';
 export const PublicRoute = () => SetMetadata(PUBLIC_ROUTE_KEY, true);
@@ -16,6 +20,7 @@ export interface JwtPayload {
   userId: string;
   role: 'user' | 'admin';
   username?: string;
+  authVersion?: number;
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'matrix-secret-key-dev';
@@ -30,9 +35,9 @@ export function verifyToken(token: string): JwtPayload {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector, @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -52,6 +57,8 @@ export class JwtAuthGuard implements CanActivate {
       if (payload.role !== 'user') {
         throw new UnauthorizedException('令牌角色不匹配');
       }
+      const [user] = await this.db.select({ version: appUsers.authVersion, status: appUsers.status }).from(appUsers).where(eq(appUsers.id, payload.userId)).limit(1);
+      if (!user || user.status !== 'active' || (payload.authVersion ?? 0) !== user.version) throw new UnauthorizedException('登录已失效，请使用当前密码重新登录');
       (request as unknown as { user: JwtPayload }).user = payload;
       return true;
     } catch (error) {

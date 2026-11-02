@@ -34,7 +34,7 @@ async function connect(target) {
 }
 
 const mainTarget = (await listTargets()).find((item) => item.type === 'page' && item.url.includes('/app/'));
-if (!mainTarget) throw new Error('未找到矩效主窗口');
+if (!mainTarget) throw new Error('未找到远效主窗口');
 const main = await connect(mainTarget);
 const checks = [];
 

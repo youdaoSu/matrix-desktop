@@ -1,0 +1,26 @@
+// Only the fresh packaged-QA backend. Never accepts the installed data path.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+const base=new URL(process.argv[3]),profile=fs.realpathSync(process.argv[4]);
+assert.ok(profile.startsWith(fs.realpathSync(os.tmpdir())+path.sep) && /^matrix-packaged-qa-/.test(path.basename(profile)));
+assert.equal(base.hostname,'127.0.0.1');
+const configured=/^SERVER_PORT=(\d+)$/m.exec(fs.readFileSync(path.join(profile,'.env.local'),'utf8'))?.[1];assert.equal(base.port,configured);
+const page=await fetch(base.origin+'/app/'),csrf=/suda-csrf-token=([^;]+)/.exec(page.headers.get('set-cookie')||'')?.[1];assert.ok(csrf);
+const request=async(route,token,body)=>{const response=await fetch(base.origin+route,{method:body?'POST':'GET',headers:{'content-type':'application/json',cookie:'suda-csrf-token='+csrf,'x-suda-csrf-token':csrf,...(token?{authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:response.status,data:await response.json()};};
+const user=(await request('/api/auth/login',null,{username:'demo',password:'user123456'})).data.data.token,admin=(await request('/api/admin/login',null,{username:'admin',password:'admin123456'})).data.data.token;
+let checks=0;assert.ok(user && admin);
+const route='/api/feedback/publish-errors',inbox='/api/admin/publish-errors';
+assert.equal((await request(inbox,user)).status,401);assert.equal((await request(route,null,{report:{}})).status,401);assert.equal((await request(route,admin,{report:{}})).status,401);checks+=3;
+assert.equal((await request(route,user,{report:{}})).status,400);checks++;
+const report={schemaVersion:1,reportId:randomUUID(),taskId:randomUUID(),attempt:1,platform:'bilibili',version:'qa-disposable',stage:'failed',executionStage:'filling',submission:'not_submitted',error:'缺少标题；Cookie=QA-secret-never-store',updatedAt:new Date().toISOString(),history:[],password:'QA-password-never-store',title:'QA-title-never-store'};
+const first=await request(route,user,{report});assert.ok(first.status<300);assert.equal(first.data.data.accepted,true);assert.equal(first.data.data.delivery,'local');checks+=3;
+const duplicates=await Promise.all([request(route,user,{report}),request(route,user,{report})]);assert.equal(duplicates[0].data.data.id,first.data.data.id);assert.equal(duplicates[1].data.data.id,first.data.data.id);checks+=2;
+let listing=(await request(inbox,admin)).data.data;assert.equal(listing.items.length,1);assert.ok(!JSON.stringify(listing).includes('QA-secret'));assert.ok(!JSON.stringify(listing).includes('QA-password'));assert.ok(!JSON.stringify(listing).includes('QA-title'));checks+=4;
+for(let n=0;n<4;n++)assert.ok((await request(route,user,{report:{...report,reportId:randomUUID()}})).status<300);
+assert.equal((await request(route,user,{report:{...report,reportId:randomUUID()}})).status,429);checks++;
+listing=(await request(inbox+'?page=1&pageSize=2',admin)).data.data;assert.equal(listing.total,5);assert.equal(listing.items.length,2);assert.ok(Date.parse(listing.items[0].receivedAt)>=Date.parse(listing.items[1].receivedAt));checks+=3;
+assert.equal((await request(inbox+'?page=NaN',admin)).status,400);checks++;
+console.log(JSON.stringify({packagedFeedbackApiChecks:checks,persistedAndDeduplicated:true,userAdminBoundaries:true,redactionReappliedOnServer:true,latestFirstInbox:true,publicReportOrRealUserDataTouched:false}));

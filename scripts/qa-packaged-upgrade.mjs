@@ -30,7 +30,7 @@ async function launch(output) {
   let target;
   await wait(async () => {
     if (child.exitCode !== null) throw new Error('Disposable upgrade app exited');
-    try { target = (await fetch(`http://127.0.0.1:${port}/json/list`).then(r => r.json())).find(t => t.type === 'page' && t.url.includes('/app/')); return !!target; } catch { return false; }
+    try { target = (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) }).then(r => r.json())).find(t => t.type === 'page' && t.url.includes('/app/')); return !!target; } catch { return false; }
   }, 'Upgrade app did not load');
   const base = new URL(target.url).origin;
   assert.equal(new URL(base).hostname, '127.0.0.1');
@@ -56,7 +56,7 @@ async function close() {
   socket.send(JSON.stringify({ id: 1, method: 'Page.close' }));
   await wait(() => child.exitCode !== null, 'Disposable app did not close');
   socket.close(); current = null;
-  await wait(async () => { try { await fetch(`http://127.0.0.1:${port}/json/list`); return false; } catch { return true; } }, 'Debug endpoint did not close');
+  await wait(async () => { try { await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) }); return false; } catch { return true; } }, 'Debug endpoint did not close');
 }
 try {
   const marker = `QA_upgrade_${Date.now()}`;

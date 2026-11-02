@@ -1,0 +1,19 @@
+{
+  "name": "远效",
+  "design": "恒远科技 C 款 · 联程 / 连接成长 · 浅底紫标桌面适配",
+  "appId": "com.matrix.desktop",
+  "legacyDataName": "fullstack-nestjs-template",
+  "legacyExecutableName": "矩效 Matrix",
+  "icon": {
+    "size": 320,
+    "background": "#F4F1FF",
+    "border": "#DDD4FA",
+    "foreground": "#6242D9",
+    "radius": 72,
+    "transform": "translate(43 53) scale(.93)",
+    "paths": [
+      "M3 115C-2 105 1 90 14 80l93-65c16-11 27-13 40-4l21 15c11 8 14 17 14 31v31c0 11-2 16-11 22l-27 18V79c0-17-14-24-28-15l-87 59c-11 7-21 4-26-8Z",
+      "m196 45 37 26c13 9 18 20 18 35v22c0 16-7 27-20 35l-104 58c-16 9-29 9-43 1l-32-20c-14-9-21-20-21-35v-14c0-14 5-25 18-34l41-28v57c0 12 4 16 14 10l81-50c9-5 11-9 11-18Z"
+    ]
+  }
+}

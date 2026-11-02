@@ -56,6 +56,7 @@ export interface PlatformAccount {
   nickname?: string;
   avatarUrl?: string;
   accountRemark?: string;
+  groupId?: string;
   groupName?: string;
   tags?: string[];
   authStatus: 'pending' | 'authorized' | 'expired' | 'error';
@@ -66,8 +67,17 @@ export interface PlatformAccount {
   postsCount: number;
   healthStatus: 'normal' | 'warning' | 'error';
   createdAt: string;
+  bindTime?: string;
+  lastVerifiedAt?: string;
   connectorMode?: 'oauth' | 'desktop';
   connectorSessionId?: string;
+  nativeAccountKey?: string;
+  verifiedNicknames?: string[];
+  metricsObservedAt?: string;
+  followersChange?: number;
+  metricsSource?: string;
+  metricsError?: string;
+  metricsAttemptedAt?: string;
 }
 
 export interface ContentPost {
@@ -455,6 +465,7 @@ export interface AccountGroup {
   groupName: string;
   sortOrder: number;
   isDefault: boolean;
+  color?: string;
   accountCount?: number;
   createdAt: string;
 }

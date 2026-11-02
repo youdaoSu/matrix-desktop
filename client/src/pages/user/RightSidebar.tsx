@@ -160,7 +160,7 @@ const RightSidebar = ({ onRenewClick, onOnboardingClick }: RightSidebarProps) =>
             <span className="text-sm font-semibold text-foreground">新手引导</span>
           </div>
           <p className="text-xs text-muted-foreground leading-5 mb-3">
-            1 分钟快速了解核心功能，带您玩转矩效 Matrix
+            1 分钟快速了解核心功能，带您玩转远效
           </p>
           <Button
             variant="outline"

@@ -1,0 +1,14 @@
+.matrix-one-click-dialog { width: min(760px, calc(100vw - 32px)); max-width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); display: flex; flex-direction: column; }
+.matrix-one-click-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 20px; font-size: 14px; }
+.matrix-one-click-body section { display: grid; gap: 12px; }
+.matrix-one-click-body h3 { font-weight: 600; }
+.matrix-one-click-body p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.matrix-one-click-body small { color: var(--muted-foreground); overflow-wrap: anywhere; }
+.matrix-one-click-toolbar,.matrix-one-click-accounts { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.matrix-one-click-accounts label { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.matrix-one-click-body select,.matrix-one-click-body textarea { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); max-width: 100%; }
+.matrix-one-click-body textarea { display: block; width: 100%; min-height: 140px; resize: vertical; }
+.matrix-one-click-body article { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.matrix-one-click-body details,.matrix-one-click-preview,.matrix-one-click-editor { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.matrix-one-click-body summary { cursor: pointer; font-weight: 500; }
+.matrix-one-click-editor { display: grid; gap: 12px; }

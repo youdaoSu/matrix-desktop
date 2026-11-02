@@ -1,0 +1,52 @@
+RC304 background heartbeat candidate — 2026-10-31
+
+Problem and change
+RC303 fixed hidden-window liveness by holding a native background-throttling
+lease. The lease also kept unrelated main-renderer timers awake. RC304 adds a
+scoped main-process heartbeat notification and retains renderer timers as a
+fallback. Successful main-event configuration restores the prior throttling;
+legacy clients retain the existing lease. The requester reuses the five-second
+host scheduler, uses monotonic time and weak ownership, and rate-limits each
+workspace. Notifications contain only the workspace ID and never extend native
+authorization. Actual authenticated responses are still required within45s.
+
+The real preload removes listeners by their original function, omits native
+event objects, and validates the payload. The React runtime ignores obsolete
+workspaces, coalesces triggers, retries configuration after errors and disposes
+subscriptions. No markup, style, platform request rate or business schema change.
+Source comparison with frozen RC303 found only the non-rendering runtime and
+its type declaration changed among198 frontend files.
+
+Checks completed before packaging
+- 216 complete source suites passed, plus client type checking. 869 counted
+  inputs:26a72341096eb2557a61a36e6c2a53bfae23b2f5c5b0a5d984b84943820329e6.
+- New targeted suites:23 requester checks,22 real-runtime/preload checks and25
+  native-worker checks. First native test omitted isDestroyed on its disposable
+  window stub and failed the existing ownership guard. That failure is retained;
+  only the fixture was corrected, not the product guard.
+- Actual source runtime/preload, hidden440s:29 calls, max gap20290.73ms,
+  throttling remained enabled and was restored after normal close.
+- Separate560s recovery fixture suppressed only its own IPC calls during
+  elapsed320–380s:3 rejected attempts, native worker expiry, automatic recovery,
+  9 successful later calls,2 workers normally closed and original encrypted key
+  preserved. This is not a real network/platform outage or OS suspend test.
+- Real contextBridge lifecycle fixture:60 successive account-signature changes,
+  62 configurations including mount/remount, exactly one listener while mounted,
+  zero after unmount/logout, one acknowledged logout and obsolete event ignored.
+  Its preload was the product code plus a test-only listener-count accessor.
+- Paired isolated440s timer observations:440 one-second callbacks under frozen
+  RC303 versus301 under RC304. This measures timer wakeups only, not a whole-app
+  CPU/battery percentage or a guarantee for every hidden webpage.
+
+Packaging and delivery
+Full Nest/Vite/NSIS build and all66 actual package checks passed. Actual ASAR
+runtime/preload kept throttling enabled for440s:29 calls, max gap20032.21ms,
+normal close restored the prior setting.37 worker dependencies and1692 runtime
+files were preserved. Installer is unsigned. ASAR SHA256:
+03fa779e8343d5038179c384ade5524a02605e70ad04b6cc30cecb8a35aa7536
+Setup SHA256:
+6731c77fab863161df17c02f7f810acb88e2d8a6faa798d31c36564f98e1e560
+These results do not imply installation or all-platform acceptance.
+Installed application remains RC294. The publishing header is unreadable behind
+the existing monitoring dialog, so normal update remains paused. No forced exit,
+real account operation, message, comment, publication or pin was used in tests.

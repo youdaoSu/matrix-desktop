@@ -13,7 +13,8 @@ import { Label } from '@client/src/components/ui/label';
 import { Alert, AlertDescription } from '@client/src/components/ui/alert';
 import { Progress } from '@client/src/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { axiosForBackend } from '@/api';
+import { axiosForBackend, clearAuthToken } from '@/api';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 const getPasswordStrength = (pwd: string): { level: number; label: string; color: string } => {
@@ -32,6 +33,7 @@ const getPasswordStrength = (pwd: string): { level: number; label: string; color
 };
 
 const SettingsPasswordPage: React.FC = () => {
+  const navigate = useNavigate();
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -43,7 +45,9 @@ const SettingsPasswordPage: React.FC = () => {
     try {
       await axiosForBackend.post('/api/users/change-password', { oldPassword, newPassword });
       setOldPassword(''); setNewPassword(''); setConfirmPassword('');
-      toast.success('密码修改成功');
+      clearAuthToken();
+      toast.success('密码修改成功，请使用新密码重新登录');
+      navigate('/login', { replace: true, state: { passwordChanged: true } });
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || error?.response?.data?.message || error?.message || '密码修改失败');
     } finally { setSaving(false); }

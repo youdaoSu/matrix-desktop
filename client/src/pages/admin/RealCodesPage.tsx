@@ -19,13 +19,15 @@ const mask = (code: string) => code.length > 8 ? `${code.slice(0, 4)}****${code.
 export default function RealCodesPage() {
   const [items, setItems] = useState<ActivationCode[]>([]);
   const [plans, setPlans] = useState<VipPlan[]>([]);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState<number>();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('');
   const [keyword, setKeyword] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [plansError, setPlansError] = useState('');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [planId, setPlanId] = useState('');
@@ -38,22 +40,33 @@ export default function RealCodesPage() {
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError('');
-    Promise.all([
-      adminAxios.get('/api/admin/codes', { params: { page, pageSize: 20, ...(status ? { status } : {}), ...(query ? { keyword: query } : {}) }, signal: controller.signal }),
-      adminAxios.get('/api/admin/plans', { signal: controller.signal }),
-    ]).then(([codes, planResponse]) => {
-      setItems(codes.data.data.items); setTotal(codes.data.data.total); setPlans(planResponse.data.data);
+    setLoading(true); setError(''); setItems([]); setTotal(undefined);
+    adminAxios.get('/api/admin/codes', { params: { page, pageSize: 20, ...(status ? { status } : {}), ...(query ? { keyword: query } : {}) }, signal: controller.signal }).then(codes => {
+      const data = codes.data?.data;
+      if (!Array.isArray(data?.items) || !Number.isSafeInteger(data?.total) || data.total < 0 || data.page !== page || data.pageSize !== 20 || data.items.length > 20 || data.items.length > data.total) throw Error('授权码响应不完整');
+      if (!controller.signal.aborted) { setItems(data.items); setTotal(data.total); }
     }).catch(e => { if (!controller.signal.aborted) setError(getAuthError(e, '授权码加载失败，请重试')); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [page, status, query, refresh]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setPlansLoaded(false); setPlansError('');
+    adminAxios.get('/api/admin/plans', { signal: controller.signal }).then(response => {
+      const data = response.data?.data;
+      if (!Array.isArray(data)) throw Error('套餐响应不完整');
+      if (!controller.signal.aborted) { setPlans(data); setPlansLoaded(true); }
+    }).catch(e => { if (!controller.signal.aborted) { setPlans([]); setPlansError(getAuthError(e, '套餐加载失败，请刷新重试')); } });
+    return () => controller.abort();
+  }, [refresh]);
   const start = () => {
+    if (!plansLoaded) return toast.error('套餐尚未读取成功，请先刷新');
     const plan = plans.find(item => item.status === 'active');
     if (!plan) return toast.error('请先在套餐管理中创建并启用套餐');
     setPlanId(plan.id); setDuration(plan.durationDays); setQuota(plan.maxAccounts); setCount(1); setPrefix(''); setRemark(''); setGenerated([]); setOpen(true);
   };
   const generate = async () => {
     if (busy) return;
+    if (!plansLoaded || !plans.some(item => item.id === planId && item.status === 'active')) return toast.error('所选套餐尚未读取成功或已停用，请刷新后重新选择');
     if (!planId || !Number.isInteger(count) || count < 1 || count > 10000 || !Number.isInteger(duration) || duration < 1 || !Number.isInteger(quota) || quota < 1) return toast.error('请选择套餐，并输入有效的数量、天数和账号额度');
     setBusy(true);
     try {
@@ -81,11 +94,12 @@ export default function RealCodesPage() {
     const link = document.createElement('a'); link.href = url; link.download = `matrix-codes-${Date.now()}.csv`; link.click(); URL.revokeObjectURL(url);
   };
   return <div className="space-y-5" data-matrix-real-codes="true">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">授权码管理</h1><p className="mt-1 text-sm text-muted-foreground">仅显示数据库中的正式授权码，不生成本地样本码</p></div><div className="flex gap-2"><Button variant="outline" disabled={loading || busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} />刷新</Button><Button disabled={loading || busy} onClick={start}><Plus size={15} />批量生成</Button></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">授权码管理</h1><p className="mt-1 text-sm text-muted-foreground">仅显示数据库中的正式授权码，不生成本地样本码</p></div><div className="flex gap-2"><Button variant="outline" disabled={loading || busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} />刷新</Button><Button disabled={loading || busy || !plansLoaded} onClick={start}><Plus size={15} />批量生成</Button></div></div>
     {error && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-destructive">{error}</div>}
-    <Card><CardContent className="flex flex-wrap items-center gap-3 p-4"><Badge variant="outline">符合筛选的真实授权码：{total}</Badge><select aria-label="授权码状态" className="rounded-md border bg-background p-2" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="">全部状态</option>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><Input className="max-w-xs" aria-label="搜索正式授权码" placeholder="授权码或批次号" value={keyword} onChange={e => setKeyword(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { setQuery(keyword.trim()); setPage(1); } }} /><Button variant="outline" onClick={() => { setQuery(keyword.trim()); setPage(1); }}>查询</Button><Button variant="outline" disabled={!items.length} onClick={() => exportCodes(items)}><Download size={15} />导出当前页</Button></CardContent></Card>
+    {plansError && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-destructive">{plansError}；授权码列表可独立查看，生成暂停。</div>}
+    <Card><CardContent className="flex flex-wrap items-center gap-3 p-4"><Badge variant="outline">符合筛选的真实授权码：{total ?? '—'}</Badge><select aria-label="授权码状态" className="rounded-md border bg-background p-2" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="">全部状态</option>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><Input className="max-w-xs" aria-label="搜索正式授权码" placeholder="授权码或批次号" value={keyword} onChange={e => setKeyword(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { setQuery(keyword.trim()); setPage(1); } }} /><Button variant="outline" onClick={() => { setQuery(keyword.trim()); setPage(1); }}>查询</Button><Button variant="outline" disabled={!items.length} onClick={() => exportCodes(items)}><Download size={15} />导出当前页</Button></CardContent></Card>
     <Card><CardContent className="p-0"><Table><TableHeader><TableRow>{['授权码', '套餐', '天数 / 额度', '状态', '绑定用户', '生成时间', '操作'].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>{items.map(item => <TableRow key={item.id}><TableCell className="font-mono">{mask(item.code)}</TableCell><TableCell>{item.planName || '—'}</TableCell><TableCell>{item.durationDays} 天 / {item.maxAccounts} 个</TableCell><TableCell><Badge variant={item.status === 'used' ? 'secondary' : 'outline'}>{statuses[item.status]}</Badge></TableCell><TableCell>{item.username || '—'}</TableCell><TableCell>{date(item.createdAt)}</TableCell><TableCell><div className="flex gap-2"><Button variant="ghost" size="sm" aria-label="复制正式授权码" onClick={() => void copy(item.code)}><Copy size={14} />复制</Button>{item.status === 'unused' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void disable(item.id)}>作废</Button>}</div></TableCell></TableRow>)}{!items.length && <TableRow><TableCell colSpan={7} className="h-28 text-center text-muted-foreground">{loading ? '正在加载真实授权码…' : error ? '加载失败，请刷新重试' : '暂无正式授权码，请先批量生成'}</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
-    <div className="flex items-center justify-end gap-3 text-sm"><Button variant="outline" disabled={page === 1 || loading} onClick={() => setPage(value => value - 1)}>上一页</Button><span>第 {page} / {Math.max(1, Math.ceil(total / 20))} 页</span><Button variant="outline" disabled={page * 20 >= total || loading} onClick={() => setPage(value => value + 1)}>下一页</Button></div>
+    <div className="flex items-center justify-end gap-3 text-sm"><Button variant="outline" disabled={page === 1 || loading} onClick={() => setPage(value => value - 1)}>上一页</Button><span>第 {page} / {total === undefined ? '—' : Math.max(1, Math.ceil(total / 20))} 页</span><Button variant="outline" disabled={total === undefined || page * 20 >= total || loading} onClick={() => setPage(value => value + 1)}>下一页</Button></div>
     <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value); }}><DialogContent className="max-h-[85vh] overflow-auto"><DialogHeader><DialogTitle>{generated.length ? '正式授权码已生成' : '批量生成正式授权码'}</DialogTitle></DialogHeader>{generated.length ? <div className="space-y-3"><p className="text-sm text-muted-foreground">以下 {generated.length} 条已保存到数据库，可以复制给本软件的用户激活。请妥善保管完整授权码。</p>{generated.map(item => <div key={item.id} className="flex items-center justify-between gap-2 rounded-lg border p-3"><code>{item.code}</code><Button variant="outline" size="sm" onClick={() => void copy(item.code)}>复制完整码</Button></div>)}<Button variant="outline" onClick={() => exportCodes(generated)}>导出本批次</Button></div> : <div className="space-y-3"><label className="block text-sm">套餐<select aria-label="生成授权码套餐" className="mt-1 w-full rounded-md border bg-background p-2" disabled={busy} value={planId} onChange={e => { setPlanId(e.target.value); const plan = plans.find(item => item.id === e.target.value); if (plan) { setDuration(plan.durationDays); setQuota(plan.maxAccounts); } }}>{plans.filter(item => item.status === 'active').map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{[{ id: 'code-count', label: '生成数量（1–10000）', value: count, set: setCount }, { id: 'code-duration', label: '有效天数', value: duration, set: setDuration }, { id: 'code-quota', label: '账号额度', value: quota, set: setQuota }].map(field => <div key={field.id}><Label htmlFor={field.id}>{field.label}</Label><Input id={field.id} type="number" min={1} disabled={busy} value={field.value} onChange={e => field.set(Number(e.target.value))} /></div>)}<div><Label htmlFor="code-prefix">前缀（可选）</Label><Input id="code-prefix" maxLength={20} disabled={busy} value={prefix} onChange={e => setPrefix(e.target.value)} /></div><div><Label htmlFor="code-remark">备注（可选）</Label><Input id="code-remark" maxLength={200} disabled={busy} value={remark} onChange={e => setRemark(e.target.value)} /></div><Button className="w-full" disabled={busy} onClick={() => void generate()}>{busy ? '正在保存到数据库…' : '生成并保存正式授权码'}</Button></div>}</DialogContent></Dialog>
   </div>;
 }

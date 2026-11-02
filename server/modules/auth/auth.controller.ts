@@ -7,19 +7,22 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  HttpException,
+  Res,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard, type JwtPayload } from './jwt-auth.guard';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ActivateCodeDto } from './dto/activate-code.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { CompletePasswordRecoveryDto, RequestPasswordRecoveryDto } from './dto/password-recovery.dto';
+import { PasswordRecoveryService } from './password-recovery.service';
 import { success } from '@server/common/utils/response';
 
 @Controller('api/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService, private readonly recovery: PasswordRecoveryService) {}
 
   @Post('register')
   async register(@Body() dto: RegisterDto) {
@@ -54,9 +57,24 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    await this.authService.forgotPassword(dto);
-    return success(null, '密码重置成功');
+  async forgotPassword(@Body() dto: CompletePasswordRecoveryDto) {
+    return success(await this.recovery.complete(dto), '密码重置成功');
+  }
+
+  @Get('password-recovery/status')
+  async recoveryStatus() { return success(await this.recovery.status()); }
+
+  @Post('password-recovery/request')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async requestPasswordRecovery(@Body() dto: RequestPasswordRecoveryDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    try { return success(await this.recovery.request(dto, req.socket?.remoteAddress || req.ip || 'unknown'), '请求已受理'); }
+    catch (error) {
+      if (error instanceof HttpException && error.getStatus() === 429) {
+        const details=error.getResponse() as { retryAfterSeconds?: number };
+        res.setHeader('Retry-After', String(Math.max(1, Math.min(3600, details.retryAfterSeconds || 60))));
+      }
+      throw error;
+    }
   }
 
   @Get('me')

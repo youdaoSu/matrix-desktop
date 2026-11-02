@@ -12,21 +12,21 @@ const evaluate=async expression=>{const r=await call('Runtime.evaluate',{express
 const pause=()=>new Promise(resolve=>setTimeout(resolve,180));
 const wait=async expression=>{for(let i=0;i<120;i++){if(await evaluate(expression))return;await pause();}throw Error('Not ready: '+expression);};
 const expect=async(expression,value)=>{assert.deepEqual(await evaluate(expression),value,expression);checks++;};
-const route=async section=>{await evaluate(`location.hash='#/settings/${section}';true`);await wait(`!!document.querySelector('[data-system-settings="${section}"]')`);if(section==='general')await wait("!!document.querySelector('[aria-label=矩效界面缩放]:not([disabled])')");await pause();};
+const route=async section=>{await evaluate(`location.hash='#/settings/${section}';true`);await wait(`!!document.querySelector('[data-system-settings="${section}"]')`);if(section==='general')await wait("!!document.querySelector('[aria-label=远效界面缩放]:not([disabled])')");await pause();};
 const reload=async()=>{await evaluate("sessionStorage.setItem('qa-system-settings-state',JSON.stringify(window.__settingsQA));true");const previous=await evaluate('performance.timeOrigin');await call('Page.reload');await wait(`performance.timeOrigin!==${previous}&&document.readyState==='complete'&&!!document.querySelector('.matrix-shell')`);await evaluate("window.__settingsQA=JSON.parse(sessionStorage.getItem('qa-system-settings-state'));true");};
 const select=async(label,value)=>{await evaluate(`(()=>{const s=document.querySelector('[aria-label="${label}"]');s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);await pause();};
 const click=async text=>{await evaluate(`(()=>{const button=[...document.querySelectorAll('button')].find(e=>e.getClientRects().length&&e.innerText===${JSON.stringify(text)});if(!button||button.disabled)throw Error('Button unavailable');button.click();return true})()`);await pause();};
 try{
   await evaluate("(()=>{const user=JSON.parse(localStorage.getItem('matrix_user'));window.__settingsQA={owner:user.id,key:'matrix-app-preferences-v1:'+encodeURIComponent(user.id),themeKey:'matrix-theme:'+encodeURIComponent(user.id)};window.__settingsQA.original=localStorage.getItem(window.__settingsQA.key);window.__settingsQA.originalTheme=localStorage.getItem(window.__settingsQA.themeKey);return true})()");
-  await route('general');await wait("!!document.querySelector('[aria-label=矩效界面缩放]:not([disabled])')");
+  await route('general');await wait("!!document.querySelector('[aria-label=远效界面缩放]:not([disabled])')");
   await select('界面主题','dark');await expect("document.documentElement.classList.contains('dark')",true);
   await expect("localStorage.getItem(window.__settingsQA.themeKey)",'dark');
   await select('默认首页','/accounts');await expect("JSON.parse(localStorage.getItem(window.__settingsQA.key)).startupPage",'/accounts');
-  await select('矩效界面缩放','0.9');await wait("document.querySelector('[aria-label=矩效界面缩放]').value==='0.9'");
+  await select('远效界面缩放','0.9');await wait("document.querySelector('[aria-label=远效界面缩放]').value==='0.9'");
   await expect("(async()=>{const r=await window.matrixDesktop.systemSettings({command:'read'});return r.zoom})()",0.9);
   await reload();await route('general');await expect("document.querySelector('[aria-label=界面主题]').value",'dark');
-  await expect("document.querySelector('[aria-label=矩效界面缩放]').value",'0.9');
-  await select('矩效界面缩放','1');await wait("document.querySelector('[aria-label=矩效界面缩放]').value==='1'");
+  await expect("document.querySelector('[aria-label=远效界面缩放]').value",'0.9');
+  await select('远效界面缩放','1');await wait("document.querySelector('[aria-label=远效界面缩放]').value==='1'");
   await route('privacy');await expect("location.hash",'#/settings/privacy');
   await evaluate("location.hash='';true");await reload();await wait("location.hash==='#/accounts'");checks++;
   await route('general');await select('默认首页','/dashboard');await select('界面主题','light');

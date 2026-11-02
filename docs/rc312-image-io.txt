@@ -1,0 +1,50 @@
+RC312 installed - bounded asynchronous display image disk operations
+2026-11-01 Beijing. Initial candidate evidence and later installation below.
+
+Problem: UI-facing image requests used synchronous directory enumeration, file
+reads, writes and fsync in the Electron main process. First write also examined
+every cache entry synchronously. Existing network concurrency remains two.
+
+Changes: independent async disk implementation retains the same encrypted file
+format and scoped immutable keys. A maximum of 128 pending operations serialize
+capacity checks and atomic commits; directory metadata concurrency is four.
+Guards run across asynchronous boundaries. Failed/cancelled writes retain old
+files and clean only their own temporary file. Acknowledgement follows fsync and
+rename. Clearing memory invalidates in-flight memory insertion. Existing sync
+API is retained for offline compatibility; production inbox/interaction paths
+now await async methods. DPAPI encryption/decryption is still synchronous.
+
+Evidence: 24 async cache assertions, 28 original cache assertions, native
+two-process Windows DPAPI write/read with four decoded raster formats, inbox
+media/close and interaction image/UI checks passed after actual call-site changes.
+No user profile or external network/sends used by tests.
+
+Actual local disk sample (1000 existing synthetic files, 60 small image writes):
+frozen RC311 sync: total 171.52 ms, maximum timer gap 171.70 ms.
+First sequential async scan: total 298.84 ms, gap 17.02 ms.
+Four-at-a-time async scan: total 201.19 ms, gap 17.78 ms.
+This improves scheduler responsiveness in one isolated sample, not total disk
+throughput or a proven solution to all real mouse stutter. No speed ratio claim.
+
+Preserved limitations/failures:
+- Initial Python stdin replacement did not execute: python.exe resolved to the
+  WindowsApps execution alias and returned no version/output. Files retained
+  their old modification times. Those initial native/integration results covered
+  old synchronous callers only. Actual replacements were subsequently written
+  by Node with unique source matches and verified by reading the changed files.
+- First actual async interaction fixture failed its 500-setImmediate iteration
+  limit before disk fsync finished. It now uses a monotonic 3000 ms deadline with
+  5 ms waits; all original behavioral assertions remain and pass. Original
+  failure is matrix-rc312-qa-douyin-interaction-image.cjs.txt; corrected result
+  is matrix-rc312-image-integration-fixed.txt.
+- RC311 live five-second resource sample shows main process 74216 around 236%
+  of one CPU core and 1021 MiB private memory. Many platform renderers coexist.
+  This is a sample, not attribution; sustained CPU/renderer scheduling and
+  background lifecycle still require investigation. Other processes untouched.
+- Full regression, build and package checks subsequently completed: 229 source
+  suites and 82 actual-package checks passed. RC312 installed after a normal
+  close, with backup D:/MatrixUserBackups/before-update-rc.312-20261101-025625.
+  Cold business data and original protected key were verified unchanged. Native
+  startup confirmed 2.10.0-rc.312, HTML/bundle/icon 200 and the YuanXiao brand.
+  ASAR d3d3bd6a03e46065d72a11981429df0f3e51ba5bf85b33c22e6ce039f41e8f18.
+  Sustained real-user CPU and mouse-lag acceptance remain pending.

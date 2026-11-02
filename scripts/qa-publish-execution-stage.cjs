@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript'),Module=require('node:module');
+const fixture=new Module('phase-fixture');fixture._compile(ts.transpileModule(fs.readFileSync('client/src/components/workspace/publish-execution-stage.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,'phase-fixture.cjs');
+const {getPublishExecutionStage:phase,publishExecutionStageLabel:label}=fixture.exports;
+const job={stage:'failed',message:'超时',submission:'not_submitted',history:[{at:'2026-10-15T08:00:00Z',stage:'preparing'},{at:'2026-10-15T08:01:00Z',stage:'uploading'},{at:'2026-10-15T08:02:00Z',stage:'failed'}]};
+assert.equal(phase(job),'uploading');assert.equal(label(job),'上传素材 / 等待转码');
+assert.equal(phase({...job,executionStage:'cover'}),'cover');assert.equal(phase({...job,executionStage:'__proto__'}),'uploading');
+assert.equal(phase({...job,stage:'confirmed',executionStage:'cover'}),'confirmed');
+assert.equal(phase({...job,message:'请在官方页面补全：visibility：请在官方表单选择并确认 仅自己可见'}),'filling');
+assert.equal(phase({...job,lastAttemptAt:'2026-10-15T09:00:00Z'}),'queued');
+assert.equal(phase({...job,stage:'unknown',submission:'uncertain',history:[]}),'submitting');
+assert.equal(phase({...job,stage:'cancelled',history:[]}),'queued');
+assert.equal(phase({...job,history:[...job.history,{at:'2026-10-15T08:03:00Z',stage:'reviewing',executionStage:'cover'}]}),'cover');
+console.log(JSON.stringify({executionStageAssertions:10,statusesNotForged:true,realPlatformActions:false}));

@@ -1,9 +1,9 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),ts=require('typescript');
 const {registerDesktopSettings}=require('../desktop/settings.cjs');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'matrix-settings-qa-'));
-let checks=0,zoom=1,autoStart=false,page='http://127.0.0.1:3210/app/',notifications=0,external='';
+let checks=0,zoom=1,autoStart=false,page='http://127.0.0.1:3210/app/',notifications=0,external='',accessibility=false,accessibilityChanges=0;
 const expect=(actual,expected)=>{assert.deepEqual(actual,expected);checks++;};
-const app={isPackaged:true,getVersion:()=> 'fixture-rc.14',getPath:key=>key==='exe'?'C:\\QA\\matrix.exe':temp,getLoginItemSettings:()=>({openAtLogin:autoStart}),setLoginItemSettings:value=>{autoStart=value.openAtLogin;}};
+const app={isPackaged:true,getVersion:()=> 'fixture-rc.14',getPath:key=>key==='exe'?'C:\\QA\\matrix.exe':temp,getLoginItemSettings:()=>({openAtLogin:autoStart}),setLoginItemSettings:value=>{autoStart=value.openAtLogin;},isAccessibilitySupportEnabled:()=>accessibility,setAccessibilitySupportEnabled:value=>{accessibility=value;accessibilityChanges++;}};
 const win={webContents:{id:1,getURL:()=>page,setZoomFactor:value=>{zoom=value;}}};
 class Notice {static isSupported(){return true;}show(){notifications++;}}
 let handler;
@@ -11,6 +11,7 @@ const options={app,ipcMain:{handle:(_name,fn)=>{handler=fn;}},shell:{openExterna
 const read=input=>handler({sender:{id:1}},input);
 (async()=>{try{
   registerDesktopSettings(options)(win);expect(zoom,1);
+  expect(accessibilityChanges,0);expect((await read({command:'read'})).accessibility,false);
   expect((await read({command:'read'})).version,'fixture-rc.14');expect(autoStart,false);
   expect(fs.existsSync(path.join(temp,'desktop-settings.json')),false);
   expect(!!(await handler({sender:{id:2}},{command:'zoom',zoom:0.9})).error,true);
@@ -29,6 +30,10 @@ const read=input=>handler({sender:{id:1}},input);
   registerDesktopSettings({...options,fileSystem:{...fs,renameSync(){throw Object.assign(Error('Fixture denied rename'),{code:'EACCES'});}}})(win);
   expect(!!(await read({command:'zoom',zoom:1.2})).error,true);expect(zoom,1.1);
   registerDesktopSettings(options)(win);
+  expect(!!(await read({command:'accessibility',enabled:'true'})).error,true);expect(accessibilityChanges,0);
+  expect((await read({command:'accessibility',enabled:true})).accessibility,true);expect(zoom,1.1);
+  expect((await read({command:'zoom',zoom:0.9})).accessibility,true);accessibility=false;registerDesktopSettings(options)(win);expect(accessibility,true);expect(zoom,0.9);
+  expect((await read({command:'accessibility',enabled:false})).accessibility,false);
   expect((await read({command:'auto-start',enabled:true})).autoStart,true);
   expect((await read({command:'auto-start',enabled:false})).autoStart,false);
   app.isPackaged=false;expect(!!(await read({command:'auto-start',enabled:true})).error,true);expect(autoStart,false);

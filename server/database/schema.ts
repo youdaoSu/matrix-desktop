@@ -123,6 +123,7 @@ export const accountGroups = pgTable("account_groups", {
   groupName: varchar("group_name", { length: 100 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   isDefault: boolean("is_default").notNull().default(false),
+  color: varchar("color", { length: 7 }).notNull().default('#64748b'),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   // System field: Update time (auto-filled, do not modify)
@@ -771,6 +772,7 @@ export const appUsers = pgTable("app_users", {
   email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 20 }),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  authVersion: integer("auth_version").notNull().default(0),
   nickname: varchar("nickname", { length: 100 }),
   avatarUrl: text("avatar_url"),
   vipPlanId: uuid("vip_plan_id"),
@@ -787,6 +789,22 @@ export const appUsers = pgTable("app_users", {
 }, (table) => [
   uniqueIndex("app_users_username_key").on(table.username),
 ]);
+
+// Recovery codes are HMAC digests only; no plaintext code/password is stored.
+export const passwordRecoveryChallenges = pgTable('password_recovery_challenges', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id'),
+  accountKey: varchar('account_key', { length: 64 }).notNull(),
+  targetKey: varchar('target_key', { length: 64 }).notNull(),
+  ipKey: varchar('ip_key', { length: 64 }).notNull(),
+  codeHash: varchar('code_hash', { length: 64 }).notNull(),
+  authVersion: integer('auth_version').notNull().default(0),
+  attempts: integer('attempts').notNull().default(0),
+  sendState: varchar('send_state', { length: 12 }).notNull().default('pending'),
+  createdAt: customTimestamptz('created_at', { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  expiresAt: customTimestamptz('expires_at', { precision: 3 }).notNull(),
+  consumedAt: customTimestamptz('consumed_at', { precision: 3 }),
+});
 
 // table aliases
 export const accountGroupsTable = accountGroups;

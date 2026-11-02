@@ -15,6 +15,6 @@ export function normalizePreferences(value: unknown): AppPreferences {
   return result;
 }
 export function interactionSnapshotKeys(keys: string[], owner: string) {
-  const prefix = 'matrix-interaction-v1:' + encodeURIComponent(owner) + ':';
-  return owner ? keys.filter(key => key.startsWith(prefix) && /:(comments|messages|followers)$/.test(key)) : [];
+  const prefixes = ['matrix-interaction-v1:', 'matrix-interaction-live-v2:'].map(prefix => prefix + encodeURIComponent(owner) + ':');
+  return owner ? keys.filter(key => prefixes.some(prefix => key.startsWith(prefix)) && /:(comments|messages|followers)$/.test(key)) : [];
 }

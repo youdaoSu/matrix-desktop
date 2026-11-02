@@ -66,6 +66,7 @@ CREATE TABLE public.account_groups (
     group_name character varying(100) NOT NULL,
     sort_order integer DEFAULT 0 NOT NULL,
     is_default boolean DEFAULT false NOT NULL,
+    color character varying(7) DEFAULT '#64748b' NOT NULL,
     _created_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     _updated_at timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
@@ -142,6 +143,7 @@ CREATE TABLE public.app_users (
     email character varying(255),
     phone character varying(20),
     password_hash character varying(255) NOT NULL,
+    auth_version integer DEFAULT 0 NOT NULL,
     nickname character varying(100),
     avatar_url text,
     vip_plan_id uuid,

@@ -1,0 +1,19 @@
+// Public hashed script metadata only, using a disposable local directory.
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict'),root=path.resolve(__dirname,'..');
+if(process.argv[2]==='--packaged'&&!process.versions.electron){const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const r=require('node:child_process').spawnSync(path.join(root,'.desktop-deps/node_modules/electron/dist/electron.exe'),[__filename,...process.argv.slice(2)],{env,windowsHide:true,encoding:'utf8',timeout:30000});process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.exit(r.status??1);}
+else{
+ let moduleRoot=root;if(process.argv[2]){assert.equal(process.argv[2],'--packaged');moduleRoot=path.join(root,'release-next/win-unpacked/resources/app.asar');assert.equal(require('node:crypto').createHash('sha256').update(require('original-fs').readFileSync(moduleRoot)).digest('hex'),process.argv[3]);}
+ const {publicScript,createPublicAssetManifest}=require(path.join(moduleRoot,'desktop/douyin-public-asset-manifest.cjs')),directory=fs.mkdtempSync(path.join(os.tmpdir(),'matrix-public-assets-qa-'));let count=0,clock=Date.parse('2026-10-24T00:00:00Z');const eq=(a,b)=>{assert.deepEqual(a,b);count++;},url='https://lf.douyinstatic.com/obj/public/main.abcdef123456.js',file=path.join(directory,'douyin-public-assets-rc174.json');
+ try{
+  eq(publicScript(url),url);
+  for(const bad of [url+'?token=PRIVATE',url+'#PRIVATE',url.replace('https:','http:'),url.replace('lf.douyinstatic.com','example.invalid'),url.replace('lf.douyinstatic.com','user:pass@lf.douyinstatic.com'),url.replace('/obj/public/','/api/'),url.replace('.abcdef123456',''),url.replace('.js','.json'),url.replace('lf.douyinstatic.com','lf.douyinstatic.com:444')])eq(publicScript(bad),undefined);
+  const writer=createPublicAssetManifest({directory,version:'2.10.0-rc.174',now:()=>clock});eq(writer.record(url),true);eq(writer.record(url),false);eq(JSON.parse(fs.readFileSync(file,'utf8')).assets,[url]);
+  const resumed=createPublicAssetManifest({directory,version:'2.10.0-rc.174',now:()=>clock});eq(resumed.snapshot().count,1);eq(resumed.record(url),false);
+  for(let n=1;n<96;n++)eq(writer.record(url.replace('main.','chunk-'+n+'.')),true);eq(writer.record(url.replace('main.','excess.')),false);eq(fs.statSync(file).size<=32768,true);
+  clock=Date.parse('2026-10-24T03:00:00Z');eq(writer.record(url.replace('main.','expired.')),false);eq(writer.snapshot().enabled,false);
+  eq(createPublicAssetManifest({directory,version:'2.10.0-rc.175',now:()=>Date.parse('2026-10-24T00:00:00Z')}).record(url.replace('main.','future.')),false);
+  const extra=JSON.stringify({version:1,purpose:'public-static-script-only',assets:[url],secret:'DO_NOT_EXPORT'});fs.writeFileSync(file,extra);eq(createPublicAssetManifest({directory,version:'2.10.0-rc.174',now:()=>Date.parse('2026-10-24T00:00:00Z')}).record(url.replace('main.','extra.')),false);eq(fs.readFileSync(file,'utf8'),extra);
+  fs.writeFileSync(file,'CORRUPT_KEEP');const disabled=createPublicAssetManifest({directory,version:'2.10.0-rc.174',now:()=>Date.parse('2026-10-24T00:00:00Z')});eq(disabled.record(url),false);eq(fs.readFileSync(file,'utf8'),'CORRUPT_KEEP');eq(fs.readdirSync(directory),['douyin-public-assets-rc174.json']);
+  console.log(JSON.stringify({publicAssetManifestChecks:count,onlyHashedPublicScripts:true,queriesCredentialsAndApiPathsRejected:true,maximumEntries:96,expiresAtBeijing11:true,noRequestsOrPageDumps:true,realUserProfileTouched:false}));
+ }finally{assert.equal(path.dirname(directory),fs.realpathSync(os.tmpdir()));assert(path.basename(directory).startsWith('matrix-public-assets-qa-'));fs.rmSync(directory,{recursive:true,force:true});if(process.versions.electron)require('electron').app.exit(process.exitCode||0);}
+}

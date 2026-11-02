@@ -1,0 +1,11 @@
+RC279 候选：减少桌面诊断追踪，尚未安装。
+
+发现：原有四段×8MiB日志轮转已生效，但生产SDK的force-trace-prefix输出绕过Nest日志等级。RC278实际一分钟只读文件大小观察新增至少2,016,558字节；采样间未发生轮转截断。不是业务异常数量，也不代表整个应用吞吐。
+
+修正：MATRIX_DESKTOP=1时，在SDK初始化前设置公开配置OTEL_TRACES_SAMPLER=always_off。保持NODE_ENV=production、warnings/errors/fatal日志、认证和数据库逻辑；不修改第三方依赖或全局console。非桌面配置原样保留。
+
+实际SDK隔离验证：103次同步/异步回调及异常传播通过；原始合成追踪104条、调整后0条；warning/error继续输出；合成输出49858→885字节。包括带采样父标记的根span。新测试亦支持读取真实编译JS及安装包SDK，待打包核验。测试不启动服务器/数据库，不使用真实账号或网络请求。
+
+失败记录保留：logs/rc279-trace-before.txt为修正前always_on断言失败。首轮完整回归入口遗漏scripts/路径导致模块未找到，记录logs/rc279-runner-path-failure.json和rc279-full-console.txt；已更正路径，完整重跑使用rc279-full-console-v2.txt，未改断言或伪称首轮通过。
+
+后续以完整184组回归、实际包内SDK、数据/密钥校验、真实日志观察为交付证据；上述独立试验不等于已安装版本的性能结论。

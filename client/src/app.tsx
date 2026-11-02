@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { WorkspaceSession } from './components/workspace/PublishQueue';
 
@@ -13,11 +13,12 @@ import ActivatePage from './pages/auth/ActivatePage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 
 import DashboardPage from './pages/user/DashboardPage';
-import AccountsPage from './pages/user/AccountsPage';
-import AccountGroupsPage from './pages/user/AccountGroupsPage';
+import AccountsPage from './pages/user/AccountWorkspacePage';
 import FollowersPage from './pages/user/FollowersPage';
+import FollowerMonitorPage from './pages/user/FollowerMonitorPage';
 import CommentsPage from './pages/user/CommentsPage';
 import MessagesPage from './pages/user/MessagesPage';
+import AccountOperationsPage from './pages/user/AccountOperationsPage';
 
 import ContentRecordsPage from './pages/publish/ContentRecordsPage';
 import ContentCreateRealPage from './pages/publish/ContentCreateRealPage';
@@ -29,6 +30,9 @@ import PersonalTasksPage from './pages/user/PersonalTasksPage';
 import AccountHealthPage from './pages/user/AccountHealthPage';
 
 import AnalyticsPage from './pages/user/AnalyticsPage';
+import AccountDataAuditPage from './pages/user/AccountDataAuditPage';
+import FeatureStatusPage from './pages/user/FeatureStatusPage';
+import SyncMonitorPage from './pages/user/SyncMonitorPage';
 
 import SettingsProfilePage from './pages/user/SettingsProfilePage';
 import SettingsPasswordPage from './pages/user/SettingsPasswordPage';
@@ -41,12 +45,12 @@ import AdminLoginPage from './pages/admin/LoginPage';
 import AdminCodesPage from './pages/admin/RealCodesPage';
 import AdminRealDashboardPage from './pages/admin/RealDashboardPage';
 import AdminRealLogsPage from './pages/admin/RealLogsPage';
+import AdminPublishErrorsPage from './pages/admin/PublishErrorsPage';
 import AdminRealUsersPage from './pages/admin/RealUsersPage';
 import AdminRealPlansPage from './pages/admin/RealPlansPage';
 import AdminRealSettingsPage from './pages/admin/RealSettingsPage';
 
 import DocsOverviewPage from './pages/docs/OverviewPage';
-import DocsRequirementsPage from './pages/docs/RequirementsPage';
 import DocsNonFunctionalPage from './pages/docs/NonFunctionalPage';
 import DocsRoadmapPage from './pages/docs/RoadmapPage';
 import DocsTestingPage from './pages/docs/TestingPage';
@@ -54,6 +58,8 @@ import DocsPlatformsPage from './pages/docs/PlatformsPage';
 
 import NotFound from './pages/NotFound/NotFound';
 import CapabilityPendingPage from './pages/CapabilityPendingPage';
+import PlaybackVelocityPage from './pages/user/PlaybackVelocityPage';
+import ModerationRecordsPage from './pages/user/ModerationRecordsPage';
 
 const RoutesComponent = () => {
   return (
@@ -73,7 +79,7 @@ const RoutesComponent = () => {
         <Route path="/dashboard" element={<DashboardPage />} />
 
         <Route path="/accounts" element={<AccountsPage />} />
-        <Route path="/accounts/groups" element={<AccountGroupsPage />} />
+        <Route path="/accounts/groups" element={<Navigate to="/accounts" replace />} />
 
         <Route path="/publish" element={<ContentRecordsPage />} />
         <Route path="/publish/tasks" element={<PublishTasksPage />} />
@@ -84,28 +90,33 @@ const RoutesComponent = () => {
         <Route path="/publish/stats" element={<PublishStatsPage />} />
 
         <Route path="/engage/comments" element={<CommentsPage />} />
+        <Route path="/engage/account-operations" element={<AccountOperationsPage />} />
         <Route path="/engage/comments-agg" element={<CommentsPage />} />
-        <Route path="/engage/auto-comment" element={<PersonalTasksPage key="comment-tasks" />} />
-        <Route path="/engage/batch-tasks" element={<PersonalTasksPage key="batch-tasks" />} />
+        <Route path="/engage/auto-comment" element={<AccountOperationsPage section="comment" />} />
+        <Route path="/engage/batch-tasks" element={<AccountOperationsPage section="batch" />} />
         <Route path="/engage/messages" element={<MessagesPage />} />
         <Route path="/engage/messages-agg" element={<MessagesPage />} />
-        <Route path="/engage/auto-message" element={<PersonalTasksPage key="message-tasks" />} />
+        <Route path="/engage/auto-message" element={<AccountOperationsPage section="dm" />} />
+        <Route path="/engage/manual-comment" element={<PersonalTasksPage key="manual-comment" />} />
+        <Route path="/engage/manual-message" element={<PersonalTasksPage key="manual-message" />} />
+        <Route path="/engage/manual-tasks" element={<PersonalTasksPage key="manual-tasks" />} />
         <Route path="/engage/followers" element={<FollowersPage />} />
-        <Route path="/engage/follower-monitor" element={<CapabilityPendingPage />} />
+        <Route path="/engage/follower-monitor" element={<FollowerMonitorPage />} />
 
         <Route path="/automation/keywords" element={<ReplyToolsPage key="keyword" />} />
         <Route path="/automation/welcome" element={<ReplyToolsPage key="welcome" />} />
         <Route path="/automation/offline" element={<ReplyToolsPage key="offline" />} />
         <Route path="/automation/active-messages" element={<PersonalTasksPage key="active-message-tasks" />} />
-        <Route path="/automation/monitor" element={<CapabilityPendingPage />} />
+        <Route path="/automation/monitor" element={<SyncMonitorPage />} />
         <Route path="/automation/templates" element={<ReplyToolsPage key="templates" />} />
         <Route path="/automation/logs" element={<PersonalTasksPage key="task-logs" />} />
 
         <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="/analytics/flow" element={<CapabilityPendingPage />} />
+        <Route path="/analytics/account-data" element={<AccountDataAuditPage />} />
+        <Route path="/analytics/flow" element={<PlaybackVelocityPage />} />
         <Route path="/analytics/account-monitor" element={<AccountHealthPage />} />
         <Route path="/analytics/notify-monitor" element={<PersonalTasksPage key="task-reminders" />} />
-        <Route path="/analytics/violation" element={<CapabilityPendingPage />} />
+        <Route path="/analytics/violation" element={<ModerationRecordsPage />} />
         <Route path="/analytics/drafts" element={<ContentRecordsPage key="draft-monitor" />} />
         <Route path="/analytics/data-screen" element={<AnalyticsPage />} />
 
@@ -118,6 +129,7 @@ const RoutesComponent = () => {
         <Route path="/settings/privacy" element={<SystemSettingsPage section="privacy" />} />
         <Route path="/settings/notify" element={<SystemSettingsPage section="notify" />} />
         <Route path="/settings/about" element={<SystemSettingsPage section="about" />} />
+        <Route path="/settings/capabilities" element={<FeatureStatusPage />} />
         <Route path="/settings/theme" element={<SystemSettingsPage section="general" />} />
         <Route path="/settings/data" element={<SettingsDataPage />} />
       </Route>
@@ -125,7 +137,7 @@ const RoutesComponent = () => {
       <Route path="/docs" element={<DocsLayout />}>
         <Route index element={<DocsOverviewPage />} />
         <Route path="overview" element={<DocsOverviewPage />} />
-        <Route path="requirements" element={<DocsRequirementsPage />} />
+        <Route path="requirements" element={<Navigate to="/docs/overview" replace />} />
         <Route path="non-functional" element={<DocsNonFunctionalPage />} />
         <Route path="roadmap" element={<DocsRoadmapPage />} />
         <Route path="testing" element={<DocsTestingPage />} />
@@ -140,6 +152,7 @@ const RoutesComponent = () => {
         <Route path="codes" element={<AdminCodesPage />} />
         <Route path="plans" element={<AdminRealPlansPage />} />
         <Route path="logs" element={<AdminRealLogsPage />} />
+        <Route path="publish-errors" element={<AdminPublishErrorsPage />} />
         <Route path="settings" element={<AdminRealSettingsPage />} />
       </Route>
 

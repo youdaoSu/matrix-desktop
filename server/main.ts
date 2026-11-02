@@ -7,14 +7,17 @@ import { randomBytes } from 'crypto';
 
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { applyDesktopLogLevels, prepareDesktopLogEnvironment } from './common/desktop-log-policy';
 
 async function bootstrap() {
+  const desktopLogging = prepareDesktopLogEnvironment(process.env);
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     abortOnError: process.env.NODE_ENV !== 'development',
   });
   await configureApp(app, {
     disableSwagger: true,
   });
+  applyDesktopLogLevels(desktopLogging, levels => Logger.overrideLogger(levels));
   const logger = new Logger('Bootstrap');
   const host = process.env.SERVER_HOST || 'localhost';
   const port = Number(process.env.SERVER_PORT || '3000');
@@ -30,6 +33,8 @@ async function bootstrap() {
   if (process.env.MATRIX_DESKTOP === '1') {
     const desktopIndex = join(process.cwd(), 'dist/client/index.html');
     app.use('/app', (req, res) => {
+      const startupNonce = process.env.MATRIX_STARTUP_NONCE;
+      if (/^[a-f0-9]{64}$/.test(startupNonce || '')) res.setHeader('X-Matrix-Startup', startupNonce);
       if (!req.cookies?.['suda-csrf-token']) {
         res.cookie('suda-csrf-token', randomBytes(24).toString('hex'), {
           maxAge: 30 * 24 * 60 * 60 * 1000,

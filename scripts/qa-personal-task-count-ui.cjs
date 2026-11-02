@@ -1,0 +1,23 @@
+// Synthetic React fixture; no account operations or external requests.
+const path=require('node:path'),fs=require('node:fs'),os=require('node:os'),root=path.resolve(__dirname,'..');
+async function run(){
+ const assert=require('node:assert/strict'),React=require('react'),{createRoot}=require('react-dom/client'),{MemoryRouter}=require('react-router-dom'),{loadTs}=require('./qa-load-typescript.cjs'),overrides=new Map();let calls=[],checks=0;
+ const defer=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
+ overrides.set('@/api',{axiosForBackend:{get:(url)=>{if(url==='/api/platform/accounts')return Promise.resolve({data:{data:{items:[]}}});const d=defer();calls.push(d);return d.promise;}}});
+ overrides.set('@/components/workspace/OfficialWorkspace',{platformLabels:{},useOfficialWorkspace:()=>({})});
+ overrides.set('@/components/workspace/PageActionPanel',{PageActionHistory:()=>null});overrides.set('@/components/workspace/PublishQueue',{PublishQueuePanel:()=>null});overrides.set('@/components/workspace/DouyinCommentMonitor',{DouyinCommentMonitorPanel:()=>null});
+ overrides.set('@/components/workspace/WorkspaceUiState',{uiBoolean:()=>{},uiOneOf:()=>{},uiPage:()=>{},uiText:()=>{},useWorkspacePreference:(_k,v)=>React.useState(v)});
+ overrides.set('sonner',{toast:{error:()=>{},success:()=>{}}});
+ const wrap=tag=>({children,variant,size,...props})=>React.createElement(tag,props,children),div=wrap('div');
+ overrides.set('@/components/ui/button',{Button:wrap('button')});overrides.set('@/components/ui/input',{Input:wrap('input')});overrides.set('@/components/ui/card',{Card:div,CardContent:div});overrides.set('@/components/ui/alert',{Alert:div,AlertDescription:div});overrides.set('@/components/ui/badge',{Badge:div});overrides.set('@/components/ui/dialog',{Dialog:()=>null,DialogContent:div,DialogHeader:div,DialogTitle:div,DialogDescription:div});overrides.set('@/components/workspace/InteractionUi',{InteractionEmpty:div,InteractionTools:div});
+ const Page=loadTs('client/src/pages/user/PersonalTasksPage.tsx',new Map(),overrides).default,mounted=createRoot(document.getElementById('root')),pause=()=>new Promise(r=>setTimeout(r,30)),body=()=>document.body.innerText,button=t=>[...document.querySelectorAll('button')].find(x=>x.textContent.includes(t)),match=re=>{assert.match(body(),re);checks++;},equal=(a,b)=>{assert.deepEqual(a,b);checks++;};
+ try{mounted.render(React.createElement(MemoryRouter,{initialEntries:['/analytics/notify-monitor']},React.createElement(Page)));await pause();match(/共 — 条/);match(/第 1 \/ — 页/);calls[0].reject(Error('offline'));await pause();match(/共 — 条/);match(/offline/);equal(button('下一页').disabled,true);
+ button('刷新').click();await pause();calls[1].resolve({data:{data:{items:[],total:0}}});await pause();match(/共 0 条/);match(/第 1 \/ 1 页/);equal(button('下一页').disabled,true);
+ button('刷新').click();await pause();calls[2].resolve({data:{data:{items:[],total:45}}});await pause();match(/共 45 条/);match(/第 1 \/ 3 页/);button('下一页').click();await pause();match(/共 — 条/);match(/第 2 \/ — 页/);calls[3].reject(Error('failed page'));await pause();match(/共 — 条/);match(/failed page/);equal(button('上一页').disabled,false);
+ return{personalTaskCountChecks:checks,unknownDistinctFromZero:true,syntheticOnly:true,realRequests:0};}finally{mounted.unmount();}
+}
+module.exports={run};
+if(require.main===module||process.versions.electron&&process.type!=='renderer'){
+ if(!process.versions.electron){const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const result=require('node:child_process').spawnSync(path.join(root,'.desktop-deps/node_modules/electron/dist/electron.exe'),[__filename],{encoding:'utf8',windowsHide:true,env,timeout:60000});process.stdout.write(result.stdout||'');process.stderr.write(result.stderr||'');process.exit(result.status??1);}
+ else{const {app,BrowserWindow,session}=require('electron');app.setPath('userData',fs.mkdtempSync(path.join(os.tmpdir(),'yuanxiao-tasks-qa-')));app.disableHardwareAcceleration();app.whenReady().then(async()=>{let win;try{session.defaultSession.webRequest.onBeforeRequest((d,cb)=>cb({cancel:!d.url.startsWith('data:')}));win=new BrowserWindow({show:false,webPreferences:{nodeIntegration:true,contextIsolation:false,sandbox:false,backgroundThrottling:false}});await win.loadURL('data:text/html,<div id="root"></div>');console.log(JSON.stringify(await win.webContents.executeJavaScript('require('+JSON.stringify(__filename)+').run()')));}catch(error){console.error(error);process.exitCode=1;}finally{win?.destroy();app.exit(process.exitCode||0);}});}
+}

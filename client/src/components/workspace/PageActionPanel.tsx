@@ -8,7 +8,7 @@ import { loadPublishAccounts } from './publish-preferences';
 export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl, getGuestId, task }: {
   platform: MatrixDesktopPlatform; sessionId: string; accountId?: string;
   kind: 'manage' | 'publish' | 'comments' | 'messages' | 'withdraw'; pageUrl: string; getGuestId(): number;
-  task?: { id: string; title: string; kind: 'comments' | 'withdraw' };
+  task?: { id: string; title: string; kind: 'comments' | 'withdraw';attemptId?:string };
 }) {
   const [plan, setPlan] = useState<MatrixPageActionPlan | null>(null);
   const [index, setIndex] = useState(0);
@@ -19,8 +19,8 @@ export function PageActionPanel({ platform, sessionId, accountId, kind, pageUrl,
   useEffect(() => { generation.current++; setPlan(null); setError(''); setReceipt(null); }, [kind, accountId, pageUrl, task?.id]);
   const input = (): MatrixPageActionInput => {
     const accessToken = getAuthToken();
-    if (!accessToken || !accountId) throw new Error('请先登录矩效并完成账号绑定');
-    return { platform, sessionId, accountId, webContentsId: getGuestId(), accessToken, ...(task?.kind === kind ? { taskId: task.id, expectedTitle: task.title } : {}) };
+    if (!accessToken || !accountId) throw new Error('请先登录远效并完成账号绑定');
+    return { platform, sessionId, accountId, webContentsId: getGuestId(), accessToken, ...(task?.kind === kind ? { taskId: task.id,attemptId:task.attemptId, expectedTitle: task.title } : {}) };
   };
   const inspect = async () => {
     if (lock.current || kind === 'manage') return;
@@ -80,5 +80,5 @@ export function PageActionHistory() {
     }catch(e){setError(e instanceof Error?e.message:'取消关注待处理');}
   };
   if (!window.matrixDesktop?.isDesktop) return null;
-  return <section className="matrix-action-history"><header><h2>官方页面提交记录</h2><Button size="sm" variant="outline" onClick={() => setRefresh(n => n + 1)}>刷新提交记录</Button></header>{error && <p role="alert">{error}</p>}{!items.length && !error && <p>暂无通过矩效提交的记录。</p>}{items.map(item => <article key={item.id}><div><strong>{item.nickname} · {item.button}</strong><time>{new Date(item.createdAt).toLocaleString('zh-CN')}</time></div><p>{item.summary}</p><small>{item.status === 'confirmed' ? '页面提示成功' : item.status === 'failed' ? '页面提示失败' : '结果待核对'} · {item.message}</small>{item.followCleanup&&<p>私信：{item.messageStatus||'待核对'} · 回复：{item.replyStatus||'待核对'} · 取消关注：{item.followCleanup==='confirmed'?'已确认':'待处理'}</p>}{item.followCleanup==='pending'&&<Button size="sm" variant="destructive" onClick={()=>void recover(item)}>恢复取消关注</Button>}</article>)}</section>;
+  return <section className="matrix-action-history"><header><h2>官方页面提交记录</h2><Button size="sm" variant="outline" onClick={() => setRefresh(n => n + 1)}>刷新提交记录</Button></header>{error && <p role="alert">{error}</p>}{!items.length && !error && <p>暂无通过远效提交的记录。</p>}{items.map(item => <article key={item.id}><div><strong>{item.nickname} · {item.button}</strong><time>{new Date(item.createdAt).toLocaleString('zh-CN')}</time></div><p>{item.summary}</p><small>{item.status === 'confirmed' ? '页面提示成功' : item.status === 'failed' ? '页面提示失败' : '结果待核对'} · {item.message}</small>{item.followCleanup&&<p>私信：{item.messageStatus||'待核对'} · 回复：{item.replyStatus||'待核对'} · 取消关注：{item.followCleanup==='confirmed'?'已确认':'待处理'}</p>}{item.followCleanup==='pending'&&<Button size="sm" variant="destructive" onClick={()=>void recover(item)}>恢复取消关注</Button>}</article>)}</section>;
 }

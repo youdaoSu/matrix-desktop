@@ -1,0 +1,54 @@
+RC316 candidate: reduce unchanged inbox catch-up archive rewrites
+
+Measured RC315: a4.7MB archive replaced at least28 times in15.266s with
+essentially unchanged size. Allocation sampling points at full-archive
+protection/encoding/map copies; this is transient churn, not proof of a leak.
+
+Only terminal newer-history pages with no changes to already durable messages
+can defer their completion marker. Flush at admitted page boundaries after8
+completions or1500ms, and at drain completion/error. In-flight network waits
+are not interrupted by a timer. Close leaves those GET checkpoints resumable.
+Real new/edited/retracted messages and push acknowledgements retain immediate
+durable writes. Cursor/latestIndex rechecked during commit protects newer gaps.
+No storage-format, account identity, cadence, or network permission changes.
+
+61 new assertions cover actual disposable file stores/readback, unchanged and
+duplicate pages, new/edit/retract/stale versions, disk failures without automatic
+retry, prior successful partial batches, read error, close, concurrency and time
+threshold. Existing inbox218 and priority checks passed before full release gate.
+
+Controlled20033-message store benchmark with simulated zero network delay:
+RC31536 writes/95125324 encoded bytes; candidate8 writes/21138928 bytes.
+Four alternating runs final state identical excluding revision. Sync plus
+readback940-1503ms baseline,413-538ms candidate. Synthetic Buffer protection,
+not native DPAPI or actual UI latency; does not establish live acceptance.
+
+Full source gate, packaged code checks, backup/install and live CPU/allocation
+and aggregate-switch verification remain required. No platform sends in tests.
+
+2026-11-01 delivery update (supersedes candidate status above):
+235 source suites and89 actual package checks passed, including execution of
+the new61 assertions from the actual ASAR. Frozen source892 files,
+0daaa97d8d837e47659abbceb5e26194aa80f90435348a239e83ca08c1323bfb.
+Installed archive971617bce328e26521db1cbb74b4938d4a2a3295f033237576444e807dbe4123.
+Canonical backup before-update-rc.316-20261101-064241:26927 files/521978715
+bytes; all backed-up data and original key verified after normal update.
+Native four-route and small/large/all account switches passed;336/5884/6232
+cached followers retained. These timings include accessibility traversal.
+
+Same20s warmup/15s allocation sampler: prior1032444240 estimated bytes,
+current475751012. Live workload is not identical; transient allocations are
+not retained memory/leak evidence. Metadata-only archive0 replacements28->11
+in15.266s windows; other archives vary, counts are lower bounds. Inspector
+49316 closed and listener independently absent. No page contents/heap snapshot.
+Original PS5.1 CPU helper could not load Get-FileHash under Node spawn; original
+failure retained. V2 explicitly imports native Utility module, same Node-spawn
+validation passed, later15.049s read-only sample passed: main152.31% of one
+logical core/private783.24MiB; matched app processes total283.26%/6255.69MiB.
+Not a simultaneous startup CPU comparison; overall performance NOT accepted.
+No platform sends or user rule changes. Goal continues to Nov1 11:00.
+
+Only retiredRC314 generated binaries removed933172330 bytes/3 targets;
+keep316/315, all sources/evidence and business backups. Cumulative cleanup
+111707960726 logical bytes/688 targets, not runtime RAM freed. Exact receipts
+are workspace matrix-rc316-delivery-summary.json and storage cleanup reports.

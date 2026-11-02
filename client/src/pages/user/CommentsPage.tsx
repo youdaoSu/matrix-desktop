@@ -1,20 +1,22 @@
 import { useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 import { OfficialInteractionManager } from '@/components/workspace/OfficialInteractionManager';
-import { DouyinCommentMonitorPanel } from '@/components/workspace/DouyinCommentMonitor';
+import { InteractionLiveFeed } from '@/components/workspace/InteractionLiveFeed';
+import { DouyinCommentWorkRail } from '@/components/workspace/DouyinCommentMonitor';
 import { InteractionAccountRail, InteractionPostRail, ReplyTemplatePane } from '@/components/workspace/InteractionPanels';
+import { InteractionAggregateFilters, InteractionEmpty, InteractionPlatformSelect, InteractionStatusTabs, InteractionTools, useInteractionFilters, exportInteractionRecords } from '@/components/workspace/InteractionUi';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MessageCircle, RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import type { CommentItem, PlatformType, PlatformAccount } from '@shared/api.interface';
 import { axiosForBackend } from '@/api';
-import { Alert, AlertDescription } from '@client/src/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@client/src/components/ui/avatar';
 import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
-import { Card, CardContent } from '@client/src/components/ui/card';
 import { Input } from '@client/src/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
 import { toast } from 'sonner';
+import { useInteractionAccount, useInteractionPlatform } from '@/components/workspace/InteractionState';
+import { uiOneOf, uiText, useWorkspaceIdentity, useWorkspacePreference } from '@/components/workspace/WorkspaceUiState';
+import { useOwnerRequest } from '@/components/workspace/use-owner-request';
 
 const platformLabels: Record<PlatformType, string> = { douyin: '抖音', xiaohongshu: '小红书', wechat: '视频号', bilibili: 'B站' };
 function errorMessage(error: any, fallback: string) { return error?.response?.data?.error?.message || error?.response?.data?.message || error?.message || fallback; }
@@ -22,41 +24,58 @@ function errorMessage(error: any, fallback: string) { return error?.response?.da
 export default function CommentsPage() {
   const aggregate = useLocation().pathname.endsWith('comments-agg');
   const workspace = useOfficialWorkspace();
-  const [account, setAccount] = useState<PlatformAccount | null>(null);
-  const [postId, setPostId] = useState('');
+  const [platform, setPlatform] = useInteractionPlatform();
+  const scope = aggregate ? 'comments-agg' : 'comments';
+  const filters = useInteractionFilters(platform, scope);
+  const [account, setAccount] = useInteractionAccount(platform, scope, filters.accounts, filters.loaded);
+  const [postId, setPostId] = useWorkspacePreference(`interaction.${scope}.${platform}.${account?.id || 'all'}.${account?.connectorSessionId || ''}.${account?.nativeAccountKey || ''}.post`, '', uiText);
   const generation = useRef(0);
-  const [items, setItems] = useState<CommentItem[]>([]);
-  const [search, setSearch] = useState('');
-  const [platform, setPlatform] = useState('all');
-  const [replyStatus, setReplyStatus] = useState('all');
+  const lease = useWorkspaceIdentity();
+  const readScope = `${lease}/${scope}/${platform}/${account?.id || ''}/${account?.connectorSessionId || ''}/${account?.nativeAccountKey || ''}`;
+  const [snapshot, setSnapshot] = useState<{ scope: string; items: CommentItem[] }>({ scope: '', items: [] });
+  const items = snapshot.scope === readScope ? snapshot.items : [];
+  const setItems = (items: CommentItem[]) => setSnapshot({ scope: readScope, items });
+  const [search, setSearch] = useWorkspacePreference(`interaction.${scope}.${platform}.search`, '', uiText);
+  const [replyStatus, setReplyStatus] = useWorkspacePreference(`interaction.${scope}.${platform}.reply`, 'all', uiOneOf(['all', 'pending', 'replied']));
   const [loading, setLoading] = useState(true);
-  useEffect(() => { setAccount(null); setPostId(''); }, [aggregate]);
+  const [readError, setReadError] = useState<{ scope: string; message: string }>();
+  const beginRequest = useOwnerRequest();
 
   const load = async () => {
+    if (!filters.loaded) return;
+    if (platform === 'douyin' || !aggregate && (!account || !postId)) { setLoading(false); setItems([]); setReadError(undefined); return; }
+    const request = beginRequest(); if (!request.authorized) { request.finish(); setLoading(false); setReadError({scope:readScope,message:'请先登录后读取历史评论'}); return; }
+    window.dispatchEvent(new CustomEvent('matrix:interaction-refresh-request', { detail: { kind: 'comments' } }));
     const current = ++generation.current;
-    setLoading(true);
+    setLoading(true); setReadError(undefined);
     setItems([]);
     try {
       const params: Record<string, string | number | boolean> = { page: 1, pageSize: 100 };
       if (search.trim()) params.keyword = search.trim();
-      if (platform !== 'all') params.platform = platform;
+      params.platform = platform;
       if (account) params.accountId = account.id;
-      if (postId) params.postId = postId;
+      if (!aggregate && postId) params.postId = postId;
       if (replyStatus !== 'all') params.isReplied = replyStatus === 'replied';
-      const response = await axiosForBackend.get('/api/comments', { params });
-      if (current === generation.current) setItems(response.data?.data?.items || []);
-    } catch (error: any) { if (current === generation.current) toast.error(errorMessage(error, '加载评论记录失败')); }
-    finally { if (current === generation.current) setLoading(false); }
+      const response = await axiosForBackend.get('/api/comments', { params, signal: request.signal });
+      if (!Array.isArray(response.data?.data?.items)) throw Error('历史评论响应不完整');
+      if (request.current() && current === generation.current) setItems(response.data.data.items.filter((item: CommentItem) => item.platform === platform && (!account || item.accountId === account.id)));
+    } catch (error: any) { if (request.current() && current === generation.current) { const message=errorMessage(error, '加载评论记录失败'); setReadError({scope:readScope,message}); toast.error(message); } }
+    finally { request.finish(); if (request.current() && current === generation.current) setLoading(false); }
   };
 
-  useEffect(() => { void load(); return () => { generation.current++; }; }, [platform, replyStatus, account, postId]);
+  useEffect(() => { setItems([]); void load(); return () => { generation.current++; }; }, [platform, replyStatus, account?.id, account?.connectorSessionId, account?.nativeAccountKey, postId, filters.loaded, lease, aggregate]);
 
-  return <div className={aggregate ? 'matrix-interaction-layout matrix-comments-aggregate' : 'matrix-interaction-layout matrix-comments-layout'}>{!aggregate && <><InteractionAccountRail platform={platform} selected={account?.id} onSelect={value => { setAccount(value); setPostId(''); }} /><InteractionPostRail account={account} selected={postId} onSelect={setPostId} /></>}<section className="matrix-interaction-content space-y-3">
-    <DouyinCommentMonitorPanel />
-    <OfficialInteractionManager account={account} kind="comments" />
-    <Alert className="border-primary/20 bg-primary/5"><MessageCircle className="h-4 w-4 text-primary" /><AlertDescription>在账号操作面板查看和回复评论。下方列表保留已同步的评论记录。</AlertDescription></Alert>
-<div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-semibold">评论管理</h1><p className="mt-1 text-sm text-muted-foreground">共 {items.length} 条已同步评论</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => account ? void workspace.openAccount(account, 'comments') : workspace.show('comments')}>官方页面回复</Button><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={`mr-1 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</Button></div></div>
-    <Card><CardContent className="flex flex-wrap gap-3 p-4"><div className="relative min-w-56 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void load()} placeholder="搜索评论内容或昵称，回车查询" /></div><Select value={platform} onValueChange={value => { setPlatform(value); setAccount(null); setPostId(''); }}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部平台</SelectItem>{Object.entries(platformLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><Select value={replyStatus} onValueChange={setReplyStatus}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部状态</SelectItem><SelectItem value="pending">待回复</SelectItem><SelectItem value="replied">已回复</SelectItem></SelectContent></Select><Button onClick={() => void load()}>查询</Button></CardContent></Card>
-    <div className="matrix-comment-list" aria-label="评论记录">{loading && <p role="status">正在加载评论记录…</p>}{items.map(item => <article key={item.id} data-comment-id={item.id}><Avatar className="h-8 w-8 shrink-0"><AvatarImage src={item.commenterAvatarUrl} /><AvatarFallback>{(item.commenterNickname || '评').slice(0, 1)}</AvatarFallback></Avatar><div><header><strong>{item.commenterNickname || '匿名用户'}</strong><Badge variant={item.isReplied ? 'secondary' : 'outline'}>{item.isReplied ? '已回复' : '待回复'}</Badge>{item.isSensitive && <Badge variant="destructive">敏感内容</Badge>}</header><p>{item.content}</p>{item.replyContent && <blockquote>已同步回复：{item.replyContent}</blockquote>}<footer><span>{platformLabels[item.platform]}{item.postTitle ? ' · ' + item.postTitle : ''}</span><time>{item.commentedAt ? new Date(item.commentedAt).toLocaleString('zh-CN') : '—'}</time></footer></div></article>)}{!loading && !items.length && <div className="matrix-interaction-empty">暂无真实评论记录。平台评论接口获批并同步后会显示在这里。</div>}</div>
+  const changePlatform = setPlatform;
+  const visibleItems = items.filter(item => item.platform === platform && (!account || item.accountId === account.id) && (aggregate ? filters.matches(item.accountId, item.commentedAt) : !!account && !!postId && item.postId === postId));
+  return <div data-interaction-view={aggregate ? 'comments-agg' : 'comments'} data-interaction-platform={platform} className={aggregate ? 'matrix-interaction-layout matrix-comments-aggregate' : 'matrix-interaction-layout matrix-comments-layout'}>{!aggregate && <><InteractionAccountRail platform={platform} selected={account?.id} onPlatformChange={changePlatform} onSelect={setAccount} allowAll={false} />{platform === 'douyin' ? <DouyinCommentWorkRail account={account} selected={postId} onSelect={setPostId} /> : <InteractionPostRail account={account} selected={postId} onSelect={setPostId} />}</>}<section className="matrix-interaction-content">
+    <div className="matrix-interaction-toolbar"><h1>{aggregate ? '评论聚合' : '评论管理'}</h1>{aggregate && <InteractionPlatformSelect value={platform} onChange={changePlatform} />}</div>
+    {aggregate && <div className="matrix-interaction-toolbar"><InteractionAggregateFilters filter={filters} accountId={account?.id} onAccount={setAccount} /><small>分组筛选自动读取记录；日期与回复状态仅适用于有相应平台字段的历史记录</small></div>}
+    <InteractionLiveFeed kind="comments" syncPlatform platform={platform} account={account} commentView={aggregate ? 'aggregate' : 'work'} workId={aggregate ? undefined : postId} matches={aggregate ? id => !filters.group || filters.visibleAccounts.some(item => item.id === id) : undefined} />
+    {platform !== 'douyin' && <InteractionTools title="本机历史评论与手动读取工具（非实时来源）">
+    <div className="matrix-interaction-toolbar"><strong>历史评论筛选</strong><InteractionStatusTabs value={replyStatus} onChange={setReplyStatus} /><div className="matrix-interaction-search"><Search size={15} /><Input aria-label="搜索评论" value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && void load()} placeholder="搜索本机历史关键词 / 昵称" /></div><Button variant="outline" onClick={() => void load()}>查询历史</Button></div>
+    <div className="matrix-interaction-actionbar"><Button variant="outline" onClick={() => account ? void workspace.openAccount(account, 'comments') : workspace.show('comments')}>官方页面回复</Button><Button variant="outline" disabled title="批量回复平台接口尚未接通，不会修改本地状态冒充回复成功">批量回复</Button><Button variant="outline" disabled={!visibleItems.length} onClick={() => exportInteractionRecords('comments', visibleItems)}>导出记录</Button><span>已显示 {visibleItems.length} / {items.length} 条 · 最多 100 条</span><Button variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw size={14} />刷新</Button></div>
+    <div className="matrix-comment-list" aria-label="评论记录">{loading && <p role="status">正在加载评论记录…</p>}{visibleItems.map(item => <article key={item.id} data-comment-id={item.id}><Avatar className="h-8 w-8 shrink-0"><AvatarImage src={item.commenterAvatarUrl} /><AvatarFallback>{(item.commenterNickname || '评').slice(0, 1)}</AvatarFallback></Avatar><div><header><strong>{item.commenterNickname || '匿名用户'}</strong><Badge variant={item.isReplied ? 'secondary' : 'outline'}>{item.isReplied ? '已回复' : '待回复'}</Badge>{item.isSensitive && <Badge variant="destructive">敏感内容</Badge>}</header><p>{item.content}</p>{item.replyContent && <blockquote>已同步回复：{item.replyContent}</blockquote>}<footer><span>{platformLabels[item.platform]}{item.postTitle ? ' · ' + item.postTitle : ''}</span><time>{item.commentedAt ? new Date(item.commentedAt).toLocaleString('zh-CN') : '—'}</time></footer></div></article>)}{!loading && readError?.scope===readScope && <p role="alert">历史评论读取失败：{readError.message}；不能判断是否有记录。</p>}{!loading && readError?.scope!==readScope && !visibleItems.length && <InteractionEmpty>暂无已同步评论。个人账号可展开下方工作台，读取官方页面当前可见记录。</InteractionEmpty>}</div>
+    <InteractionTools title="官方页面快照与回复工作台"><OfficialInteractionManager account={account} kind="comments" /></InteractionTools>
+    </InteractionTools>}
   </section><ReplyTemplatePane /></div>;
 }

@@ -3,6 +3,8 @@
 @import "./tailwind-theme.css";
 @import "./typography.css";
 @import "./workspace.css";
+@import "./components/workspace/one-click-comments.css";
 @import "./publish-config.css";
+@import "./data-workspace.css";
 
 @config "../../tailwind.config.ts";
