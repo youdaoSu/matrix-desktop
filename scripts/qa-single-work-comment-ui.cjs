@@ -31,6 +31,16 @@ async function run(){
   // the follow-up state request under a new user's token.
   input('第二条待核对正文');await until(()=>!button('预览评论').disabled);button('预览评论').click();await until(()=>button('确认发送这条评论'));release=undefined;button('确认发送这条评论').click();await until(()=>release);const at=calls.length;owner='new-owner';release();await new Promise(r=>setTimeout(r,100));assert.equal(calls.length,at);checks++;
   assert.equal(calls.some(c=>['preview','start','save-set'].includes(c.command)),false);checks++;
+  // Missing work IDs are repaired by an explicit read of the exact original
+  // receipt, never by guessing a title or submitting a comment.
+  owner='owner';let ready=false,referenceReads=0;
+  window.matrixDesktop.oneClickComments=async value=>value.command==='single-state'&&!ready?{error:'缺少已核实作品编号'}:nativeCall(value);
+  window.matrixDesktop.collectPublishReference=async value=>{referenceReads++;assert.equal(value.receiptId,'original-receipt');ready=true;return{receipt:{id:'original-receipt',accountId:'a',kind:'publish',status:'confirmed'}};};
+  const sends=calls.filter(c=>c.command==='single-start').length;
+  ui.render(React.createElement(SingleCommentForm,{key:'receipt-recovery',source:{kind:'receipt',accountId:'a',receiptId:'original-receipt'}}));
+  await until(()=>button('重新读取作品编号（不发送）'));assert.equal(document.querySelector('textarea'),null);checks++;
+  button('重新读取作品编号（不发送）').click();await until(()=>document.querySelector('textarea'));
+  assert.equal(referenceReads,1);assert.equal(calls.filter(c=>c.command==='single-start').length,sends);assert(!document.querySelector('[role=alert]'));checks+=3;
   return{passed:true,checks,realReact:true,realPlatformSends:0};
  }finally{ui.unmount();}
 }

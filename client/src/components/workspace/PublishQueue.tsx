@@ -120,7 +120,7 @@ function PublishQueueProvider({ children }: { children: ReactNode }) {
       const job=runner.jobs.find(job=>job.id===receipt.taskId);
       if(!job)throw Error('原任务已不存在，未读取其他作品');
       return verifyPublishJob(desktop(),token!,job,receipt);
-    },apply:receipt=>runner.operationReceipt(receipt),failed:(id,attemptId,message)=>runner.verificationFailed(id,attemptId,message)});
+    },apply:receipt=>{runner.operationReceipt(receipt);referenceCollection.enqueue([receipt]);},failed:(id,attemptId,message)=>runner.verificationFailed(id,attemptId,message)});
     const refreshReceipts = async () => {
       if (!current() || !window.matrixDesktop) return;
       try {
@@ -304,7 +304,7 @@ export function PublishQueuePanel() {
       const result = await boundedAccountCheck(()=>verifyPublishJob(window.matrixDesktop!,token,job));
       if(getAuthToken()!==token||getUser()?.id!==userId)return;
       if (result.error) throw Error(result.error);
-      if (result.receipt) queue.operationReceipt(result.receipt);
+      if (result.receipt) {queue.operationReceipt(result.receipt);window.dispatchEvent(new Event('matrix:page-actions-updated'));}
       if (result.receipt?.status === 'confirmed') toast.success('发布成功');
       else if(result.receipt?.status==='failed')toast.error(result.receipt.message);
       else toast.info(result.receipt?.verification?.message||'本次未能确认官方结果，原记录保留，未重新发布');

@@ -21,14 +21,17 @@ else{
    const pause=ms=>new Promise(r=>setTimeout(r,ms)),until=async(fn,label,ms=6000)=>{const end=Date.now()+ms;while(Date.now()<end){if(fn())return;await pause(20);}throw Error('Avatar QA timeout: '+label);};
    try{
     render({avatarUrl:'https://avatar.fixture.test/retry'});await until(()=>document.querySelector('[data-avatar-load-state=error]'),'initial error');assert.equal(document.querySelector('[data-account-availability]').dataset.accountAvailability,'normal');checks++;
-    await until(()=>document.querySelector('[data-avatar-load-state=ready]'),'same URL automatic recovery');assert.ok(document.querySelector('img').naturalWidth);assert.equal(document.querySelector('img').referrerPolicy,'no-referrer');checks+=2;
+    await until(()=>document.querySelector('[data-avatar-load-state=ready]'),'same URL automatic recovery');assert.ok(document.querySelector('img').naturalWidth);assert.equal(document.querySelector('img').referrerPolicy,'no-referrer');const firstReadyImage=document.querySelector('img');checks+=2;
     render({avatarUrl:'https://avatar.fixture.test/never'});await until(()=>document.querySelector('[data-avatar-load-state=error]'),'persistent error');await pause(4600);assert.ok(document.querySelector('[data-avatar-load-state=error]'));assert.equal(document.querySelector('[data-account-availability]').dataset.accountAvailability,'normal');checks+=2;
-    render({connectorSessionId:'session-b',avatarUrl:'https://avatar.fixture.test/retry'});await until(()=>document.querySelector('[data-avatar-load-state=ready]'),'new session does not inherit failed image');checks++;
+    render({connectorSessionId:'session-b',avatarUrl:'https://avatar.fixture.test/retry'});await until(()=>document.querySelector('[data-avatar-load-state=ready]'),'new session does not inherit failed image');assert.notEqual(document.querySelector('img'),firstReadyImage);checks+=2;
     render({avatarUrl:'https://avatar.fixture.test/never'});await until(()=>document.querySelector('[data-avatar-load-state=error]'),'pending retry before replacement');render({id:'different',connectorSessionId:'session-c',avatarUrl:'https://avatar.fixture.test/new-owner'});await until(()=>document.querySelector('[data-avatar-load-state=ready]'),'replacement image');await pause(1200);assert.equal(document.querySelector('img').getAttribute('src'),'https://avatar.fixture.test/new-owner');checks++;
     for(const avatarUrl of['','javascript:alert(1)','https://user:password@avatar.fixture.test/secret']){render({avatarUrl});await until(()=>document.querySelector('[data-avatar-load-state=missing]'),'invalid address fallback');assert.equal(document.querySelectorAll('img').length,0);checks++;}
     return{accountAvatarReactChecks:checks,sameUrlTransientErrorRecovers:true,retriesBounded:true,sessionChangeResetsImageFailure:true,oldRetryCancelledOnAccountChange:true,portraitErrorDoesNotMarkAccountOffline:true,credentialsRejected:true,realPlatformRequests:0};
    }finally{component.unmount();}
   })()`);
-  assert.equal(requests['/retry'],3);assert.equal(requests['/never'],4);assert.equal(requests['/new-owner'],1);assert.equal(requests['/secret'],undefined);console.log(JSON.stringify({...result,imageRequestCounts:requests}));
+  // Chromium may reuse a decoded successful image on the new keyed mount.
+  // The first failure and recovery must both reach the fixture; remounting is
+  // checked above, while a third network download is optional, never required.
+  assert.ok(requests['/retry']>=2&&requests['/retry']<=3);assert.equal(requests['/never'],4);assert.equal(requests['/new-owner'],1);assert.equal(requests['/secret'],undefined);console.log(JSON.stringify({...result,imageRequestCounts:requests}));
  }catch(e){console.error(e);process.exitCode=1;}finally{win?.destroy();app.exit(process.exitCode||0);}});
 }

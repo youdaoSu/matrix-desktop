@@ -36,6 +36,15 @@ function fixture(platform='xiaohongshu'){
  bounded.bindingUpdated(receipt.accountId,'session:restored-id');await new Promise(r=>setTimeout(r,60));assert.equal(attempts,6);checks++;
  bounded.bindingUpdated('other-account','session:other-id');await new Promise(r=>setTimeout(r,60));assert.equal(attempts,6);checks++;
  bounded.bindingUpdated(receipt.accountId,'new-session:restored-id');await until(()=>attempts===9);assert.equal(attempts,9);bounded.dispose();checks++;
+ // Approval after the initial reference budget is exhausted re-arms one
+ // bounded pass. A later stale pending event must not refill that budget.
+ {
+  let count=0;const pending={...receipt,verification:{state:'processing'}},approved={...receipt,verification:{state:'confirmed'}};
+  const q=createReferenceCollection({current:()=>true,collect:async value=>{count++;return {receipt:value};},apply:()=>{},delayMs:1});
+  q.enqueue([pending]);await until(()=>count===3);await new Promise(r=>setImmediate(r));
+  q.enqueue([approved]);await until(()=>count===6);await new Promise(r=>setImmediate(r));
+  for(let i=0;i<10;i++)q.enqueue([pending,approved]);await new Promise(r=>setTimeout(r,70));assert.equal(count,6);checks++;q.dispose();
+ }
  // Repeated stale list events cannot re-arm a completed/unsafe read.
  for(const terminal of [{evidence:references.xiaohongshu},{referenceCollection:{state:'conflict',message:'different work',checkedAt:new Date().toISOString()}}]){
   let count=0,done=0;const queue=createReferenceCollection({current:()=>true,collect:async value=>{count++;return{receipt:{...value,...terminal}};},apply:()=>done++,delayMs:1});

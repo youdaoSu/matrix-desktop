@@ -58,6 +58,14 @@ export function createReferenceCollection(deps: { current():boolean; collect(rec
         if(settled){if(previous){previous.receipt=receipt;previous.settled=true;previous.version++;previous.next=Infinity;}else tasks.set(receipt.id,{receipt,attempts:3,next:Infinity,version:0,settled:true});continue;}
         if(!(receipt.status==='confirmed'||receipt.acceptedAt))continue;
         if(!previous)tasks.set(receipt.id,{receipt,attempts:0,next:0,version:0});
+        // The original three reads may have happened while the work was still
+        // under review. A newly confirmed approval is new evidence, so allow
+        // one new bounded pass; repeated/stale snapshots cannot reset it.
+        else if(!previous.settled&&receipt.verification?.state==='confirmed'&&previous.receipt.verification?.state!=='confirmed'){
+          previous.receipt=receipt;previous.version++;
+          if(previous.next===Infinity)previous.bindingChanged=true;
+          else{previous.attempts=0;previous.next=0;}
+        }
       }
       pump();
     },

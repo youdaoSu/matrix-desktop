@@ -1,5 +1,5 @@
 // Actual sandboxed Electron preload + first inline fetch/XHR, synthetic HTTPS
-// protocol only. No real accounts, outgoing networking, sends or unread reads.
+// plus one loopback-only HTTP redirect. No real accounts/platform requests.
 const path = require('node:path'), root = path.resolve(__dirname, '..');
 require('./qa-console-pipe.cjs').guardQaConsolePipes();
 if (!process.versions.electron) {
@@ -17,6 +17,19 @@ if (!process.versions.electron) {
     const legacyReference = 'qa.official-summary-reference', legacyPath = '/aweme/v1/creator/comment/list'; let raceRequests = 0;
     const encryptedComment = 'qa.encrypted-comment+reference/==', encryptedPeer = 'qa.encrypted-author+reference/==', encryptedReply = 'qa.encrypted-reply+reference/==';
     const json = value => Response.json(value);
+    // Electron 44 protocol.handle + webRequest can expose the initial 302
+    // status alongside the final JSON body. Do not teach the product to trust
+    // that malformed response. Exercise a real 302 -> 200 on loopback and pass
+    // its final response through the synthetic HTTPS endpoint instead.
+    const redirectRequests=[];
+    const redirectServer=require('node:http').createServer((req,res)=>{
+      redirectRequests.push(req.url);
+      if(req.method!=='GET'){res.writeHead(405);res.end();return;}
+      if(req.url==='/redirect'){res.writeHead(302,{Location:'/summary'});res.end();return;}
+      if(req.url==='/summary'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status_code:0,item_list:[{item_id:work,sec_item_id:legacyReference}]}));return;}
+      res.writeHead(404);res.end();
+    });
+    await new Promise((resolve,reject)=>{redirectServer.once('error',reject);redirectServer.listen(0,'127.0.0.1',resolve);});
     const commentMarkup = '<div role="tab" aria-selected="true">评论管理</div><div class="comment-item-qa"><button class="load-reply-qa">查看1条回复</button></div><button aria-label="下一页">下一页</button><span class="back-text-qa">内容管理</span>';
     const mountComment = `window.mountComment=(id,selected=true)=>{document.body.innerHTML=${JSON.stringify(commentMarkup)};const tab=document.querySelector('[role=tab]');tab.setAttribute('aria-selected',String(selected));const load=()=>fetch('${commentPath}?aweme_id='+id+'&cursor=0');if(selected)load();tab.onclick=()=>{tab.setAttribute('aria-selected','true');load();};const row=document.querySelector('.comment-item-qa');row.__reactFiber$fixture={memoizedProps:{comment:{cid:'${comment}',text:'QA根评论'}}};document.querySelector('button').onclick=()=>{const x=new XMLHttpRequest();x.open('GET','/aweme/v1/creator/comment/reply/list?comment_id=${comment}&cursor=0');x.send();};document.querySelector('[aria-label]').onclick=()=>fetch('${commentPath}?aweme_id='+id+'&cursor=${longCursor}');document.querySelector('span').onclick=()=>{history.pushState(null,'','/creator-micro/content/manage');window.mountCards();};};`;
     const mountCards = `window.mountCards=()=>{document.body.innerHTML='<button aria-label="下一页">下一页</button>';document.querySelector('button').onclick=()=>fetch('${workQuery}${longCursor}');for(const id of ['${work}','${work2}']){const row=document.createElement('div');row.className='video-card-content-qa';row.__reactFiber$fixture={memoizedProps:{item:{aweme_id:id,author:{uid:'${own}'}}}};row.innerHTML='<span>评论</span>';row.querySelector('span').onclick=()=>{const url='/creator-micro/work-management/work-detail/'+id+'?enter_from=content'+(id==='${work2}'?'':'&tabKey=commentManagement');if(id==='${work2}')window.open(url,'_blank');else{history.pushState(null,'',url);window.mountComment(id);}};document.body.append(row);}};`;
@@ -52,7 +65,8 @@ if (!process.versions.electron) {
       if (u.pathname === commentPath) { const first = u.searchParams.get('cursor') === '0'; return json({ status_code: 0, comments: [{ cid: u.searchParams.has('qa_opaque') ? encryptedComment : first ? comment : '9007199254740000203', text: 'QA根评论', image_list:[{origin_url:{url_list:['https://p1.byteimg.com/qa-comment.gif']},thumb_url:{url_list:['https://p1.byteimg.com/qa-comment-thumb.jpg']},skey:'PRIVATE_NEVER_EXPORTED'}], user: { uid: peer, nickname: 'QA昵称' }, reply_comment_total: first ? 1 : 0, ...(u.searchParams.has('qa_preview') ? { reply_comment: [{ cid: '9007199254740000290', text: 'QA新版内嵌回复', user: { uid: peer, nickname: 'QA回复昵称' } }] } : {}) }], has_more: first, cursor: first ? longCursor : '0' }); }
       if (u.pathname === '/aweme/v1/creator/comment/reply/list') return json({ status_code: 0, comment_info_list: [{ comment_id: u.searchParams.get('comment_id') === encryptedComment ? encryptedReply : '9007199254740000201', text: 'QA子评论', user_info: { user_id: u.searchParams.get('comment_id') === encryptedComment ? encryptedPeer : peer, screen_name: 'QA子昵称' } }], has_more: false, cursor: '0' });
       if (u.pathname.replace(/\/$/, '') === '/web/api/creator/data/item/summarize') {
-        if (u.searchParams.has('qa_redirect')) return Response.redirect('https://creator.douyin.com/web/api/creator/data/item/summarize/?item_id=' + work, 302);
+        if(u.searchParams.has('qa_unresolved_redirect'))return new Response(JSON.stringify({status_code:0,item_list:[{item_id:work,sec_item_id:legacyReference}]}),{status:302,headers:{'content-type':'application/json'}});
+        if (u.searchParams.has('qa_redirect')) return fetch('http://127.0.0.1:'+redirectServer.address().port+'/redirect').then(response=>{assert.equal(response.status,200);assert.equal(response.redirected,true);return response;});
         if (u.searchParams.has('qa_summary_error')) return json({ status_code: 5, status_msg: '请求参数错误' });
         if (u.searchParams.has('qa_secret_error')) return json({ status_code: 5, status_msg: 'cookie=qa-private; token=qa-secret' });
         const variant=u.searchParams.get('qa_summary_variant');if(variant){const ref='qa.summary-'+variant,row={item_id:work,sec_item_id:ref};if(variant==='numeric')return new Response('{"status_code":0,"item_list":[{"item_id":'+work+',"sec_item_id":'+JSON.stringify(ref)+'}]}',{headers:{'content-type':'application/json'}});return json({status_code:0,item_list:variant==='opaque'?[{item_id:ref,sec_item_id:ref}]:variant==='multiple'?[{item_id:work2,sec_item_id:'qa.other-summary'},row]:variant==='duplicate'?[row,row]:variant==='wrong'?[{item_id:work2,sec_item_id:ref}]:variant==='mismatchedOpaque'?[{item_id:'qa.other-opaque',sec_item_id:ref}]:variant==='unsafe'?[{item_id:9007199254740994,sec_item_id:ref}]:[]});}
@@ -191,6 +205,13 @@ if (!process.versions.electron) {
       eq((await client.readWeb('comments', { workId: work, cursor: '0' })).comments[0].user.nickname, 'QA旧作品昵称');
       const summaryState = await windows[1].webContents.executeJavaScript(`window.__matrixCreatorObservedPages.summaries.get('${work}')`);
       eq(summaryState, '作品摘要已关联旧版引用'); eq(summaryState.includes(legacyReference), false);
+      eq(redirectRequests,['/redirect','/summary']);
+      // The ordinary trailing-slash URL remains observed without inventing
+      // any requests or allowing a raw redirect response as successful data.
+      await windows[1].webContents.executeJavaScript(`fetch('/web/api/creator/data/item/summarize/?item_id=${work}').then(r=>r.json()).then(()=>new Promise(r=>setTimeout(r,30)))`);
+      eq(await windows[1].webContents.executeJavaScript(`window.__matrixCreatorObservedPages.summaries.get('${work}')`),'作品摘要已关联旧版引用');
+      await windows[1].webContents.executeJavaScript(`fetch('/web/api/creator/data/item/summarize?item_id=${work}&qa_unresolved_redirect=1').then(r=>r.json()).then(()=>new Promise(r=>setTimeout(r,30)))`);
+      eq(await windows[1].webContents.executeJavaScript(`window.__matrixCreatorObservedPages.summaries.get('${work}')`),'作品摘要：官方读取请求返回 HTTP 302');
       for(const variant of ['numeric','opaque','multiple','duplicate','wrong','mismatchedOpaque','unsafe','empty']){
         const allowed=['numeric','opaque','multiple'].includes(variant);
         await windows[1].webContents.executeJavaScript(`fetch('/web/api/creator/data/item/summarize?item_id=${work}&qa_summary_variant=${variant}').then(r=>r.json()).then(()=>new Promise(r=>setTimeout(r,30)))`);
@@ -248,6 +269,6 @@ if (!process.versions.electron) {
       eq((await resumed.readWeb('works',{cursor:'0'})).aweme_list[0].aweme_id,work);eq(windows.length,5);eq(resumed.releaseCompletedCatalog(),false);
       resumed.close();reader.close();eq(windows.every(w=>w.isDestroyed()),true);
       console.log(JSON.stringify({ checks, realSandboxedElectronPreload: true, firstInlineFetchObserved: true, normalGetResponseOnly: true, exactServerCursor: true, realPlatformRequests: 0, businessSends: 0, readReceipts: 0 }));
-    } catch (e) { console.error(e); process.exitCode = 1; } finally { reader?.close(); for (const w of windows) if (!w.isDestroyed()) w.destroy(); app.exit(process.exitCode || 0); }
+    } catch (e) { console.error(e); process.exitCode = 1; } finally { reader?.close(); for (const w of windows) if (!w.isDestroyed()) w.destroy(); redirectServer.closeAllConnections();await new Promise(resolve=>redirectServer.close(resolve));app.exit(process.exitCode || 0); }
   });
 }

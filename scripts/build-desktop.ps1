@@ -95,9 +95,17 @@ $desktopDependenciesRoot = Join-Path $projectRoot '.desktop-deps'
 $electronBuilderCommand = Join-Path $desktopDependenciesRoot 'node_modules\.bin\electron-builder.cmd'
 $electronInstaller = Join-Path $desktopDependenciesRoot 'node_modules\electron\install.js'
 $electronExe = Join-Path $desktopDependenciesRoot 'node_modules\electron\dist\electron.exe'
+$desktopManifest = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
+$electronVersion = [string]$desktopManifest.devDependencies.electron
+if ($electronVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'A pinned Electron version is required' }
+$installedElectronManifest = Join-Path $desktopDependenciesRoot 'node_modules\electron\package.json'
+$desktopVersionMismatch = -not (Test-Path -LiteralPath $installedElectronManifest)
+if (-not $desktopVersionMismatch) {
+  $desktopVersionMismatch = (Get-Content -LiteralPath $installedElectronManifest -Raw | ConvertFrom-Json).version -ne $electronVersion
+}
 $desktopRequiredFiles = @($electronBuilderCommand, $electronInstaller)
 $missingDesktopDependencies = @($desktopRequiredFiles | Where-Object { -not (Test-Path -LiteralPath $_) })
-if ($missingDesktopDependencies.Count -gt 0) {
+if ($missingDesktopDependencies.Count -gt 0 -or $desktopVersionMismatch) {
   Write-Host '[0/3] Installing desktop tools in an isolated directory...'
   New-Item -ItemType Directory -Force -Path $desktopDependenciesRoot | Out-Null
   $desktopInstallExitCode = Invoke-VisibleProcess -FilePath 'npm.cmd' -Arguments @(
@@ -105,7 +113,7 @@ if ($missingDesktopDependencies.Count -gt 0) {
     '--no-save', '--ignore-scripts', '--no-audit', '--no-fund', '--legacy-peer-deps',
     '--package-lock=false', '--prefer-online',
     '--registry=https://registry.npmjs.org/', '--loglevel=info',
-    'electron@33.4.11', 'electron-builder@25.1.8'
+    ('electron@' + $electronVersion), 'electron-builder@25.1.8'
   ) -TimeoutMinutes 15
   if ($desktopInstallExitCode -ne 0) {
     throw "Desktop dependency installation failed. See: $logPath"

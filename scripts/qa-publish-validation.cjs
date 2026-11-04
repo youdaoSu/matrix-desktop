@@ -12,9 +12,13 @@ const {publishValidation} = require('../desktop/publish-validation.cjs'), {runOf
 const {syncBilibiliDeclaration,bilibiliDeclaration}=require('../desktop/bilibili-declaration.cjs');
 app.setPath('userData',fs.mkdtempSync(path.join(os.tmpdir(),'matrix-form-validation-qa-')));
 app.whenReady().then(async()=>{
-  const isolated=session.fromPartition('matrix-offline-form-validation'),win=new BrowserWindow({show:false,width:1100,height:850,webPreferences:{session:isolated,contextIsolation:true,sandbox:true}});
+  const isolated=session.fromPartition('matrix-offline-form-validation'),win=new BrowserWindow({show:false,width:1100,height:850,webPreferences:{session:isolated,contextIsolation:true,sandbox:true,backgroundThrottling:false}});
   let html='',checks=0;await isolated.protocol.handle('https',()=>new Response(html,{headers:{'Content-Type':'text/html;charset=utf-8'}}));
-  const load=async(content,host='creator.douyin.com')=>{html='<meta charset=utf-8><style>input,textarea,select,[role=combobox]{display:block;width:350px;height:35px}</style>'+content;await win.loadURL('https://'+host+(host==='member.bilibili.com'?'/platform/upload/video/frame':'/creator-micro/content/post/video'));};
+  // Match the active publishing guest's unthrottled rendering. did-finish-load
+  // precedes Chromium's first compositor hit-test surface after a navigation;
+  // wait for that surface before exercising trusted pointer input, not a sleep
+  // or a retry of the click. Keep the window hidden and all assertions intact.
+  const load=async(content,host='creator.douyin.com')=>{html='<meta charset=utf-8><style>input,textarea,select,[role=combobox]{display:block;width:350px;height:35px}</style>'+content;await win.loadURL('https://'+host+(host==='member.bilibili.com'?'/platform/upload/video/frame':'/creator-micro/content/post/video'));await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');};
   const js=code=>win.webContents.executeJavaScript(code),read=input=>runOfficialDOM(win.webContents,publishValidation,[input||{}],'matrix-page-actions');
   try {
     await load('<input aria-label=标题 required><textarea aria-label=简介 required></textarea><button>发布</button><script>window.actions=0;document.querySelector("button").onclick=()=>window.actions++;</script>');

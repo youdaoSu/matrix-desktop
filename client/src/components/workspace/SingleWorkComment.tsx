@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { CommentBatch, CommentCommand, SingleCommentSource, SingleCommentState } from '@shared/one-click-comments';
 import { platformLabels } from './OfficialWorkspace';
+import { boundedAccountCheck } from './async-account-checks';
 
 const labels: Record<string,string> = {queued:'尚未发送',sending:'正在发送',sent:'评论已发送',failed:'未发送成功',unknown:'结果待核对',skipped:'已有提交记录，未重复发送',cancelled:'已取消'};
 export function SingleWorkCommentEntry({ source, title, locked = false }: { source: SingleCommentSource | null; title?: string; locked?: boolean }) {
@@ -20,6 +21,21 @@ export function SingleCommentForm({source,locked=false}:{source:SingleCommentSou
   const current=()=>live.current&&auth.current.owner===getUser()?.id&&auth.current.token===getAuthToken();
   const call=async(command:CommentCommand,args:unknown)=>{if(!current()||!auth.current.token||!window.matrixDesktop?.oneClickComments)throw Error('请在新版远效桌面端登录后操作');const response=await window.matrixDesktop.oneClickComments({accessToken:auth.current.token,command,args});if(!current())throw Error('登录已变化，旧结果不再显示');if(response.error)throw Error(response.error);return response.result;};
   const refresh=async()=>{if(flight.current)return;flight.current=true;const version=revision.current;try{const result=await call('single-state',{source}) as SingleCommentState;if(current()&&version===revision.current){setState(result);setError('');}}catch(e){if(current()&&version===revision.current)setError((e as Error).message);}finally{flight.current=false;}};
+  const recoverSource=async()=>{
+    if(flight.current||locked||source.kind!=='receipt'||!current())return;
+    flight.current=true;setBusy(true);revision.current++;
+    try{
+      const api=window.matrixDesktop,token=auth.current.token;
+      if(!api?.collectPublishReference||!token)throw Error('请使用新版远效桌面版核对作品');
+      const result=await boundedAccountCheck(()=>api.collectPublishReference({accessToken:token,receiptId:source.receiptId}));
+      if(!current())return;
+      if(result.error)throw Error(result.error);
+      if(result.receipt?.id!==source.receiptId||result.receipt.accountId!==source.accountId||result.receipt.kind!=='publish')throw Error('返回的作品不属于原任务，未采用');
+      window.dispatchEvent(new Event('matrix:page-actions-updated'));
+      const next=await call('single-state',{source}) as SingleCommentState;
+      if(current()){setState(next);setError('');}
+    }catch(e){if(current())setError((e as Error).message);}finally{flight.current=false;if(current())setBusy(false);}
+  };
   const run=async(command:CommentCommand,args:unknown)=>{if(flight.current||locked)return;flight.current=true;setBusy(true);revision.current++;try{
     const result=await call(command,args);
     // Retain the acknowledged operation even if the subsequent read fails.
@@ -34,6 +50,7 @@ export function SingleCommentForm({source,locked=false}:{source:SingleCommentSou
   const valid=preview&&preview.rows[0]?.text===text.trim()?state?.batches.find(b=>b.id===preview.id)||preview:undefined;
   return <div className="matrix-one-click-body">
     {error&&<p role="alert" className="text-destructive">{error}</p>}
+    {error&&!state&&source.kind==='receipt'&&<Button variant="outline" disabled={busy||locked} onClick={()=>void recoverSource()}>{busy?'正在读取作品编号…':'重新读取作品编号（不发送）'}</Button>}
     {state?<><p><strong>{state.target.title||state.target.workId}</strong></p><p>发送账号：{state.target.accountName} · {platformLabels[state.target.platform as keyof typeof platformLabels]||state.target.platform}</p><p className="text-xs text-muted-foreground">作品编号：{state.target.workId}</p>
       <label className="block">本条评论<textarea className="mt-2 min-h-28 w-full rounded-md border bg-background p-3" aria-label="本条作品评论" maxLength={500} value={text} disabled={busy||locked||running} onChange={e=>{setText(e.target.value);setPreview(undefined);}}/></label><small>{text.length}/500</small>
       <div className="matrix-one-click-toolbar"><Button disabled={busy||locked||!!running||!text.trim()||!!valid} onClick={()=>{void run('single-preview',{source,text}).then(result=>{if(current()&&result)setPreview(result as CommentBatch);});}}>预览评论</Button></div>

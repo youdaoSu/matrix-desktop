@@ -6,7 +6,7 @@ const until=async predicate=>{for(let i=0;i<150;i++){if(predicate())return;await
 function fixture(options={}){
   const f={current:true,jobs:new Map(),calls:[],applied:[],failures:[],releases:new Map()};
   f.add=id=>{const r={id:'receipt-'+id,taskId:id,attemptId:'attempt-'+id,accountId:'account-'+id,platform:'douyin',kind:'publish',status:'unknown',message:'Original uncertain attempt'};f.jobs.set(id,{id,attemptId:r.attemptId,receiptId:r.id,accountId:r.accountId,platform:r.platform,stage:'unknown',submission:'uncertain'});return r;};
-  f.checks=createPublishResultChecks({current:()=>f.current,job:id=>f.jobs.get(id),verify:r=>{f.calls.push(r.id);return new Promise(resolve=>f.releases.set(r.id,resolve));},apply:r=>{f.applied.push(r);f.jobs.get(r.taskId).stage=r.status;},failed:(...args)=>f.failures.push(args),...options});
+  f.checks=createPublishResultChecks({current:()=>f.current,job:id=>f.jobs.get(id),verify:r=>{f.calls.push(r.id);return new Promise(resolve=>f.releases.set(r.id,resolve));},apply:r=>{f.applied.push(r);Object.assign(f.jobs.get(r.taskId),{stage:r.status,verification:r.verification});},failed:(...args)=>f.failures.push(args),...options});
   return f;
 }
 (async()=>{
@@ -27,13 +27,46 @@ function fixture(options={}){
   for(const mode of ['approved','new-attempt','logout','disposed','unresolved']){
     const {test,row}=reviewFixture({reviewDelaysMs:[20,20,20]});test.checks.enqueue([row]);assert.equal(test.calls.length,0);
     if(mode==='disposed')test.checks.dispose();else if(mode==='logout')test.current=false;else if(mode==='new-attempt')test.jobs.get(row.taskId).attemptId='new';
-    else{await new Promise(resolve=>setTimeout(resolve,25));await until(()=>test.calls.length===1);if(mode==='approved')test.jobs.get(row.taskId).verification={state:'confirmed'};test.releases.get(row.id)({receipt:{...row,verification:{state:mode==='approved'?'confirmed':'processing'},checkpoint:'verification_finished'}});}
+    else{await new Promise(resolve=>setTimeout(resolve,25));await until(()=>test.calls.length===1);test.releases.get(row.id)({receipt:{...row,verification:{state:mode==='approved'?'confirmed':'processing'},checkpoint:'verification_finished'}});await until(()=>test.applied.length===1);}
     await new Promise(resolve=>setTimeout(resolve,35));assert.equal(test.calls.length,['approved','unresolved'].includes(mode)?1:0);test.checks.dispose();
   }
-  for(const mode of ['manual','old','no-intent']){
-    const {test,row}=reviewFixture();if(mode==='manual')row.manualVerification=true;if(mode==='old')row.createdAt=new Date(Date.now()-3600000).toISOString();if(mode==='no-intent')test.jobs.get(row.taskId).config.comment='';
+  for(const mode of ['manual','old','future']){
+    const {test,row}=reviewFixture();if(mode==='manual')row.manualVerification=true;if(mode==='old')row.createdAt=new Date(Date.now()-8*86400000).toISOString();if(mode==='future')row.createdAt=new Date(Date.now()+3600000).toISOString();
     test.checks.enqueue([row]);await new Promise(resolve=>setTimeout(resolve,5));assert.equal(test.calls.length,0);test.checks.dispose();
   }
+  // A post without a follow-up comment still needs moderation, including a
+  // pending receipt restored the next day. Apply terminal results immediately.
+  for(const mode of ['no-intent','no-config','overnight','retried-old-task']){
+    const {test,row}=reviewFixture();test.jobs.get(row.taskId).config=mode==='no-config'?undefined:{comment:''};
+    if(mode==='overnight')row.createdAt=new Date(Date.now()-12*3600000).toISOString();
+    if(mode==='retried-old-task'){row.createdAt=new Date(Date.now()-30*86400000).toISOString();row.acceptedAt=new Date().toISOString();}
+    test.checks.enqueue([row]);await new Promise(resolve=>setTimeout(resolve,5));await until(()=>test.calls.length===1);
+    test.releases.get(row.id)({receipt:{...row,verification:{state:'confirmed'},checkpoint:'work_list_result'}});
+    await until(()=>test.applied.length===1);assert.equal(test.applied[0].verification.state,'confirmed');
+    test.checks.enqueue([row]);await new Promise(resolve=>setTimeout(resolve,10));assert.equal(test.calls.length,1);test.checks.dispose();
+  }
+  // Receipt storms during a read cannot duplicate it or exhaust the next
+  // check. A read error stops automatic retries until an explicit user action.
+  {
+    const {test,row}=reviewFixture();test.checks.enqueue([row]);await new Promise(resolve=>setTimeout(resolve,5));await until(()=>test.calls.length===1);
+    for(let i=0;i<20;i++)test.checks.enqueue([row]);await new Promise(resolve=>setTimeout(resolve,10));assert.equal(test.calls.length,1);
+    test.releases.get(row.id)({error:'Temporary read unavailable'});await until(()=>test.failures.length===1);
+    for(let i=0;i<20;i++)test.checks.enqueue([row]);await new Promise(resolve=>setTimeout(resolve,10));assert.equal(test.calls.length,1);test.checks.dispose();
+  }
+  {
+    const {test,row}=reviewFixture({reviewDelaysMs:[1,1,1,1,1,1,1]});test.checks.enqueue([row]);
+    for(let read=1;read<=6;read++){await new Promise(resolve=>setTimeout(resolve,5));await until(()=>test.calls.length===read);test.releases.get(row.id)({receipt:row});await until(()=>test.applied.length===read);}
+    for(let i=0;i<20;i++)test.checks.enqueue([row]);await new Promise(resolve=>setTimeout(resolve,10));assert.equal(test.calls.length,6);test.checks.dispose();
+  }
+  {
+    const test=fixture({reviewDelaysMs:[1]});const row=test.add('later-accepted');test.checks.enqueue([row]);await until(()=>test.calls.length===1);
+    test.releases.get(row.id)({receipt:row});await until(()=>test.applied.length===1);
+    const accepted={...row,status:'confirmed',createdAt:new Date().toISOString(),verification:{state:'processing'},checkpoint:'official_accepted'};
+    Object.assign(test.jobs.get(row.taskId),{stage:'confirmed',verification:accepted.verification});
+    test.checks.enqueue([accepted]);await new Promise(resolve=>setTimeout(resolve,5));await until(()=>test.calls.length===2);
+    test.releases.get(row.id)({receipt:{...accepted,verification:{state:'confirmed'}}});await until(()=>test.applied.length===2);test.checks.dispose();
+  }
+  console.log(JSON.stringify({moderationWithoutComment:true,overnightRecovery:true,maxReviewReads:6,duplicateEventsCoalesced:true,lateAcceptanceScheduled:true}));
   console.log(JSON.stringify({boundedModerationChecks:9,maxReviewReads:3,approvalStopsReads:true,unknownStatusesNotRetried:true,originalAttemptAndOwnerRequired:true}));
   let n=0,f=fixture(),a=f.add('one');
   f.checks.enqueue([a,a]);f.checks.enqueue([a]);await until(()=>f.calls.length===1);assert.equal(f.calls.length,1);n++;
