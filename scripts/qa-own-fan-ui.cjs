@@ -8,7 +8,7 @@ async function renderTests(){
  function input(label,value){const element=document.querySelector('[aria-label="'+label+'"]');const prototype=element.tagName==='SELECT'?HTMLSelectElement.prototype:element.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,'value').set.call(element,value);element.dispatchEvent(new Event(element.tagName==='SELECT'?'change':'input',{bubbles:true}));}
  try{
  mounted.render(React.createElement(OperationsOwnFans,props));await wait();
- assert.equal(document.querySelectorAll('select option').length,2);checks++;assert.equal(calls.length,0);checks++;
+ assert.equal(document.querySelectorAll('select option').length,2);checks++;assert.equal(calls.length,0);checks++;assert.equal(document.querySelector('option[value=owner]').textContent,'本人账号 · 抖音');checks++;
  input('粉丝批次发送账号','owner');await wait();input('粉丝批次文案','合成问候');await wait();input('每批粉丝人数','3');input('粉丝逐条间隔','12');input('粉丝批次间隔','120');await wait();
  button('核对未联系粉丝，不发送').click();await wait();assert.equal(calls.length,1);assert.equal(calls[0].args.batchSize,3);assert.equal(calls[0].args.intervalSeconds,12);assert.equal(calls[0].args.batchGapSeconds,120);checks+=4;
  assert(document.body.textContent.includes('待核对历史 1 位'));checks++;window.confirm=()=>false;button('开始分批发送').click();await wait();assert.equal(calls.length,1);checks++;

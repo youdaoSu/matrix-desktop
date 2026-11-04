@@ -19,6 +19,7 @@ import FollowerMonitorPage from './pages/user/FollowerMonitorPage';
 import CommentsPage from './pages/user/CommentsPage';
 import MessagesPage from './pages/user/MessagesPage';
 import AccountOperationsPage from './pages/user/AccountOperationsPage';
+import AccountAutomationSettingsPage from './pages/user/AccountAutomationSettingsPage';
 
 import ContentRecordsPage from './pages/publish/ContentRecordsPage';
 import ContentCreateRealPage from './pages/publish/ContentCreateRealPage';
@@ -79,6 +80,7 @@ const RoutesComponent = () => {
         <Route path="/dashboard" element={<DashboardPage />} />
 
         <Route path="/accounts" element={<AccountsPage />} />
+        <Route path="/accounts/automation" element={<AccountAutomationSettingsPage />} />
         <Route path="/accounts/groups" element={<Navigate to="/accounts" replace />} />
 
         <Route path="/publish" element={<ContentRecordsPage />} />

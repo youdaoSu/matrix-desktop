@@ -38,6 +38,23 @@ class CommentQueue {
     }
     const b={id:randomUUID(),receiptId:input.receiptId,primaryId:src.account.id,primaryBinding:fingerprint(src.account),platform:src.platform,workId:src.workId,workUrl:src.workUrl,title:src.title||src.workId,setName:set.name,createdAt:this.now(),expiresAt:this.now()+10*60000,status:'preview',rows};this.state.batches.push(b);await this.persist();return this.publicBatch(b);
   }
+  async previewSingle(input){
+    if(this.closed)throw Error('评论队列已停止');
+    if(!input||Object.keys(input).some(k=>!['source','text'].includes(k))||typeof input.text!=='string'||!input.text.trim()||input.text.length>500||/[\u0000-\u0008\u000b-\u001f\u007f]/.test(input.text))throw Error('请填写1–500字的本条评论');
+    const sourceRef=require('./single-comment-source.cjs').singleSourceRef(input.source);
+    if(this.state.batches.length>=500||Object.keys(this.state.ledger).length>=20000)throw Error('评论记录已达本机保存上限');
+    const src=await this.source(undefined,sourceRef),a=await this.account(sourceRef.accountId);
+    if(fingerprint(a)!==fingerprint(src.account)||!a.nativeAccountKey||!a.connectorSessionId)throw Error('只能以当前作品所属账号发送本条评论');
+    const key=keyOf(src.platform,src.workId,a.nativeAccountKey),previous=this.state.ledger[key];
+    const row={id:randomUUID(),accountId:a.id,accountName:a.nickname||a.id,binding:fingerprint(a),identity:a.nativeAccountKey,text:input.text.trim(),key,status:previous?'skipped':'queued',detail:previous?'此账号已有本作品的评论提交记录，请核对原评论，不会重复发送':'尚未发送，请核对正文后确认'};
+    const b={id:randomUUID(),mode:'single',sourceRef,receiptId:sourceRef.receiptId||'',primaryId:a.id,primaryBinding:fingerprint(a),platform:src.platform,workId:src.workId,workUrl:src.workUrl,title:src.title||src.workId,setName:'单条评论',createdAt:this.now(),expiresAt:this.now()+10*60000,status:'preview',rows:[row]};
+    this.state.batches.push(b);await this.persist();return this.publicBatch(b);
+  }
+  singleBatch(id){const b=this.state.batches.find(b=>b.id===id);if(!b||b.mode!=='single'||b.rows.length!==1||b.rows[0].accountId!==b.primaryId)throw Error('不是当前单账号评论任务');return b;}
+  async singleState(sourceRef){
+    const ref=require('./single-comment-source.cjs').singleSourceRef(sourceRef),src=await this.source(undefined,ref);
+    return {target:{accountId:src.account.id,accountName:src.account.nickname||src.account.id,platform:src.platform,workId:src.workId,title:src.title,workUrl:src.workUrl},running:!!this.active,batches:this.state.batches.filter(b=>b.mode==='single'&&b.primaryBinding===fingerprint(src.account)&&b.platform===src.platform&&b.workId===src.workId).slice(-10).reverse().map(b=>this.publicBatch(b))};
+  }
   publicBatch(b){return clone({...b,rows:b.rows.map(({binding,identity,key,...row})=>row),primaryBinding:undefined});}
   async start(id){
     if(this.closed||this.active)throw Error('评论队列已停止或已有批次执行中');
@@ -46,7 +63,7 @@ class CommentQueue {
     const active={id,stop:false};this.active=active;
     try{await this.verifySource(b);if(this.closed||active.stop)throw Error('本次评论已暂停');b.status='running';b.approvedAt=b.approvedAt||this.now();await this.persist();active.promise=this.run(b,active).catch(e=>{b.status='paused';b.detail=safeError(e);return this.persist();}).catch(()=>{}).finally(()=>{if(this.active===active)this.active=null;});return this.publicBatch(b);}catch(e){this.active=null;throw e;}
   }
-  async verifySource(b){const src=await this.source(b.receiptId);if(src.platform!==b.platform||src.workId!==b.workId||src.workUrl!==b.workUrl||fingerprint(src.account)!==b.primaryBinding)throw Error('作品或主号绑定已变化，未继续发送');return src;}
+  async verifySource(b){const src=await this.source(b.receiptId,b.mode==='single'?b.sourceRef:undefined);if(src.platform!==b.platform||src.workId!==b.workId||src.workUrl!==b.workUrl||fingerprint(src.account)!==b.primaryBinding)throw Error('作品或主号绑定已变化，未继续发送');return src;}
   async run(b,active){
     for(const row of b.rows){
       if(row.status!=='queued')continue;if(active.stop||this.closed)break;

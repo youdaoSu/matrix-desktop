@@ -4,6 +4,7 @@ import type { PlatformAccount } from '@shared/api.interface';
 import type { DouyinInteractionResult, DouyinInteractionRow, DouyinInteractionWork,DouyinFollowerPanelSync } from '@shared/douyin-interactions';
 import { useOfficialWorkspace } from './OfficialWorkspace';
 import { useWorkspaceIdentity } from './WorkspaceUiState';
+import { assertInteractionBudget, interactionRowBytes, interactionRowsBytes, retainInteractionKeys } from './interaction-memory';
 
 export type DouyinKind = 'comments' | 'followers';
 export const isDouyinCommentId = (value: unknown, legacy: boolean) => typeof value === 'string' && (/^[1-9]\d{0,18}$/.test(value) || legacy && /^[\x21-\x7e]{1,512}$/.test(value) && !/^(?:https?|file|data|javascript):/i.test(value) && !/^\d+$/.test(value));
@@ -44,15 +45,17 @@ export function DouyinInteractionDataProvider({ children,initialKinds=['comments
   // Independent accounts may read concurrently; kinds belonging to the same
   // account/session still share a lane and the native per-account safety floor.
   const epoch = useRef(0), occupied = useRef(new Map<string, { job: symbol; target: string }>()), accountNextAt = useRef(new Map<string, number>()), position = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const activate = useCallback((kind: DouyinKind) => { cache.current.enabled.add(kind); }, [lease]);
   const acceptAction=useCallback((a:PlatformAccount,result:DouyinInteractionResult)=>{
     const id=key(a,'comments');
-    if(cache.current.lease!==lease||result.accountId!==a.id||result.sessionId!==a.connectorSessionId||result.receipt?.state!=='confirmed'||!latest.current.accounts.some(current=>key(current,'comments')===id))return;
+    if(!mounted.current||cache.current.lease!==lease||result.accountId!==a.id||result.sessionId!==a.connectorSessionId||result.receipt?.state!=='confirmed'||!latest.current.accounts.some(current=>key(current,'comments')===id))return;
     const old=cache.current.entries.get(id);if(!old||!result.records?.length)return;
     const updates=new Map(result.records.filter(row=>typeof row.platformId==='string'&&typeof row.workId==='string'&&typeof row.content==='string'&&old.works.some(work=>work.platformId===row.workId)).map(row=>[(row.workId||'')+'/'+row.platformId,row]));
-    const rows=new Map(old.rows.map(row=>[(row.workId||'')+'/'+row.platformId,row]));for(const [rowId,row]of updates)rows.set(rowId,row);
+    const rows=new Map<string,DouyinInteractionRow>();for(const row of old.rows)rows.set((row.workId||'')+'/'+row.platformId,row);for(const [rowId,row]of updates)rows.set(rowId,row);
     if(rows.size>50000)return;
-    const values=[...rows.values()],bytes=new TextEncoder().encode(JSON.stringify(values)).length;if(bytes>32*1024*1024)return;
+    const values=[...rows.values()];let bytes:number;try{bytes=interactionRowsBytes(values);assertInteractionBudget(cache.current.entries,id,bytes);}catch{return;}
     cache.current.entries.set(id,{...old,rows:values,bytes});
     setSnapshot(previous=>({...previous,lease,entries:new Map(cache.current.entries)}));
   },[lease]);
@@ -92,6 +95,19 @@ export function DouyinInteractionDataProvider({ children,initialKinds=['comments
   }, [lease]);
   useEffect(() => {
     const generation = ++epoch.current; let alive = true;
+    // Account/session churn must release unreachable payloads and scheduling
+    // metadata. Ordinary route changes keep the same keys and pagination.
+    const validIds = new Set(accounts.flatMap(a => [key(a,'comments'),key(a,'followers')]));
+    const validLanes = new Set(accounts.map(a => [lease,a.id,a.connectorSessionId,a.nativeAccountKey || ''].join('/')));
+    retainInteractionKeys(cache.current.entries,validIds);
+    retainInteractionKeys(cache.current.hydrated,validIds);
+    retainInteractionKeys(pendingFollowerReload.current,validIds);
+    retainInteractionKeys(refreshRequests.current.ids,validIds);
+    retainInteractionKeys(accountNextAt.current,validLanes);
+    retainInteractionKeys(foregroundTurns.current,validLanes);
+    if(priority.current.lease!==lease||priority.current.account&&!validIds.has(priority.current.account))priority.current={lease,account:'',workId:'',kind:null};
+    // Keep admitted jobs until their own finally releases the lane. Removing
+    // an in-flight lane here could admit a second request for the same account.
     replyRequests.current.clear();
     const current = () => alive && generation === epoch.current && cache.current.lease === lease && getUser()?.id === owner && getAuthToken() === token;
     const publish = () => { if (current()) { const readings=[...occupied.current.values()].map(job=>job.target);setSnapshot({ lease, entries: new Map(cache.current.entries), reading:readings[0] || '', readings }); } };
@@ -118,7 +134,7 @@ export function DouyinInteractionDataProvider({ children,initialKinds=['comments
       const showReading = () => publish();
       showReading();
       let liveRead = false, refreshFollowers = false;
-      let entry: DouyinEntry = cache.current.entries.get(target.id) || { rows: [], works: [], complete: false, bytes: 0, at: Date.now(), nextAt: 0, failures: 0, phase: '获取中', newCount: 0 };
+      let entry: DouyinEntry = cache.current.entries.get(target.id) || { rows: [], works: [], complete: false, bytes: 2, at: Date.now(), nextAt: 0, failures: 0, phase: '获取中', newCount: 0 };
       try {
         if (!window.matrixDesktop?.douyinInteractions) throw Error('当前桌面版本尚未接入抖音读取，需要更新');
         if (!cache.current.hydrated.has(target.id)) {
@@ -127,7 +143,9 @@ export function DouyinInteractionDataProvider({ children,initialKinds=['comments
           if (!current()) return;
           if (!saved.error && saved.fromCache && saved.accountId === target.account.id && saved.sessionId === target.account.connectorSessionId && saved.kind === target.kind && saved.platform === 'douyin' && Array.isArray(saved.records) && Array.isArray(saved.works)) {
             const panel=(saved as DouyinInteractionResult&{followerPanelSync?:DouyinFollowerPanelSync}).followerPanelSync;
-            entry = { ...entry, rows: saved.records, works: saved.works, bytes: new TextEncoder().encode(JSON.stringify(saved.records)).length, complete: panel?.status==='complete'&&saved.complete===true, progress:saved.progress, followerRosterVerified:saved.followerRosterVerified===true,...(panel?{followerPanelSync:panel,nextAt:Infinity,error:undefined,followerPending:false}:{}),baseline: saved.complete, phase: saved.phase || '本机缓存，后台检查更新' };
+            const bytes=interactionRowsBytes(saved.records);assertInteractionBudget(cache.current.entries,target.id,bytes);
+            if(saved.works.length>5000)throw Error('本轮达到读取容量上限，已有结果保留，尚未全部读取');
+            entry = { ...entry, rows: saved.records, works: saved.works, bytes, complete: panel?.status==='complete'&&saved.complete===true, progress:saved.progress, followerRosterVerified:saved.followerRosterVerified===true,...(panel?{followerPanelSync:panel,nextAt:Infinity,error:undefined,followerPending:false}:{}),baseline: saved.complete, phase: saved.phase || '本机缓存，后台检查更新' };
             cache.current.entries.set(target.id, entry); showReading();
           }
           // Cache restoration is its own short job. Do not let the following
@@ -159,20 +177,23 @@ export function DouyinInteractionDataProvider({ children,initialKinds=['comments
         // Keep immutable content references so the visible feed can reuse its
         // projection; real updates and verified membership changes still merge.
         const works = r.works?.length ? new Map(entry.works.map(w => [w.platformId, w])) : undefined; for (const w of r.works || []) works!.set(w.platformId, { ...works!.get(w.platformId), ...w, ...(Object.prototype.hasOwnProperty.call(w,'readError')||Object.prototype.hasOwnProperty.call(w,'readComplete')?{readError:w.readError,readComplete:w.readComplete}:{}) });
-        const rows = r.records.length || target.kind==='followers'&&r.complete&&r.followerRosterVerified===true ? new Map(entry.rows.map(row => [(row.workId || '') + '/' + row.platformId, row])) : undefined; let bytes = entry.bytes, added = 0;
+        const rows = r.records.length || target.kind==='followers'&&r.complete&&r.followerRosterVerified===true ? new Map<string,DouyinInteractionRow>() : undefined;
+        if(rows)for(const row of entry.rows)rows.set((row.workId || '') + '/' + row.platformId,row);
+        let bytes = entry.bytes, added = 0;
         for (const row of r.records) {
           if (!isDouyinCommentId(row.platformId, target.kind === 'comments' && row.referenceKind === 'legacy') || row.referenceKind !== undefined && row.referenceKind !== 'legacy' || typeof row.author !== 'string' || typeof row.content !== 'string') throw Error('抖音记录编号或结构无效，本页未采用');
           const id = (row.workId || '') + '/' + row.platformId, previous = rows!.get(id);
-          bytes += new TextEncoder().encode(JSON.stringify(row)).length - (previous ? new TextEncoder().encode(JSON.stringify(previous)).length : 0);
+          bytes += interactionRowBytes(row) - (previous ? interactionRowBytes(previous) : 0) + (!previous&&rows!.size ? 1 : 0);
           if (!previous) added++; rows!.set(id, row);
         }
         if(r.followerRosterVerified!==undefined&&typeof r.followerRosterVerified!=='boolean'||r.followerRosterVerified===true&&(!r.complete||!Array.isArray(r.currentFollowerIds)))throw Error('粉丝全量核对证明无效，旧记录保留');
         if (target.kind === 'followers' && r.complete && r.followerRosterVerified===true && Array.isArray(r.currentFollowerIds)) {
           if (r.currentFollowerIds.length > 50000 || r.currentFollowerIds.some(id => !/^[1-9]\d{0,18}$/.test(id))) throw Error('粉丝完整名单标识无效，已有记录保留');
           const current = new Set(r.currentFollowerIds);
-          for (const [id, row] of rows!) {const updated={...row,isCurrentFollower:current.has(row.platformId),membershipCheckedAt:r.capturedAt};bytes+=new TextEncoder().encode(JSON.stringify(updated)).length-new TextEncoder().encode(JSON.stringify(row)).length;rows!.set(id,updated);}
+          for (const [id, row] of rows!) {const updated={...row,isCurrentFollower:current.has(row.platformId),membershipCheckedAt:r.capturedAt};bytes+=interactionRowBytes(updated)-interactionRowBytes(row);rows!.set(id,updated);}
         }
         if ((works?.size??entry.works.length) > 5000 || (rows?.size??entry.rows.length) > 50000 || bytes > 32 * 1024 * 1024) throw Error('本轮达到读取容量上限，已有结果保留，尚未全部读取');
+        assertInteractionBudget(cache.current.entries,target.id,bytes);
         // A merged cache may contain a previous partial end state. Only this
         // admitted read's native completion flag can retire the current target.
         const completedReply=entry.pendingReply&&r.replyReadPending===false;
@@ -249,7 +270,7 @@ export function DouyinInteractionDataProvider({ children,initialKinds=['comments
     };
     wake.current=tick;
     void tick(); const timer = window.setInterval(() => void tick(), 1000);
-    return () => { alive = false; epoch.current++; wake.current=()=>{}; window.clearInterval(timer);window.removeEventListener('matrix:followers-cache-updated',reloadFollowerCache); };
+    return () => { alive = false; epoch.current++; wake.current=()=>{}; window.clearInterval(timer);window.removeEventListener('matrix:followers-cache-updated',reloadFollowerCache); if(!mounted.current){cache.current.entries.clear();cache.current.hydrated.clear();pendingFollowerReload.current.clear();replyRequests.current.clear();refreshRequests.current.ids.clear();accountNextAt.current.clear();foregroundTurns.current.clear();} };
   }, [lease, signature]);
   const state = snapshot.lease === lease ? snapshot : { entries: new Map<string, DouyinEntry>(), reading: '', readings: [] };
   return <Context.Provider value={{ activate, refresh, requestReplies, prioritize, acceptAction, entry: (a, kind) => state.entries.get(key(a, kind)), reading: state.reading, readings: state.readings }}>{children}</Context.Provider>;

@@ -26,6 +26,7 @@ export function useInteractionImage({ account, row, kind, target, imageIndex, ur
   useEffect(() => {
     if (!available || near.scope !== scope || !near.visible || !account || !owner || !token) return;
     let alive = true, retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const previewAbort = new AbortController();
     if (deferred.current.scope !== scope) deferred.current = { scope, count: 0 };
     const current = () => alive && owner === getUser()?.id && token === getAuthToken();
     setSnapshot({ scope, dataUrl: '', error: '', warning: '', busy: true });
@@ -46,9 +47,9 @@ export function useInteractionImage({ account, row, kind, target, imageIndex, ur
         if (result.accountId !== account.id || result.sessionId !== account.connectorSessionId || !result.attachment || !/^data:image\/(?:png|jpeg|gif|webp);base64,/.test(result.attachment.dataUrl) || !Number.isSafeInteger(result.attachment.bytes) || result.attachment.bytes < 1 || result.attachment.bytes > 8 * 1024 * 1024) throw Error('互动图片预览结果未通过校验');
         setSnapshot({ scope, dataUrl: result.attachment.dataUrl, error: '', warning: result.attachment.cacheWarning?.slice(0, 200) || '', busy: false });
       } catch (error) { if (current()) setSnapshot({ scope, dataUrl: '', error: error instanceof Error ? error.message.slice(0, 200) : '互动图片预览失败', warning: '', busy: false }); }
-    });
+    }, previewAbort.signal);
     if (!admitted) setSnapshot({ scope, dataUrl: '', error: '图片预览队列繁忙，请稍后再试', warning: '', busy: false });
-    return () => { alive = false; clearTimeout(retryTimer); };
+    return () => { alive = false; previewAbort.abort(); clearTimeout(retryTimer); };
   }, [scope, available, near.scope, near.visible, attempt]);
   const image = snapshot.scope === scope ? snapshot : { dataUrl: '', error: '', warning: '', busy: false };
   return { ...image, host, available, near: near.scope === scope && near.visible, retry: () => setAttempt(value => value + 1) };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, GripVertical, MoreVertical, Plus, RefreshCw, Search, Users } from 'lucide-react';
 import type { AccountGroup, PlatformAccount, PlatformType } from '@shared/api.interface';
 import {accountMetricSourceLabel} from '@shared/account-metrics';
@@ -107,6 +107,7 @@ export function AccountManagerSidebar() {
   const filteredByGroup = useMemo(() => indexAccountsByGroup(filtered, sortedGroups), [filtered, sortedGroups]);
   return <aside className="matrix-manager-rail" data-account-management>
     <header><Button onClick={() => setBinding(true)}><Plus size={15} />添加账号</Button><Button variant="outline" size="icon" aria-label="刷新账号和分组" disabled={workspace.loadingAccounts || busy} onClick={refreshAll}><RefreshCw size={15} className={workspace.loadingAccounts ? 'animate-spin' : ''} /></Button></header>
+    <div className="px-3 pb-2"><Button asChild variant="outline" className="w-full"><Link to="/accounts/automation">主账号与协作分工</Link></Button></div>
     <div className="matrix-manager-search"><Search size={15} /><Input aria-label="搜索管理账号" placeholder="昵称 / 备注 / 平台" value={query} onChange={event => setQuery(event.target.value)} /></div>
     <div className="matrix-manager-filter"><select aria-label="筛选管理账号平台" value={platform} onChange={event => setPlatform(event.target.value as PlatformType | 'all')}><option value="all">全部平台</option>{Object.entries(accountPlatformMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><span>{filtered.length} / {workspace.accounts.length} 个账号</span></div>
     <div className="matrix-manager-groups">

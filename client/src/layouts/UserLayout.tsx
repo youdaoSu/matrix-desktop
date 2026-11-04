@@ -82,7 +82,7 @@ const topMenuItems: TopMenuItem[] = [
     icon: Users,
     basePath: '/accounts',
     groups: [
-      { label: '账号管理', items: [{ to: '/accounts', label: '账号工作区' }] },
+      { label: '账号管理', items: [{ to: '/accounts', label: '账号工作区' }, { to: '/accounts/automation', label: '主账号与协作分工' }] },
     ],
   },
   {
@@ -145,8 +145,8 @@ const topMenuItems: TopMenuItem[] = [
         icon: Bot,
         items: [
           { to: '/engage/account-operations', label: '账号运营' },
-          { to: '/automation/keywords', label: '关键词回复' },
-          { to: '/automation/welcome', label: '欢迎语' },
+          { to: '/automation/keywords', label: '关键词文案' },
+          { to: '/automation/welcome', label: '欢迎语文案' },
           { to: '/automation/offline', label: '离线文案' },
           { to: '/automation/monitor', label: '同步监控' },
           { to: '/automation/active-messages', label: '操作待办' },

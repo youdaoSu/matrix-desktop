@@ -660,7 +660,7 @@ registerPageActions({ ipcMain, dialog, webContents, session, getWindow: () => ma
   inspectNativeAccount: edgeEmbed.inspectAccountProfile,
 });
 
-const oneClickComments=require('./one-click-comments.cjs').registerOneClickComments({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,journal:publishJournal,userData:app.getPath('userData'),safeStorage:require('electron').safeStorage,session,...operationsBrowserServices,inspectAccountHealth:accountHealth.inspect});
+const oneClickComments=require('./one-click-comments.cjs').registerOneClickComments({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,journal:publishJournal,userData:app.getPath('userData'),safeStorage:require('electron').safeStorage,session,...operationsBrowserServices,inspectAccountHealth:accountHealth.inspect,getOwnWork:input=>douyinInteractions.findOwnWork(input)});
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;

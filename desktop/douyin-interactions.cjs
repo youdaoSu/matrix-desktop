@@ -539,6 +539,8 @@ function registerDouyinInteractions({ ipcMain, getWindow, authenticate, session,
       return await require('./account-operations-comment-proof.cjs').verifyCommentProof({message:input.message,cache:cacheFor(scope,'comments'),client,read,project:comment,assertCurrent:guard});
     }finally{ended=true;client?.close();if(acquired){busy.delete(scope);nextAllowed.set(scope,now()+4500);}if(reserved)actionQueue.delete(scope);}
   }
-  return {run:(input,beforeCommit)=>handle({sender:getWindow()?.webContents},input,beforeCommit),directoryAccess,verifyOperationComment,close(){closed=true;pagination?.close();followerAvatars.close();images.close();continuations.clear();caches.clear();}};
+  return {run:(input,beforeCommit)=>handle({sender:getWindow()?.webContents},input,beforeCommit),directoryAccess,verifyOperationComment,
+    findOwnWork({owner,account,workId}){if(closed||!owner||account?.platform!=='douyin'||!account.id||!account.connectorSessionId||!account.nativeAccountKey||!/^[1-9]\d{9,18}$/.test(workId||''))return;return cacheFor(JSON.stringify([owner,account.id,account.connectorSessionId,account.nativeAccountKey]),'comments')?.findWork(workId);},
+    close(){closed=true;pagination?.close();followerAvatars.close();images.close();continuations.clear();caches.clear();}};
 }
 module.exports = { registerDouyinInteractions, readPage, initial, person, comment, projectLikeReceipt, interactionFailure,commentTimeStats,independentFollowerScope };

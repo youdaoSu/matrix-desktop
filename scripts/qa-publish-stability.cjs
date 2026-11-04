@@ -9,6 +9,10 @@ require('./qa-console-pipe.cjs').guardQaConsolePipes();
 const root = path.resolve(__dirname, '..');
 const reportPath = path.join(root, 'logs', 'publish-stability-latest.json');
 const suites = [
+  ['interaction-memory-budget-streaming-and-canceled-preview-release', 'scripts/qa-interaction-memory.cjs'],
+  ['interaction-memory-account-churn-and-provider-cleanup', 'scripts/qa-interaction-memory-lifecycle.cjs'],
+  ['single-work-comment-source-confirmation-durable-deduplication', 'scripts/qa-single-work-comment.cjs'],
+  ['single-work-comment-real-react-review-and-owner-isolation', 'scripts/qa-single-work-comment-ui.cjs'],
   ['own-fan-history-persistence-pacing-and-isolated-native-identity', 'scripts/qa-own-fan-batches.cjs'],
   ['own-fan-real-react-plan-controls-and-preview', 'scripts/qa-own-fan-ui.cjs'],
   ['one-click-comment-durable-queue-and-bili-sender-scope', 'scripts/qa-one-click-comments.cjs'],

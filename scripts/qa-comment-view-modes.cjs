@@ -4,7 +4,7 @@ const path=require('node:path'),root=path.resolve(__dirname,'..');
 require('./qa-console-pipe.cjs').guardQaConsolePipes();
 async function run(){
  const assert=require('node:assert/strict'),React=require('react'),{createRoot}=require('react-dom/client'),{loadTs}=require('./qa-load-typescript.cjs'),cache=new Map(),overrides=new Map();
- const stub=(file,exports)=>cache.set(path.join(root,file),{exports});let checks=0,owner='qa-owner',route='/engage/comments',mount=0;
+ const stub=(file,exports)=>cache.set(path.join(root,file),{exports});let checks=0,owner='qa-owner',route='/engage/comments',search='',mount=0;
  const eq=(a,b)=>{assert.deepEqual(a,b);checks++;};
  const {commentCountsByWork}=loadTs('client/src/components/workspace/comment-counts.ts',cache,overrides);let rowReads=0;
  const large=Array.from({length:50000},(_,index)=>({get workId(){rowReads++;return String(1000+index%1000);}}));const indexedCounts=commentCountsByWork(large);eq(rowReads,50000);eq(indexedCounts.size,1000);eq(indexedCounts.get('1000'),50);eq(commentCountsByWork([{workId:'1000'}]).get('1000'),1);eq(commentCountsByWork([{}]).size,0);
@@ -21,7 +21,7 @@ async function run(){
  stub('client/src/components/workspace/OfficialInteractionManager.tsx',{OfficialInteractionManager:()=>null});
  const basic=tag=>({children,size,variant,...props})=>React.createElement(tag,props,children);
  for(const [name,values]of[['avatar',{Avatar:basic('span'),AvatarImage:basic('img'),AvatarFallback:basic('span')}],['button',{Button:basic('button')}],['input',{Input:basic('input')}],['badge',{Badge:basic('span')}]]){stub(`client/src/components/ui/${name}.tsx`,values);overrides.set('@client/src/components/ui/'+name,values);}
- overrides.set('react-router-dom',{Link:({to,children})=>React.createElement('a',{href:to},children),useLocation:()=>({pathname:route})});
+ overrides.set('react-router-dom',{Link:({to,children})=>React.createElement('a',{href:to},children),useLocation:()=>({pathname:route,search})});
  const feed=loadTs('client/src/components/workspace/DouyinInteractionFeed.tsx',cache,overrides);
  // Keep the actual mode/ID handoff and actual native feed; unrelated platform
  // transports are covered separately and are not invoked by this fixture.
@@ -70,6 +70,13 @@ async function run(){
   route='/engage/comments';accounts=[{...accounts[0],connectorSessionId:'rebound-session'},...accounts.slice(1)];workspace.accounts=accounts;mount++;render();await until(()=>accountButton('a'));accountButton('a').click();await until(()=>workRail().textContent.includes('QA甲作品一'));eq(body(),'');
   owner='qa-different-owner';mount++;render();await until(()=>accountButton('a'));eq(body(),'');eq(document.querySelector('[aria-pressed="true"]'),null);
   owner='qa-owner';accounts=[{...accounts[0],connectorSessionId:'session-a'},...accounts.slice(1)];workspace.accounts=accounts;
+  // A task receipt selects the real platform work; receipt IDs must never be
+  // passed to the native comment feed or used to silently select all works.
+  const receiptCalls=[];let delayedReceipt;
+  window.matrixDesktop.oneClickComments=async input=>{receiptCalls.push(input);assert.equal(input.command,'single-state');if(input.args.source.receiptId==='delayed')await new Promise(r=>delayedReceipt=r);return{result:{target:{accountId:'a',accountName:'QA账号甲',platform:'douyin',workId:'1001',title:'QA原任务作品',workUrl:'https://www.douyin.com/video/1001'},running:false,batches:[]}};};
+  search='?commentReceipt=original&commentAccount=a&commentPlatform=douyin';mount++;render();await until(()=>document.body.textContent.includes('已关联原发布任务'));eq(body().includes('QA作品一评论'),true);eq(body().includes('QA作品二评论'),false);eq(workRail().querySelector('[aria-pressed="true"]').getAttribute('data-interaction-post-id'),'1001');eq([...document.querySelectorAll('button')].find(b=>b.textContent==='一键评论').disabled,false);eq(receiptCalls.length,1);
+  accountButton('b').click();await until(()=>workRail().textContent.includes('QA乙作品'));eq(document.body.textContent.includes('QA原任务作品'),false);eq(body().includes('QA作品一评论'),false);
+  search='?commentReceipt=delayed&commentAccount=a&commentPlatform=douyin';render();await until(()=>delayedReceipt);accountButton('b').click();await until(()=>workRail().textContent.includes('QA乙作品'));delayedReceipt();await new Promise(r=>setTimeout(r,60));eq(document.body.textContent.includes('QA原任务作品'),false);eq(body().includes('QA作品一评论'),false);eq(receiptCalls.every(c=>c.command==='single-state'),true);search='';
   entries.a.works=Array.from({length:101},(_,i)=>({platformId:i===0?'2001':String(10000+i),title:'QA分页监控作品'+i}));entries.a.rows=[{...entries.a.rows[0],workId:'2001'},{...entries.a.rows[1],workId:'2001'}];
   const Monitor=loadTs('client/src/components/workspace/DouyinCommentMonitor.tsx',cache,overrides).DouyinCommentMonitorPanel;component.render(React.createElement(Monitor));await until(()=>document.querySelectorAll('[aria-label="抖音作品评论监控"] article').length===100);
   eq(document.body.textContent.includes('102 个本机缓存作品'),true);eq(document.querySelector('article small').textContent.includes('已缓存 2 条评论'),true);[...document.querySelectorAll('button')].find(button=>button.textContent==='下一页').click();await until(()=>document.querySelectorAll('article').length===2);eq(document.querySelectorAll('article').length,2);eq([...document.querySelectorAll('article small')].some(node=>node.textContent.includes('QA账号乙 · 已缓存 1 条评论')),true);eq([...document.querySelectorAll('button')].find(button=>button.textContent==='下一页').disabled,true);

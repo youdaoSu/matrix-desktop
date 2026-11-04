@@ -1,3 +1,4 @@
+import { operationsAccountLabel } from './operations-account-label';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { OperationsCommand, OperationsSnapshot, OperationsFan } from '@shared/account-operations';
@@ -15,7 +16,7 @@ export function OperationsOwnFans({data,busy,run}:Props){
   <p className="ops-muted">使用粉丝所关注的本人账号发送，每位一条。目前接入抖音：核对当前可读取的完整私信历史，已联系、已有任务和历史不完整的对象均不入选。平台已删除或不提供的历史无法据此证明“从未联系”。</p>
   <p className="ops-muted">名单来自已有粉丝缓存，不会边发送边扩大本次名单。每轮最多核对500位；发送时间同时受原有全局额度和平台限制约束。</p>
   <div className="ops-grid">
-   <label className="ops-field">发送账号<select aria-label="粉丝批次发送账号" value={accountId} disabled={locked} onChange={e=>edit(()=>setAccount(e.target.value))}><option value="">选择本人抖音主账号</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+   <label className="ops-field">发送账号<select aria-label="粉丝批次发送账号" value={accountId} disabled={locked} onChange={e=>edit(()=>setAccount(e.target.value))}><option value="">选择本人抖音主账号</option>{accounts.map(a=><option key={a.id} value={a.id}>{operationsAccountLabel(a)}</option>)}</select></label>
    <label className="ops-field">每批人数<input aria-label="每批粉丝人数" type="number" min={1} max={50} value={batchSize} disabled={locked} onChange={e=>edit(()=>setSize(Number(e.target.value)))}/></label>
    <label className="ops-field">逐条间隔（秒，至少5秒）<input aria-label="粉丝逐条间隔" type="number" min={5} max={3600} value={intervalSeconds} disabled={locked} onChange={e=>edit(()=>setInterval(Number(e.target.value)))}/></label>
    <label className="ops-field">批次间等待（秒）<input aria-label="粉丝批次间隔" type="number" min={5} max={86400} value={batchGapSeconds} disabled={locked} onChange={e=>edit(()=>setGap(Number(e.target.value)))}/></label>

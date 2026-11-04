@@ -1,3 +1,4 @@
+import { operationsAccountLabel } from './operations-account-label';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { OperationsAccount, OperationsCommand, OperationsSnapshot } from '@shared/account-operations';
@@ -31,7 +32,7 @@ export function OperationsConnections({data,busy,run}:Props){
 }
 function TeamRow({account,accounts,busy,save}:{account:OperationsAccount;accounts:OperationsAccount[];busy:boolean;save(value:unknown):void}){
  const [role,setRole]=useState(account.role||'independent'),[primary,setPrimary]=useState(account.primaryAccountId||''),[notes,setNotes]=useState(account.notes||'');
- return <div className="ops-reply"><strong>{account.name}</strong><div className="ops-grid"><label className="ops-field">运营分工<select value={role} disabled={busy} onChange={e=>setRole(e.target.value as typeof role)}><option value="independent">独立账号</option><option value="primary">主账号</option><option value="member">协作账号</option></select></label>
-  {role==='member'&&<label className="ops-field">所属同平台主账号<select value={primary} disabled={busy} onChange={e=>setPrimary(e.target.value)}><option value="">选择主账号</option>{accounts.filter(a=>a.id!==account.id&&a.platform===account.platform&&a.role==='primary').map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
+ return <div className="ops-reply"><strong>{operationsAccountLabel(account)}</strong><div className="ops-grid"><label className="ops-field">运营分工<select value={role} disabled={busy} onChange={e=>setRole(e.target.value as typeof role)}><option value="independent">独立账号</option><option value="primary">主账号</option><option value="member">协作账号</option></select></label>
+  {role==='member'&&<label className="ops-field">所属同平台主账号<select value={primary} disabled={busy} onChange={e=>setPrimary(e.target.value)}><option value="">选择主账号</option>{accounts.filter(a=>a.id!==account.id&&a.platform===account.platform&&a.role==='primary').map(a=><option key={a.id} value={a.id}>{operationsAccountLabel(a)}</option>)}</select></label>}
   <label className="ops-field">内部备注<input maxLength={5000} value={notes} onChange={e=>setNotes(e.target.value)}/></label></div><Button size="sm" variant="outline" disabled={busy||role==='member'&&!primary} onClick={()=>save({id:account.id,role,primaryAccountId:role==='member'?primary:null,notes})}>保存分工，不发送</Button></div>;
 }
