@@ -24,9 +24,9 @@ node node_modules/vite/bin/vite.js build --config vite.config.ts
 if [[ -f dist/client/client/index.html ]]; then cp dist/client/client/index.html dist/client/index.html; fi
 test -f dist/client/index.html
 node node_modules/electron-builder/out/cli/cli.js --mac dir --arm64 --publish never \
-  "--config.electronDist=$electron_dist" "--config.directories.output=$output" --config.npmRebuild=false
+  "--config.electronDist=$electron_dist" "--config.directories.output=$output" "--config.mac.executableName=远效" --config.npmRebuild=false
 app="$output/mac-arm64/远效.app"
-[[ -d "$app" && ! -L "$app" ]]
+[[ -d "$app" && ! -L "$app" && -f "$app/Contents/Info.plist" ]]
 node scripts/sign-desktop-mac.cjs "$app"
 codesign --verify --deep --strict "$app"
 exe=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
