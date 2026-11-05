@@ -8,8 +8,11 @@ import { randomBytes } from 'crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { applyDesktopLogLevels, prepareDesktopLogEnvironment } from './common/desktop-log-policy';
+import { accountGateway, accountServiceIngress, isAccountCsrfToken, validateAccountServiceConfiguration } from './common/account-authority';
 
 async function bootstrap() {
+  const accountOrigin = validateAccountServiceConfiguration();
+  const accountService = process.env.MATRIX_ACCOUNT_SERVICE === '1';
   const desktopLogging = prepareDesktopLogEnvironment(process.env);
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     abortOnError: process.env.NODE_ENV !== 'development',
@@ -17,9 +20,14 @@ async function bootstrap() {
   await configureApp(app, {
     disableSwagger: true,
   });
+  if (accountOrigin) app.use(accountGateway(accountOrigin));
+  if (accountService) {
+    app.set('trust proxy', 'loopback');
+    app.use('/api', accountServiceIngress());
+  }
   applyDesktopLogLevels(desktopLogging, levels => Logger.overrideLogger(levels));
   const logger = new Logger('Bootstrap');
-  const host = process.env.SERVER_HOST || 'localhost';
+  const host = accountService ? '127.0.0.1' : process.env.SERVER_HOST || 'localhost';
   const port = Number(process.env.SERVER_PORT || '3000');
 
   // In the packaged desktop runtime the catch-all view controller would
@@ -30,20 +38,26 @@ async function bootstrap() {
   // The Windows desktop build is a self-contained SPA. Serve its raw HTML
   // instead of passing it through the Miaoda platform view renderer, which
   // injects cloud-only scripts and template placeholders.
-  if (process.env.MATRIX_DESKTOP === '1') {
+  if (process.env.MATRIX_DESKTOP === '1' || accountService) {
     const desktopIndex = join(process.cwd(), 'dist/client/index.html');
-    app.use('/app', (req, res) => {
+    const sendIndex: import('express').RequestHandler = (req, res) => {
       const startupNonce = process.env.MATRIX_STARTUP_NONCE;
       if (/^[a-f0-9]{64}$/.test(startupNonce || '')) res.setHeader('X-Matrix-Startup', startupNonce);
-      if (!req.cookies?.['suda-csrf-token']) {
+      if (!isAccountCsrfToken(req.cookies?.['suda-csrf-token'])) {
         res.cookie('suda-csrf-token', randomBytes(24).toString('hex'), {
           maxAge: 30 * 24 * 60 * 60 * 1000,
           path: '/',
           httpOnly: false,
           sameSite: 'lax',
+          secure: accountService,
         });
       }
       res.sendFile(desktopIndex);
+    };
+    app.use('/app', sendIndex);
+    if (accountService) app.use('/admin', (req, res, next) => {
+      if (!['GET', 'HEAD'].includes(req.method)) return next();
+      return sendIndex(req, res, next);
     });
   }
 

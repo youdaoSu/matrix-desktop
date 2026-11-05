@@ -47,8 +47,12 @@ class AdminChangePasswordDto {
 
   @IsString()
   @IsNotEmpty({ message: '新密码不能为空' })
-  @MinLength(6, { message: '密码长度不能少于6位' })
+  @MinLength(8, { message: '新密码至少8个字符' })
   newPassword!: string;
+
+  @IsOptional()
+  @IsString()
+  confirmPassword?: string;
 }
 
 class ActivateVipDto {
@@ -209,7 +213,7 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   async changePassword(@Body() dto: AdminChangePasswordDto, @Req() req: Request) {
     const { userId } = this.getAdminUser(req);
-    await this.adminService.adminChangePassword(userId, dto.oldPassword, dto.newPassword);
+    await this.adminService.adminChangePassword(userId, dto.oldPassword, dto.newPassword, dto.confirmPassword);
     return success(null, '密码修改成功');
   }
 

@@ -210,6 +210,7 @@ async function startPackagedServer() {
     MIAODA_APP_TYPE: '3',
     MIAODA_LOCAL_DEV: '1',
     MATRIX_DESKTOP: '1',
+    MATRIX_ACCOUNT_ORIGIN: require('./account-service.json').origin,
     FORCE_AUTHN_INNERAPI_DOMAIN: `http://127.0.0.1:${serverPort}`,
     MIAODA_CACHE_URL: '',
     SERVER_HOST: '127.0.0.1',

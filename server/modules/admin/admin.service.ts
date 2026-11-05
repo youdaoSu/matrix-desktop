@@ -36,7 +36,7 @@ import type {
   SystemSetting,
   PlatformType,
 } from '@shared/api.interface';
-import { signToken } from '../auth/jwt-auth.guard';
+import { adminCredentialVersion, signToken } from '../auth/jwt-auth.guard';
 
 const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
@@ -232,6 +232,7 @@ export class AdminService {
       userId: admin.id,
       role: 'admin',
       username: admin.username,
+      ...(process.env.MATRIX_ACCOUNT_SERVICE === '1' ? { adminVersion: adminCredentialVersion(admin.passwordHash) } : {}),
     });
 
     return { token, user: mapAdminUser(admin) };
@@ -251,7 +252,16 @@ export class AdminService {
     return mapAdminUser(admins[0]);
   }
 
-  async adminChangePassword(adminId: string, oldPassword: string, newPassword: string): Promise<void> {
+  async adminChangePassword(adminId: string, oldPassword: string, newPassword: string, confirmPassword?: string): Promise<void> {
+    if (!confirmPassword) {
+      throw new BadRequestException('请在管理端再次输入新密码。旧版客户端请使用云端管理端完成修改');
+    }
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException('两次输入的新密码不一致');
+    }
+    if ([...newPassword].length < 8 || Buffer.byteLength(newPassword) > 72) {
+      throw new BadRequestException('新密码至少8个字符，且不得超过72字节');
+    }
     const admins = await this.db
       .select()
       .from(adminUsers)
@@ -273,18 +283,22 @@ export class AdminService {
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
-    await this.db
-      .update(adminUsers)
-      .set({ passwordHash: newHash, mustChangePwd: false })
-      .where(eq(adminUsers.id, adminId));
+    await this.db.transaction(async (tx) => {
+      const [changed] = await tx
+        .update(adminUsers)
+        .set({ passwordHash: newHash, mustChangePwd: false })
+        .where(and(eq(adminUsers.id, adminId), eq(adminUsers.passwordHash, admin.passwordHash)))
+        .returning({ id: adminUsers.id });
+      if (!changed) throw new ConflictException('管理员密码已变更，请重新登录');
 
-    await this.db.insert(operationLogs).values({
-      operatorType: 'admin',
-      operatorId: adminId,
-      action: 'change_password',
-      targetType: 'admin',
-      targetId: adminId,
-      detail: '管理员修改密码',
+      await tx.insert(operationLogs).values({
+        operatorType: 'admin',
+        operatorId: adminId,
+        action: 'change_password',
+        targetType: 'admin',
+        targetId: adminId,
+        detail: '管理员修改密码',
+      });
     });
   }
 
