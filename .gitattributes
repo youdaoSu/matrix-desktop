@@ -1,0 +1,4 @@
+scripts/build-desktop-mac.sh text eol=lf
+scripts/build-postgres-mac.sh text eol=lf
+desktop/assets/icon.svg text eol=lf
+client/public/favicon.svg text eol=lf
