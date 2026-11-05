@@ -3,6 +3,7 @@
   "design": "恒远科技 C 款 · 联程 / 连接成长 · 浅底紫标桌面适配",
   "appId": "com.matrix.desktop",
   "legacyDataName": "fullstack-nestjs-template",
+  "macDataName": "YuanXiao",
   "legacyExecutableName": "矩效 Matrix",
   "icon": {
     "size": 320,

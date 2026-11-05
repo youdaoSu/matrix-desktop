@@ -529,8 +529,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
         try {
         if(!routes[record.platform])return await unchanged('unsupported');
         let guest,checkOwner;
-        if(record.platform==='wechat'){
-          if(!createEdgeResultContext)return await unchanged('unsupported');
+        if(record.platform==='wechat' && createEdgeResultContext){
           nativeContext=await budget.run(()=>createEdgeResultContext(event,{accessToken:input.accessToken,accountId:record.accountId,sessionId:owned.account.connectorSessionId}).then(context=>{if(ended){context.close();throw Error('结果核验已结束');}return context;}),'打开视频号只读结果页',35000);
           guest=nativeContext.guest;
           checkOwner=async()=>{const current=await nativeContext.verifyOwner();return {authenticated:true,profile:{nickname:current.nickname,...(current.nativeAccountKey?{ownIdentity:{key:current.nativeAccountKey}}:{})}};};
@@ -545,11 +544,11 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
         checkOwner=async()=>{
           // Douyin's manager can show only an avatar. Read the signed-in own
           // homepage in another window, never a work author or the task label.
-          if(['douyin','xiaohongshu'].includes(record.platform)&&!require('./platform-session.cjs').isLoginPage(guest.getURL())){
+          if(['douyin','xiaohongshu','wechat'].includes(record.platform)&&!require('./platform-session.cjs').isLoginPage(guest.getURL())){
             if(!profileWindow){
               profileWindow=createResultWindow?createResultWindow(accountSession):new(require('electron').BrowserWindow)({show:false,webPreferences:{session:accountSession,sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
               profileWindow.webContents.setWindowOpenHandler?.(()=>({action:'deny'}));
-              const home=record.platform==='douyin'?'https://creator.douyin.com/creator-micro/home':'https://creator.xiaohongshu.com/new/home';
+              const home=record.platform==='douyin'?'https://creator.douyin.com/creator-micro/home':record.platform==='xiaohongshu'?'https://creator.xiaohongshu.com/new/home':'https://channels.weixin.qq.com/platform/home';
               profileWindow.webContents.on?.('will-navigate',(navigation,url)=>{try{const target=new URL(url);if(target.protocol!=='https:'||target.hostname!==new URL(home).hostname)navigation.preventDefault();}catch{navigation.preventDefault();}});
               await budget.run(()=>profileWindow.webContents.loadURL(home),'读取平台本人主页',12000);
             }

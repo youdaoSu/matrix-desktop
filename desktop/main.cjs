@@ -75,6 +75,7 @@ function retainOwnedDatabase(control) {
   return control;
 }
 
+const hasNativeWechat = process.platform === 'win32';
 const PLATFORM = Object.freeze({
   douyin: { label: '抖音', home: 'https://creator.douyin.com/', domain: 'douyin.com' },
   xiaohongshu: { label: '小红书', home: 'https://creator.xiaohongshu.com/', domain: 'xiaohongshu.com' },
@@ -128,7 +129,7 @@ function runProcess(file, args, options = {}) {
     child.stdout?.on('data', (data) => { output += data.toString(); });
     child.stderr?.on('data', (data) => { output += data.toString(); });
     child.once('error', reject);
-    child.once('exit', (code) => {
+    child.once('close', (code) => {
       if (code === 0) resolve(output);
       else { const error = new Error(output.trim() || `${path.basename(file)} 退出代码 ${code}`); error.exitCode = code; reject(error); }
     });
@@ -143,13 +144,17 @@ function canListen(port) {
   });
 }
 
+function postgresTool(bin, name) {
+  return path.join(bin, process.platform === 'win32' ? name + '.exe' : name);
+}
+
 async function ensureEmbeddedDatabase() {
   const pgRoot = path.join(process.resourcesPath, 'postgres');
   const bin = path.join(pgRoot, 'bin');
-  const initdb = path.join(bin, 'initdb.exe');
-  const pgCtl = path.join(bin, 'pg_ctl.exe');
-  const createdb = path.join(bin, 'createdb.exe');
-  const psql = path.join(bin, 'psql.exe');
+  const initdb = postgresTool(bin, 'initdb');
+  const pgCtl = postgresTool(bin, 'pg_ctl');
+  const createdb = postgresTool(bin, 'createdb');
+  const psql = postgresTool(bin, 'psql');
   if (!fs.existsSync(initdb)) throw new Error('安装文件不完整：缺少内置数据库组件，请重新安装远效。');
 
   const dataDir = path.join(app.getPath('userData'), 'database');
@@ -159,7 +164,8 @@ async function ensureEmbeddedDatabase() {
     // SQL_ASCII avoids a PostgreSQL 18 initdb bug on Chinese Windows profiles
     // where localized account metadata is emitted in GBK during UTF-8 setup.
     // The app and postgres-js still exchange application text as UTF-8 bytes.
-    await runProcess(initdb, ['-D', dataDir, '-U', 'matrix', '--auth=trust', '--encoding=SQL_ASCII', '--locale=C'], { timeout: 60000 });
+    const encoding = process.platform === 'win32' ? 'SQL_ASCII' : 'UTF8';
+    await runProcess(initdb, ['-D', dataDir, '-U', 'matrix', '--auth=trust', '--encoding=' + encoding, '--locale=C'], { timeout: 60000 });
   }
 
   const control = await withStartupLease(app.getPath('appData'), async () => {
@@ -171,7 +177,8 @@ async function ensureEmbeddedDatabase() {
     assertStartupActive();
     const databaseLog = path.join(app.getPath('logs'), 'matrix-database.log');
     fs.mkdirSync(path.dirname(databaseLog), { recursive: true });
-    await runProcess(pgCtl, ['-D', dataDir, '-l', databaseLog, '-w', '-t', '15', 'start', '-o', `-h 127.0.0.1 -p ${port}`], { timeout: 20000 });
+    const socketOptions = process.platform === 'darwin' ? ' -c unix_socket_directories=' : '';
+    await runProcess(pgCtl, ['-D', dataDir, '-l', databaseLog, '-w', '-t', '15', 'start', '-o', `-h 127.0.0.1 -p ${port}${socketOptions}`], { timeout: 20000 });
     const started = await recoverOwnedDatabase({ pgCtl, psql, dataDir, bin, runProcess, databaseName: 'postgres' });
     if (!started || started.port !== port) throw Error('内置数据库启动归属未确认，未连接或接管其他数据库');
     return retainOwnedDatabase(started);
@@ -320,7 +327,7 @@ function createMainWindow() {
       return { action: 'deny' };
     });
   });
-  win.setMenuBarVisibility(false);
+  if (process.platform !== 'darwin') win.setMenuBarVisibility(false);
   win.on('page-title-updated', (event) => {
     event.preventDefault();
     win.setTitle('远效');
@@ -385,7 +392,7 @@ async function createDatabaseBackup() {
     filters: [{ name: '远效数据库备份', extensions: ['backup'] }],
   });
   if (selected.canceled || !selected.filePath) return { cancelled: true };
-  const pgDump = path.join(databaseControl.bin, 'pg_dump.exe');
+  const pgDump = postgresTool(databaseControl.bin, 'pg_dump');
   if (!fs.existsSync(pgDump)) return { error: '安装文件不完整：缺少数据库备份组件' };
   try {
     await runProcess(pgDump, [
@@ -414,7 +421,7 @@ async function restoreDatabaseBackup() {
   });
   if (selected.canceled || !selected.filePaths[0]) return { cancelled: true };
   const backupPath = selected.filePaths[0];
-  const pgRestore = path.join(databaseControl.bin, 'pg_restore.exe');
+  const pgRestore = postgresTool(databaseControl.bin, 'pg_restore');
   if (!fs.existsSync(pgRestore)) return { error: '安装文件不完整：缺少数据库恢复组件' };
   try {
     await runProcess(pgRestore, ['--list', backupPath]);
@@ -492,6 +499,7 @@ async function openPlatformWindow(platform, existingSessionId) {
     };
 
     const menu = Menu.buildFromTemplate([
+      ...(process.platform === 'darwin' ? [{ role: 'appMenu' }, { role: 'editMenu' }] : []),
       { label: '授权', submenu: [
         { label: '我已在官方页面完成登录，绑定此账号', click: finish },
         { type: 'separator' },
@@ -504,7 +512,17 @@ async function openPlatformWindow(platform, existingSessionId) {
         message: '平台登录会话仅保存在本机 Electron 独立分区中。远效服务端不会接收平台 Cookie。',
       }) },
     ]);
-    win.setMenu(menu);
+    if (process.platform === 'darwin') {
+      const previous = Menu.getApplicationMenu();
+      const show = () => Menu.setApplicationMenu(menu);
+      const restore = () => { if (Menu.getApplicationMenu() === menu) Menu.setApplicationMenu(previous); };
+      win.on('focus', show);
+      win.on('blur', restore);
+      win.once('closed', restore);
+      if (win.isFocused()) show();
+    } else {
+      win.setMenu(menu);
+    }
     win.loadURL(config.home);
     win.on('closed', () => {
       if (!completed) reject(new Error('用户取消了平台登录'));
@@ -522,7 +540,7 @@ function preparePlatformSession(platform, existingSessionId) {
   isolatedSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'clipboard-sanitized-write');
   });
-  return { platform, sessionId, partition, url: config.home, label: config.label, ...(platform === 'wechat' && process.platform === 'win32' ? { engine: 'webview2' } : {}) };
+  return { platform, sessionId, partition, url: config.home, label: config.label, ...(platform === 'wechat' && hasNativeWechat ? { engine: 'webview2' } : {}) };
 }
 
 async function completeEmbeddedPlatformLogin(input) {
@@ -626,7 +644,7 @@ const douyinInbox = require('./douyin-inbox.cjs').registerDouyinInbox({ ipcMain,
 const operationsBrowserServices=require('./account-operations-native-browser.cjs').createOperationsBrowserServices({BrowserWindow,session,getInbox:()=>douyinInbox,acquireDouyinIdentity:douyinBrowserReader.acquire});
 accountOperations=require('./account-operations.cjs').registerAccountOperations({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,safeStorage:require('electron').safeStorage,userData:app.getPath('userData'),getInbox:()=>douyinInbox,getInteractions:()=>douyinInteractions,...operationsBrowserServices,paused:()=>windowInteractionLease.paused()});
 require('./douyin-public-emoji.cjs').registerPublicEmoji({ipcMain,getWindow:()=>mainWindow});
-const accountHealth=require('./account-health.cjs').registerAccountHealth({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,session,platforms:PLATFORM,inspectPlatformSession,inspectNative:edgeEmbed.inspectAccountProfile,diagnostics:douyinDiagnostics,
+const accountHealth=require('./account-health.cjs').registerAccountHealth({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,session,platforms:PLATFORM,inspectPlatformSession,inspectNative:hasNativeWechat ? edgeEmbed.inspectAccountProfile : undefined,diagnostics:douyinDiagnostics,
   prepareReadContext:require('./douyin-profile-context.cjs').createProfileContext(),
   readDouyinIdentity:require('./douyin-profile-preload.cjs').readObservedIdentity,
   readDouyinPublishIdentity:options=>require('./douyin-publish-identity.cjs').readPublishIdentity(options,douyinBrowserReader.acquire),
@@ -657,8 +675,8 @@ const pageReview=registerPageActions({ ipcMain, dialog, webContents, session, ge
   journal: publishJournal, authenticate: authenticateDesktop,
   inspectAccountHealth:accountHealth.inspect,
   resolveEdgeContext: edgeEmbed.resolveContext,
-  createEdgeResultContext: edgeEmbed.createResultContext,
-  inspectNativeAccount: edgeEmbed.inspectAccountProfile,
+  createEdgeResultContext: hasNativeWechat ? edgeEmbed.createResultContext : undefined,
+  inspectNativeAccount: hasNativeWechat ? edgeEmbed.inspectAccountProfile : undefined,
 });
 
 const oneClickComments=require('./one-click-comments.cjs').registerOneClickComments({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,journal:publishJournal,userData:app.getPath('userData'),safeStorage:require('electron').safeStorage,session,...operationsBrowserServices,...pageReview,inspectAccountHealth:accountHealth.inspect,getOwnWork:input=>douyinInteractions.findOwnWork(input)});

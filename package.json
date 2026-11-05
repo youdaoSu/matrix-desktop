@@ -1,6 +1,6 @@
 {
   "name": "fullstack-nestjs-template",
-  "version": "2.10.0-rc.337",
+  "version": "2.10.0-rc.338",
   "main": "desktop/main.cjs",
   "private": true,
   "flags": {
@@ -42,7 +42,8 @@
     "lint": "node ./scripts/lint.js",
     "precommit": "node scripts/hooks/run-precommit.js",
     "prepare": "chmod +x .githooks/pre-commit 2>/dev/null; git config core.hooksPath .githooks 2>/dev/null || true",
-    "postinstall": "fullstack-cli action-plugin init"
+    "postinstall": "fullstack-cli action-plugin init",
+    "build:desktop:mac": "bash scripts/build-desktop-mac.sh"
   },
   "dependencies": {
     "@lark-apaas/fullstack-nestjs-core": "^1.1.64",
@@ -175,15 +176,6 @@
     ],
     "extraResources": [
       {
-        "from": ".desktop-runtime/edge-host",
-        "to": "edge-host",
-        "filter": [
-          "*.exe",
-          "*.dll",
-          "*.txt"
-        ]
-      },
-      {
         "from": "dist",
         "to": "app-runtime/dist"
       },
@@ -194,23 +186,6 @@
       {
         "from": "desktop/database-seed.sql",
         "to": "config/database-seed.sql"
-      },
-      {
-        "from": ".desktop-runtime/postgres",
-        "to": "postgres",
-        "filter": [
-          "bin/*.dll",
-          "bin/postgres.exe",
-          "bin/pg_ctl.exe",
-          "bin/initdb.exe",
-          "bin/createdb.exe",
-          "bin/psql.exe",
-          "bin/pg_dump.exe",
-          "bin/pg_restore.exe",
-          "lib/*.dll",
-          "share/**/*",
-          "server_license.txt"
-        ]
       }
     ],
     "win": {
@@ -218,7 +193,35 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "YuanXiao-${version}-Setup.${ext}"
+      "artifactName": "YuanXiao-${version}-Setup.${ext}",
+      "extraResources": [
+        {
+          "from": ".desktop-runtime/edge-host",
+          "to": "edge-host",
+          "filter": [
+            "*.exe",
+            "*.dll",
+            "*.txt"
+          ]
+        },
+        {
+          "from": ".desktop-runtime/postgres",
+          "to": "postgres",
+          "filter": [
+            "bin/*.dll",
+            "bin/postgres.exe",
+            "bin/pg_ctl.exe",
+            "bin/initdb.exe",
+            "bin/createdb.exe",
+            "bin/psql.exe",
+            "bin/pg_dump.exe",
+            "bin/pg_restore.exe",
+            "lib/*.dll",
+            "share/**/*",
+            "server_license.txt"
+          ]
+        }
+      ]
     },
     "nsis": {
       "include": "desktop/installer.nsh",
@@ -227,6 +230,26 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "远效"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "desktop/assets/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "minimumSystemVersion": "13.0",
+      "extraResources": [
+        {
+          "from": ".desktop-runtime/postgres-mac-arm64",
+          "to": "postgres"
+        }
+      ]
     }
   }
 }

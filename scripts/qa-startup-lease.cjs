@@ -1,4 +1,4 @@
-// OS-owned named-pipe locks and loopback HTTP fixtures only. No Matrix profile,
+// OS-owned startup leases and loopback HTTP fixtures only. No Matrix profile,
 // database, platform page, official posting or installed app is touched.
 const assert = require('node:assert/strict'), path = require('node:path'), os = require('node:os'), http = require('node:http');
 const { fork } = require('node:child_process'), { randomBytes, randomUUID } = require('node:crypto'), { EventEmitter } = require('node:events');
@@ -18,7 +18,7 @@ async function childLease(label) {
 }
 (async () => {
   for (const invalid of ['', 'relative', null]) { assert.throws(() => startupLeaseEndpoint(invalid)); checks++; }
-  assert.equal(startupLeaseEndpoint(scope), startupLeaseEndpoint(scope.toUpperCase())); checks++;
+  assert.deepEqual(startupLeaseEndpoint(scope), startupLeaseEndpoint(scope.toUpperCase())); checks++;
   let active = 0, maximum = 0, count = 0;
   await Promise.all(Array.from({ length: 8 }, () => withStartupLease(scope, async () => { active++; maximum = Math.max(maximum, active); await pause(15); count++; active--; }, { timeoutMs: 3000, retryMs: 10 })));
   assert.equal(maximum, 1); assert.equal(count, 8); checks += 2;

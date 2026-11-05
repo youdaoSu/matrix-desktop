@@ -2,16 +2,16 @@ const net = require('node:net');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 
-// Windows named-pipe ownership is held by the OS, not a timestamp/PID file.
-// A crashed owner releases it automatically; another profile must wait until
-// selection AND child bind complete. No process is stopped or lockfile erased.
-function startupLeaseEndpoint(scope) {
+// The OS holds the Windows named pipe or the Mac loopback port until the
+// owner closes it or exits. Every Mac profile shares the same service ports.
+function startupLeaseEndpoint(scope, platform = process.platform) {
   if (typeof scope !== 'string' || !path.isAbsolute(scope) || scope.length > 4096) throw Error('本机启动范围不正确');
+  if (platform === 'darwin') return { host: '127.0.0.1', port: 35453 };
   const digest = createHash('sha256').update(path.resolve(scope).toLowerCase()).digest('hex').slice(0, 40);
   return `\\\\.\\pipe\\matrix-startup-v1-${digest}`;
 }
 async function withStartupLease(scope, action, { timeoutMs = 60000, signal, retryMs = 100 } = {}) {
-  if (process.platform !== 'win32') throw Error('当前内置服务启动锁仅支持 Windows');
+  if (!['win32', 'darwin'].includes(process.platform)) throw Error('当前内置服务启动锁仅支持 Windows 和 macOS');
   if (typeof action !== 'function' || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120000 || !Number.isFinite(retryMs) || retryMs < 10 || retryMs > 1000) throw Error('本机启动等待参数不正确');
   const endpoint = startupLeaseEndpoint(scope), deadline = Date.now() + timeoutMs;
   const check = () => {
@@ -33,7 +33,7 @@ async function withStartupLease(scope, action, { timeoutMs = 60000, signal, retr
     server.once('error', error => { finish(error); });
     server.once('listening', () => { if (settled) controller.abort(); else finish(); });
     if (signal?.aborted) return abort();
-    try { server.listen({ path: endpoint, exclusive: true, signal: controller.signal }); } catch (error) { finish(error); }
+    try { server.listen({ ...(typeof endpoint === 'string' ? { path: endpoint } : endpoint), exclusive: true, signal: controller.signal }); } catch (error) { finish(error); }
   });
   let lease;
   while (!lease) {

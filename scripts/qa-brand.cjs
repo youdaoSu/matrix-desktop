@@ -16,7 +16,7 @@ function fixture(isPackaged, argv, expected) {
   const app = { isPackaged, getPath: name => paths[name], setPath: (name, value) => { calls.push(name);paths[name] = value; }, setName: name => { assert.equal(name, brand.name);calls.push('name'); }, setAppUserModelId: id => assert.equal(id, brand.appId) };
   assert.equal(configureBrand(app, argv), expected);assert.equal(paths.userData, expected);assert.equal(paths.sessionData, expected);assert.deepEqual(calls, ['userData', 'sessionData', 'name']);
 }
-fixture(true, [], path.join(path.resolve('qa-roaming'), brand.legacyDataName));
+fixture(true, [], path.join(path.resolve('qa-roaming'), process.platform === 'darwin' ? brand.macDataName : brand.legacyDataName));
 fixture(false, [], path.resolve('qa-development'));
 fixture(true, ['--matrix-user-data-dir=' + path.resolve('qa-isolated')], path.resolve('qa-isolated'));
 assert.throws(() => configureBrand({ isPackaged: true }, ['--matrix-user-data-dir=relative']), /资料目录无效/);

@@ -13,7 +13,10 @@ async function recoverOwnedDatabase({ pgCtl, psql, dataDir, bin, runProcess, fil
     if (error.exitCode === 3) return null;
     throw Error('无法确认远效内置数据库状态，已停止启动；未修改数据库或权限');
   }
-  const canonical = value => path.resolve(files.realpathSync(value)).toLowerCase();
+  const canonical = value => {
+    const resolved = path.resolve(files.realpathSync(value));
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
   let rows, port;
   try {
     const marker = files.readFileSync(path.join(dataDir, 'postmaster.pid'), 'utf8');

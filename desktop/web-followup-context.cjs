@@ -19,8 +19,7 @@ async function waitForOwnProfile({ inspect, nativeAccountKey, alive = () => true
 
 function createWebFollowupContext({ session, inspectPlatformSession, createWindow, createEdgeResultContext, inspectNativeAccount, ownerTimeoutMs = 12000 }) {
   return async (event, input, account) => {
-    if (account.platform === 'wechat') {
-      if (!createEdgeResultContext || !inspectNativeAccount) throw Error('视频号原生追评连接尚未准备好');
+    if (account.platform === 'wechat' && createEdgeResultContext && inspectNativeAccount) {
       const native = await createEdgeResultContext(event, { accessToken: input.accessToken, accountId: account.id, sessionId: account.connectorSessionId });
       try {
         if (native.nativeAccountKey !== account.nativeAccountKey) throw Error('视频号本人ID与原作品账号不一致');
@@ -33,7 +32,7 @@ function createWebFollowupContext({ session, inspectPlatformSession, createWindo
         };
       } catch (error) { native.close(); throw error; }
     }
-    const routes = { xiaohongshu: ['https://creator.xiaohongshu.com/new/home', 'https://creator.xiaohongshu.com/new/note-manager'], douyin: ['https://creator.douyin.com/creator-micro/home', 'https://creator.douyin.com/creator-micro/content/manage'], bilibili: ['https://member.bilibili.com/platform/home', 'https://member.bilibili.com/platform/upload-manager/article'] };
+    const routes = { wechat: ['https://channels.weixin.qq.com/platform/home', 'https://channels.weixin.qq.com/platform/post/list'], xiaohongshu: ['https://creator.xiaohongshu.com/new/home', 'https://creator.xiaohongshu.com/new/note-manager'], douyin: ['https://creator.douyin.com/creator-micro/home', 'https://creator.douyin.com/creator-micro/content/manage'], bilibili: ['https://member.bilibili.com/platform/home', 'https://member.bilibili.com/platform/upload-manager/article'] };
     const route = routes[account.platform]; if (!route) throw Error('未提供此平台的官方作品读取连接');
     const accountSession = session.fromPartition('persist:matrix-' + account.platform + '-' + account.connectorSessionId), hostname = new URL(route[0]).hostname;
     const windows = [], close = () => { for (const win of windows) if (!win.isDestroyed()) win.destroy(); };

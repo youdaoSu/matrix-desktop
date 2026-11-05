@@ -22,7 +22,7 @@ function registerAccountHealth({ipcMain,getWindow,authenticate,session,platforms
             if(proof?.source!=='douyin-self-profile'||proof.key!==account.nativeAccountKey||typeof proof.ownUid!=='string'||!/^[1-9]\d{0,18}$/.test(proof.ownUid)||BigInt(proof.ownUid)>9223372036854775807n)throw Error('官网本人身份凭据不完整，未放行提交');
             return {accountId:account.id,sessionId:account.connectorSessionId,platform:account.platform,state:'normal',nativeAccountKey:proof.key,identityEvidence:{source:proof.source,ownUid:proof.ownUid},checkedAt:Date.now(),message:'同一绑定会话的官网本人身份已核验'};
           }
-          if(account.platform==='wechat'){
+          if(account.platform==='wechat' && inspectNative){
             state=await budget.run(()=>inspectNative(event,{accessToken:input.accessToken,accountId:account.id,sessionId:account.connectorSessionId},controller.signal), '读取视频号本人主页',22000);
           }else{
             let isolated=session.fromPartition(`persist:matrix-${account.platform}-${account.connectorSessionId}`);
