@@ -1,4 +1,4 @@
-import { Route, Routes, Navigate } from 'react-router-dom';
+import { Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { WorkspaceSession } from './components/workspace/PublishQueue';
 
@@ -62,6 +62,12 @@ import CapabilityPendingPage from './pages/CapabilityPendingPage';
 import PlaybackVelocityPage from './pages/user/PlaybackVelocityPage';
 import ModerationRecordsPage from './pages/user/ModerationRecordsPage';
 
+function LegacyCommentRoute(){
+  const params=new URLSearchParams(useLocation().search);
+  params.set('commentOpen','1');
+  return <Navigate to={'/engage/comments?'+params.toString()} replace />;
+}
+
 const RoutesComponent = () => {
   return (
     <ThemeProvider>
@@ -92,6 +98,7 @@ const RoutesComponent = () => {
         <Route path="/publish/stats" element={<PublishStatsPage />} />
 
         <Route path="/engage/comments" element={<CommentsPage />} />
+        <Route path="/engage/one-click-comment" element={<LegacyCommentRoute />} />
         <Route path="/engage/account-operations" element={<AccountOperationsPage />} />
         <Route path="/engage/comments-agg" element={<CommentsPage />} />
         <Route path="/engage/auto-comment" element={<AccountOperationsPage section="comment" />} />

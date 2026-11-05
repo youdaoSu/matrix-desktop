@@ -11,7 +11,7 @@ async function runLiveInteractionUiTests() {
   Object.defineProperty(window, 'localStorage', { value: storage, configurable: true });
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
   const preferences = { retainInteractionSnapshots: true };
-  const a = { id: 'qa-a', platform: 'douyin', nickname: 'QA 抖音账号', connectorSessionId: 'qa-session-a', createdAt: '2026-10-19T10:00:00.000Z' };
+  const a = { id: 'qa-a', platform: 'douyin', nickname: 'QA 抖音账号', connectorSessionId: 'qa-session-a', nativeAccountKey:'qa-native-a', createdAt: '2026-10-19T10:00:00.000Z' };
   const b = { ...a, id: 'qa-b', platform: 'douyin', nickname: 'QA 抖音第二账号', connectorSessionId: 'qa-session-b' };
   const foreign = { ...a, id: 'qa-foreign', platform: 'bilibili', nickname: 'QA 不同平台不可混入', connectorSessionId: 'qa-session-foreign' };
   let accounts = [a, b, foreign], connected = false;
@@ -27,6 +27,8 @@ async function runLiveInteractionUiTests() {
   const data = (input, title = 'QA真实结构样本') => ({ accountId: input.accountId, sessionId: input.sessionId, platform: input.platform, kind: input.kind, source: input.platform === 'douyin' ? 'https://www.douyin.com/qa-list' : 'https://message.bilibili.com/qa-list', capturedAt: new Date().toISOString(), records: [{ platformId: 'qa-record-' + input.accountId, author: title, content: 'QA最近消息预览（隔离样本，不是真实私信）', displayTime:'今天 12:00', unreadState: 'unread', unreadCount: 3 }] });
   let read = async input => data(input);
   window.matrixDesktop = { officialData: async input => { calls++; assert.equal(input.command, 'read-interactions'); return read(input); } };
+  window.matrixDesktop.inspectAccountHealth=async({accountId})=>{const a=accounts.find(a=>a.id===accountId);return{state:'normal',accountId,sessionId:a.connectorSessionId,nativeAccountKey:a.nativeAccountKey};};
+  overrides.set('react-router-dom',{Link:({to,children})=>React.createElement('a',{href:to},children)});
   const { InteractionLiveFeed } = loadTs('client/src/components/workspace/InteractionLiveFeed.tsx', cache, overrides);
   const component = createRoot(document.getElementById('root'));
   const render = () => component.render(React.createElement(InteractionLiveFeed, { kind, account: selected }));

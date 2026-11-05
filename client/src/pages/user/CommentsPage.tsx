@@ -46,15 +46,19 @@ export default function CommentsPage() {
   const beginRequest = useOwnerRequest();
   const commentData=useDouyinInteractionData('comments');
   const imported=useRef('');
+  const [autoOpenScope,setAutoOpenScope]=useState('');
   useEffect(()=>{
-    const params=new URLSearchParams(location.search||''),id=params.get('commentReceipt'),accountId=params.get('commentAccount'),wantedPlatform=params.get('commentPlatform');
-    if(aggregate||!id||id.length>120||!accountId||!['douyin','xiaohongshu','bilibili'].includes(wantedPlatform||'')||!filters.loaded)return;
-    const importKey=`${lease}/${location.search}`;if(imported.current===importKey)return;
+    const params=new URLSearchParams(location.search||''),id=params.get('commentReceipt'),work=params.get('commentWork'),accountId=params.get('commentAccount'),wantedPlatform=params.get('commentPlatform');
+    if(aggregate||!(id&&id.length<=120||wantedPlatform==='douyin'&&work&&/^[1-9]\d{9,18}$/.test(work))||!accountId||!['douyin','xiaohongshu','bilibili'].includes(wantedPlatform||'')||!filters.loaded)return;
+    const importKey=`${lease}/${scope}/${location.search}`;if(imported.current===importKey)return;
     if(platform!==wantedPlatform){setPlatform(wantedPlatform!);return;}
     const target=filters.accounts.find(a=>a.id===accountId&&a.platform===wantedPlatform);if(!target)return;
     if(account?.id!==target.id){setAccount(target);return;}
-    setPostId('receipt:'+id);imported.current=importKey;
-  },[location.search,aggregate,lease,platform,filters.loaded,filters.accounts,account?.id]);
+    const selectedPost=id?'receipt:'+id:work!;
+    setPostId(selectedPost);
+    if(params.get('commentOpen')==='1')setAutoOpenScope(`${readScope}/${selectedPost}`);
+    imported.current=importKey;
+  },[location.search,aggregate,scope,lease,platform,filters.loaded,filters.accounts,account?.id]);
   const targetScope=`${readScope}/${postId}`;
   const [receiptTarget,setReceiptTarget]=useState<{scope:string;target?:SingleCommentState['target'];error?:string}>();
   const [targetRetry,setTargetRetry]=useState(0);
@@ -106,9 +110,9 @@ export default function CommentsPage() {
 
   const changePlatform = setPlatform;
   const visibleItems = items.filter(item => item.platform === platform && (!account || item.accountId === account.id) && (aggregate ? filters.matches(item.accountId, item.commentedAt) : !!account && !!postId && item.postId === postId));
-  return <div data-interaction-view={aggregate ? 'comments-agg' : 'comments'} data-interaction-platform={platform} className={aggregate ? 'matrix-interaction-layout matrix-comments-aggregate' : 'matrix-interaction-layout matrix-comments-layout'}>{!aggregate && <><InteractionAccountRail platform={platform} selected={account?.id} onPlatformChange={changePlatform} onSelect={setAccount} allowAll={false} />{platform === 'douyin' ? <DouyinCommentWorkRail account={account} selected={selectedWorkId} onSelect={setPostId} /> : <InteractionPostRail account={account} selected={postId} onSelect={setPostId} />}</>}<section className="matrix-interaction-content">
+  return <div data-interaction-view={scope} data-interaction-platform={platform} className={aggregate ? 'matrix-interaction-layout matrix-comments-aggregate' : 'matrix-interaction-layout matrix-comments-layout'}>{!aggregate && <><InteractionAccountRail platform={platform} selected={account?.id} onPlatformChange={changePlatform} onSelect={setAccount} allowAll={false} />{platform === 'douyin' ? <DouyinCommentWorkRail account={account} selected={selectedWorkId} onSelect={setPostId} /> : <InteractionPostRail account={account} selected={postId} onSelect={setPostId} />}</>}<section className="matrix-interaction-content">
     <div className="matrix-interaction-toolbar"><h1>{aggregate ? '评论聚合' : '评论管理'}</h1>{aggregate && <InteractionPlatformSelect value={platform} onChange={changePlatform} />}</div>
-    {!aggregate&&<SingleWorkCommentEntry key={targetScope} source={commentSource} title={resolvedTarget?.target?.title||chosenWork?.title} locked={workspace.jobsLocked||postId.startsWith('receipt:')&&!resolvedTarget?.target}/>}
+    {!aggregate&&<SingleWorkCommentEntry key={targetScope} source={commentSource} title={chosenWork?.title||resolvedTarget?.target?.title} locked={workspace.jobsLocked} autoOpen={autoOpenScope===targetScope} onAutoOpen={()=>setAutoOpenScope('')}/>}
     {!aggregate&&postId.startsWith('receipt:')&&(resolvedTarget?.error?<p role="alert">{resolvedTarget.error} <Button variant="ghost" onClick={()=>setTargetRetry(n=>n+1)}>重新读取作品</Button></p>:!resolvedTarget?.target?<p role="status">正在定位原任务作品…</p>:<p className="text-xs text-muted-foreground">已关联原发布任务 · 作品编号：{resolvedTarget.target.workId}</p>)}
     {aggregate && <div className="matrix-interaction-toolbar"><InteractionAggregateFilters filter={filters} accountId={account?.id} onAccount={setAccount} /><small>分组筛选自动读取记录；日期与回复状态仅适用于有相应平台字段的历史记录</small></div>}
     <InteractionLiveFeed kind="comments" syncPlatform platform={platform} account={account} commentView={aggregate ? 'aggregate' : 'work'} workId={aggregate ? undefined : selectedWorkId} matches={aggregate ? id => !filters.group || filters.visibleAccounts.some(item => item.id === id) : undefined} />

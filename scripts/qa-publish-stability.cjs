@@ -84,6 +84,7 @@ const suites = [
   ['operations-migration-comment-proof', 'scripts/qa-operations-comment-proof.cjs'],
   ['operations-migration-first-comment-dm', 'scripts/qa-operations-first-comment-dm.cjs'],
   ['operations-migration-dom-bridge', 'scripts/qa-operations-dom-bridge.cjs'],
+  ['operations-retained-outreach-automatic-receipt', 'scripts/qa-operations-dom-bridge.cjs', '--outreach-late'],
   ['operations-migration-connections-ui', 'scripts/qa-operations-connections-ui.cjs'],
   ['operations-migration-panels-ui', 'scripts/qa-operations-panels-ui.cjs'],
   ['operations-migration-package-graph', 'scripts/qa-operations-package-graph.cjs'],

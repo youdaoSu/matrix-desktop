@@ -13,18 +13,23 @@ const { registerPageActions } = require('../desktop/page-actions.cjs');
 const handlers = {}, records = [], clicks = [];
 let dialogs = 0, approval = 1, outcome = 'confirmed', authorized = true;
 let cancelAfterFirst = false, rejectFirstBeforeClick = false,acceptedNotice=false;
+let slowResult;
 let privacy = '仅自己可见';
-const guests = [1, 2].map(id => ({ id: id + 20, hostWebContents: { id: 11 }, session: { id }, isDestroyed: () => false, getURL: () => 'https://creator.douyin.com/creator-micro/content/post/video',
+const platformFor = id => Number(id) === 3 ? 'xiaohongshu' : 'douyin';
+const guests = [1, 2, 3].map(id => ({ id: id + 20, hostWebContents: { id: 11 }, session: { id }, isDestroyed: () => false, getURL: () => id===3?'https://creator.xiaohongshu.com/publish/publish?target=image':'https://creator.douyin.com/creator-micro/content/post/video',
   executeJavaScriptInIsolatedWorld: async (_world, scripts) => {
     if (scripts[0].code.includes('function publishValidation')) return {version:1,inspected:true,errors:[]};
     if (scripts[0].code.includes('function publishVisibility')) return { visibility: privacy };
     if (scripts[0].code.includes(')("inspect",')) return { fields: [{ label: '标题', value: 'QA only' }], candidates: [{ index: 0, label: '发布' }], pageUrl: 'https://creator.douyin.com/qa' };
     if (scripts[0].code.includes(')("submit",') || scripts[0].code.includes(')("submit-checked",')) { if(rejectFirstBeforeClick&&id===1)return{clicked:false,rejectedBeforeClick:true,error:'提交按钮被弹窗遮挡'}; clicks.push(id); if (cancelAfterFirst && id === 1) await handlers['matrix:cancel-publish-batch'](event, { batchId: 'cancel-test', accessToken: 'QA only' }); return { clicked: true }; }
+    if (id===1 && slowResult && scripts[0].code.includes(')("result",')) await slowResult;
     return { status: outcome, accepted:acceptedNotice, message: outcome };
   } }));
-registerPageActions({ ipcMain: { handle: (name, fn) => { handlers[name] = fn; } }, dialog: { showMessageBox: async () => { dialogs++; return { response: approval }; } }, webContents: { fromId: id => guests.find(g => g.id === id) }, session: { fromPartition: name => guests[Number(name.slice(-1)) - 1]?.session }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { douyin: { label: '抖音', domain: 'douyin.com' } }, inspectPlatformSession: async () => ({ authenticated: true, profile: { nickname: 'QA creator' } }), authenticate: async (_token, accountId) => { if (!authorized) throw Error('Unauthorized'); return { userId: 'QA', account: { platform: 'douyin', connectorSessionId: 'aaaaaaaaaaaaaaa' + accountId } }; }, journal: { write: r => records.push({ ...r }), list: () => records }, sleep: async () => {} });
+registerPageActions({ ipcMain: { handle: (name, fn) => { handlers[name] = fn; } }, dialog: { showMessageBox: async () => { dialogs++; return { response: approval }; } }, webContents: { fromId: id => guests.find(g => g.id === id) }, session: { fromPartition: name => guests[Number(name.slice(-1)) - 1]?.session }, getWindow: () => ({ webContents: { id: 11 } }), platforms: { douyin: { label: '抖音', domain: 'douyin.com' }, xiaohongshu: { label: '小红书', domain: 'xiaohongshu.com' } }, inspectPlatformSession: async () => ({ authenticated: true, profile: { nickname: 'QA creator' } }), authenticate: async (_token, accountId) => { if (!authorized) throw Error('Unauthorized'); return { userId: 'QA', account: { platform: platformFor(accountId), connectorSessionId: 'aaaaaaaaaaaaaaa' + accountId } }; }, journal: { write: r => records.push({ ...r }), list: () => records }, sleep: async () => {} });
 const progressEvents = [];
-const event = { sender: { id: 11, send: (_channel, progress) => progressEvents.push(progress) } }, inputs = [1, 2].map(id => ({ platform: 'douyin', sessionId: 'aaaaaaaaaaaaaaa' + id, accountId: String(id), webContentsId: id + 20, accessToken: 'QA only', kind: 'publish' }));
+const event = { sender: { id: 11, send: (_channel, progress) => progressEvents.push(progress) } };
+const inputFor = id => ({ platform: platformFor(id), sessionId: 'aaaaaaaaaaaaaaa' + id, accountId: String(id), webContentsId: id + 20, accessToken: 'QA only', kind: 'publish' });
+const inputs = [1, 2].map(inputFor);
 const batch = (entries, batchId) => handlers['matrix:submit-publish-batch'](event, { entries, batchId });
 const plans = async () => Promise.all(inputs.map(async input => ({ ...input, nonce: (await handlers['matrix:inspect-page-action'](event, input)).nonce, index: 0 })));
 (async () => {
@@ -49,4 +54,31 @@ const plans = async () => Promise.all(inputs.map(async input => ({ ...input, non
   console.log(JSON.stringify({ nativePrivateSubmissionGuardChecks:7 }));
   console.log(JSON.stringify({ batchCancellationAndProgressChecks: 6 }));
   console.log(JSON.stringify({ publishConfigAndBatchAssertions: 20, realSubmissions: false }));
+  outcome='confirmed';acceptedNotice=false;
+  let release;
+  slowResult=new Promise(resolve=>{release=resolve;});
+  const first=clicks.length;
+  const douyinPlans=await plans();
+  const pending=batch(douyinPlans,'cross-platform');
+  for(let i=0;i<100&&clicks.length===first;i++)await new Promise(setImmediate);
+  assert.deepEqual(clicks.slice(first),[1]);
+  assert.match((await batch([douyinPlans[1]],'overlap')).error,/已有发布正在进行/);
+  const xhs=inputFor(3), xhsPlan=await handlers['matrix:inspect-page-action'](event,xhs);
+  const fast=await batch([{...xhs,nonce:xhsPlan.nonce,index:0}],'cross-platform');
+  assert.equal(fast.results[0].receipt.status,'confirmed');
+  assert.deepEqual(clicks.slice(first),[1,3]);
+  await handlers['matrix:cancel-publish-batch'](event,{batchId:'cross-platform',accessToken:'QA only'});
+  release();
+  const slow=await pending;
+  assert.deepEqual(slow.remaining,['2']);
+  assert.equal(slow.results[0].receipt.status,'confirmed');
+  assert.deepEqual(clicks.slice(first),[1,3]);
+  slowResult=new Promise(resolve=>{release=resolve;});
+  const mixedStart=clicks.length, mixedDouyin=await plans(), mixedXhs=await handlers['matrix:inspect-page-action'](event,xhs);
+  const mixed=batch([...mixedDouyin,{...xhs,nonce:mixedXhs.nonce,index:0}],'mixed-platforms');
+  for(let i=0;i<100&&!clicks.slice(mixedStart).includes(3);i++)await new Promise(setImmediate);
+  assert.deepEqual(clicks.slice(mixedStart).sort(),[1,3]);
+  release();
+  assert.deepEqual((await mixed).results.map(item=>item.accountId),['1','2','3']);
+  console.log(JSON.stringify({platformParallelismChecks:9,realSubmissions:false}));
 })().catch(error => { console.error(error); process.exitCode = 1; });

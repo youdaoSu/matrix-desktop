@@ -92,11 +92,17 @@ export function isVisibleInboxMessage(message: Pick<DouyinInboxMessage,'status'>
   return message.status!==1&&message.status!==2&&!(typeof message.messageType==='number'&&Number.isSafeInteger(message.messageType)&&message.messageType>=50000);
 }
 function InboxComposer({ account, threadId, name, scope }: { account: PlatformAccount; threadId: string; name: string; scope: string }) {
-  const { drafts, call } = useContext(Context);
+  const { drafts, call, rows } = useContext(Context);
   const [draft, setDraft] = useState<SendDraft>(() => drafts.get(scope) || { text: '', requestId: newRequestId() });
   const [sending, setSending] = useState(false), alive = useRef(true), busy = useRef(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const update = (value: SendDraft) => { drafts.set(scope, value); if (alive.current) setDraft(value); };
+  const recovered=rows[account.id]?.reviewedReceipts?.find(r=>r.requestId===draft.requestId);
+  useEffect(()=>{
+    if(!sending&&draft.receipt?.state==='unknown'&&recovered?.state==='confirmed'){
+      update({text:'',requestId:newRequestId(),receipt:recovered});
+    }
+  },[sending,draft.requestId,draft.receipt?.state,recovered]);
   const submit = async () => {
     if (busy.current || !draft.text.trim() || draft.receipt?.state === 'unknown') return;
     busy.current = true; setSending(true);

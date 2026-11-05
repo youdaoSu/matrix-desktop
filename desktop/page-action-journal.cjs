@@ -64,7 +64,13 @@ function createJournal(directory) {
       let value;
       try { value = JSON.parse(line); } catch { return; }
       if (!value || value.ownerId !== ownerId) return;
-      if (kind === 'list') { if (value.id) byId.set(value.id, value); }
+      if(kind==='pending-review'){
+        if(!value.id)return;
+        if(['comments','messages','withdraw'].includes(value.kind)&&!value.commentDeleted&&
+          (['unknown','submitting'].includes(value.status)||value.pinResult?.status==='unknown'||value.commentManagement?.status==='unknown'))byId.set(value.id,value);
+        else byId.delete(value.id);
+      }
+      else if (kind === 'list') { if (value.id) byId.set(value.id, value); }
       else if (value.id === id) {
         if (kind === 'find') { latest = value; return true; }
         items.push(value); return items.length === 80;
@@ -77,7 +83,7 @@ function createJournal(directory) {
     try {
       const before = fs.fstatSync(fd, { bigint: true });
       let fullyRead = true;
-      if (kind !== 'list') {
+      if (kind !== 'list'&&kind!=='pending-review') {
         fullyRead = scanRecent(fd, Number(before.size), visit);
         if (kind === 'history') items.reverse();
       } else {
@@ -98,7 +104,7 @@ function createJournal(directory) {
       try { stable = stable && version === stamp(fs.statSync(file, { bigint: true })); }
       catch (error) { if (error.code !== 'ENOENT') throw error; stable = false; }
     } finally { fs.closeSync(fd); }
-    const value = kind === 'find' ? latest : kind === 'list'
+    const value = kind === 'pending-review'?[...byId.values()].map(publicPageAction):kind === 'find' ? latest : kind === 'list'
       ? [...byId.values()].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 200).map(publicPageAction)
       : items.map((item, index) => ({ sequence: index + 1, at: item.recordedAt || item.verifiedAt || item.completedAt || item.createdAt, timeInferred: !item.recordedAt, status: item.status, checkpoint: item.checkpoint || 'legacy_record', clicked: item.clicked, acceptedAt: item.acceptedAt, resultSource: item.resultSource || 'unknown', message: item.message, verification: item.verification, evidence: item.evidence, identityReview: item.identityReview, resolution: item.resolution, outcomeObservation: sanitizeOutcomeObservation(item.outcomeObservation) }));
     if (stable) {
@@ -122,6 +128,7 @@ function createJournal(directory) {
     find: (ownerId, id) => query('find', ownerId, id),
     history: (ownerId, id) => query('history', ownerId, id),
     list: ownerId => query('list', ownerId),
+    pendingReviews: ownerId=>query('pending-review',ownerId),
   };
 }
 

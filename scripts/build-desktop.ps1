@@ -200,12 +200,15 @@ Write-Host '[3/3] Creating Windows installer...'
 & (Join-Path $PSScriptRoot 'build-edge-host.ps1')
 & $electronBuilderCommand --win nsis "--config.directories.output=$OutputDirectory"
 if ($LASTEXITCODE -ne 0) { throw 'Desktop packaging failed' }
+$packagedExecutable = Join-Path ([IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDirectory))) ('win-unpacked\'+$desktopManifest.build.executableName+'.exe')
+& node (Join-Path $PSScriptRoot 'verify-packaged-runtime.cjs') $packagedExecutable
+if ($LASTEXITCODE -ne 0) { throw 'Packaged runtime verification failed' }
 
 # Preserve prior installers for rollback. Packaging is not permission to delete
 # the user's local release history, including candidates not uploaded anywhere.
 $package = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
 $releasePath = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDirectory))
-$currentInstaller = "Matrix-$($package.version)-Setup.exe"
+$currentInstaller = "YuanXiao-$($package.version)-Setup.exe"
 $currentBlockMap = "$currentInstaller.blockmap"
 foreach ($artifact in @($currentInstaller,$currentBlockMap)) {
   if (-not (Test-Path -LiteralPath (Join-Path $releasePath $artifact) -PathType Leaf)) {

@@ -199,6 +199,19 @@ async function until(fn) { for (let n = 0; n < 200; n++) { if (fn()) return; awa
   eq(browserClient.ownUid, ownUid); eq(browserReads, ['imdesktop.douyin.com', 'www.douyin.com']); browserClient.close();
   let denialReads = 0;
   await assert.rejects(() => createTransport({ accountSession: { cookies }, publicHandle: 'fixture-handle', assertCurrent: async () => {}, network: async () => { denialReads++; throw Error('抖音消息服务返回 HTTP 403，需要本人验证'); } }), /HTTP 403/); checks++; eq(denialReads, 1);
+  // Exercise the production poll, send archive and official history reader.
+  {
+    const req='55555555-5555-4555-8555-555555555555';let clock=1000000,posts=0,historyReads=0,echoes=[];
+    const thread=c.thread(raw(1),ownUid);
+    let state={threads:{[threadId]:{...thread,history:{done:true,cursor:'0',pages:1},latestIndex:'0'}},messages:{},init:{done:true,cursor:'0'},strangers:{done:true,cursor:'0'},frontier:{}};
+    const engine=createEngine({now:()=>clock,assertCurrent:async()=>{},delay:async()=>{},store:{get:()=>state,commit(fn){const next=structuredClone(state);fn(next);state=next;}},
+      transport:{ownUid,sendText:async()=>{posts++;return{state:'unknown',requestId:req};},read:async(kind)=>{if(kind==='history')historyReads++;return{messages:kind==='history'?echoes:[],conversations:[],hasMore:false,cursor:'0'};}}});
+    eq((await engine.sendText(threadId,'原消息',req)).state,'unknown');
+    echoes=[{...raw(2,'原消息'),sender:peer,ext:{'s:client_message_id':req}},{...raw(3,'错正文'),sender:ownUid,ext:{'s:client_message_id':req}}];
+    clock+=60000;engine.poll();await until(()=>historyReads>=1);await new Promise(r=>setTimeout(r,10));eq(state.outbox[req].receipt.state,'unknown');
+    echoes=[{...raw(4,'原消息'),sender:ownUid,ext:{'s:client_message_id':req}}];
+    clock+=240000;engine.poll();await until(()=>state.outbox[req].receipt.state==='confirmed');eq(engine.reviewedReceipts()[0].messageId,echoes[0].serverMessageId);eq(posts,1);engine.close();
+  }
   // Cleanup only the exact fresh fixture directory after validating its root.
   assert.ok(directory.startsWith(path.join(os.tmpdir(), 'matrix-dm-qa-'))); fs.rmSync(directory, { recursive: true });
   console.log(JSON.stringify({ checks, syntheticOnly: true, historyMessages: 150, realIncomingPushVerified: false, outgoingBusinessMessages: 0, markReadRequests: 0, realProfileAccessed: false, codeUploaded: false }));

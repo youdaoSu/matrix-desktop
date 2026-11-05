@@ -475,6 +475,8 @@ button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .matrix-comments-layout { grid-template-columns: 180px 280px minmax(280px,1fr) 300px; min-width: 1040px; height: 100%; border-radius: 0; }
 .matrix-comments-layout[data-interaction-platform="douyin"] { grid-template-columns: 180px 260px minmax(280px,1fr) 260px; min-width: 980px; }
 @media (max-width: 1200px) { .matrix-comments-layout[data-interaction-platform="douyin"] { grid-template-columns: 150px 220px minmax(280px,1fr); min-width: 650px; } }
+.matrix-comments-layout[data-interaction-view="one-click-comment"] { grid-template-columns: 180px 240px minmax(320px,1fr); min-width: 740px; }
+@media (max-width: 900px) { .matrix-comments-layout[data-interaction-view="one-click-comment"] { grid-template-columns: 150px 200px minmax(280px,1fr); min-width: 630px; } }
 .matrix-douyin-follower-detail { margin: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--muted); font-size: 13px; }
 .matrix-douyin-follower-detail dl { display: grid; grid-template-columns: 80px minmax(0,1fr); gap: 8px 12px; margin: 10px 0; }
 .matrix-douyin-follower-detail dd { overflow-wrap: anywhere; }

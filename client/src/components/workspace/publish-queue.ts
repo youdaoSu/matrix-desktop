@@ -380,9 +380,7 @@ export function createPublishQueue(deps: Dependencies, initial: PublishJob[] = [
       emit();
     }
   }
-  async function execute(batchJobs: PublishJob[], mode: 'prepare' | 'review' | 'continue') {
-    running = true; stopped = false;
-    executionAbort = new AbortController();
+  async function executePlatform(batchJobs: PublishJob[], mode: 'prepare' | 'review' | 'continue') {
     try {
       if (mode !== 'review') for (const job of batchJobs) {
         guard(); const request = requests.get(job.id)!;
@@ -539,6 +537,21 @@ export function createPublishQueue(deps: Dependencies, initial: PublishJob[] = [
       await submit(currentJobs.filter(job => mode === 'review' ? job.stage === 'attention' : activePublishStages.includes(job.stage)));
     } catch (error) {
       for (const job of jobs.filter(job => belongsTo(job, batchJobs) && activePublishStages.includes(job.stage))) update(job.id, job.stage === 'submitting' ? 'unknown' : stopped || disposed || !deps.current() ? 'cancelled' : 'failed', error instanceof Error ? error.message : '任务停止', { submission: job.stage === 'submitting' ? 'uncertain' : 'not_submitted' });
+    }
+  }
+  async function execute(batchJobs: PublishJob[], mode: 'prepare' | 'review' | 'continue') {
+    running = true; stopped = false;
+    executionAbort = new AbortController();
+    const byPlatform = new Map<PublishJob['platform'], PublishJob[]>();
+    for (const job of batchJobs) {
+      const lane = byPlatform.get(job.platform) || [];
+      lane.push(job);
+      byPlatform.set(job.platform, lane);
+    }
+    try {
+      // Keep the per-work barrier. One platform's slow editor or receipt
+      // cannot hold up the other platforms' submission of this work.
+      await Promise.allSettled([...byPlatform.values()].map(lane => executePlatform(lane, mode)));
     } finally {
       if (stopped) for (const job of jobs.filter(job => belongsTo(job, batchJobs) && job.stage === 'attention')) update(job.id, 'cancelled', '已停止后续提交，不撤回官方已收到的内容');
       for (const job of jobs.filter(job => belongsTo(job, batchJobs) && activePublishStages.includes(job.stage))) update(job.id, 'attention', '本批次尚未提交完成，请查看官方页面后继续');

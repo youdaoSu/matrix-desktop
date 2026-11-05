@@ -26,6 +26,7 @@ async function scheduler(){
  preview=await plan.preview({accountId:'owner',text:'合成',offset:0,scanLimit:5,batchSize:1,intervalSeconds:5,batchGapSeconds:5});plan.start({token:preview.token,acknowledge:true});assert.throws(()=>plan.start({token:preview.token,acknowledge:true}));checks++;
  let release;hold=new Promise(r=>release=r);const pending=plan.tick();await Promise.resolve();plan.pause();release();await pending;hold=null;eq(calls,4);eq(plan.snapshot().cursor,0);
  plan.resume();unknown=true;await plan.tick();eq(calls,5);eq(plan.snapshot().status,'paused');assert.throws(()=>plan.resume(),/核对/);checks++;clock+=100000;await plan.tick();eq(calls,5);
+ const recoveredId=plan.plan.taskId;tasks.get(recoveredId).status='sent';tasks.get(recoveredId).receipt='platform:late-proof';eq(plan.reconcileObservedTask(recoveredId),true);eq(plan.snapshot().sent,1);eq(plan.snapshot().status,'paused');eq(plan.reconcileObservedTask(recoveredId),false);await plan.tick();eq(calls,5);
  plan.cancel();eq(plan.snapshot().status,'cancelled');
  await assert.rejects(()=>plan.preview({accountId:'owner',text:'x',offset:0,scanLimit:501,batchSize:1,intervalSeconds:5,batchGapSeconds:5}));checks++;
  await assert.rejects(()=>plan.preview({accountId:'owner',text:'x',offset:0,scanLimit:5,batchSize:1,intervalSeconds:0,batchGapSeconds:5}));checks++;
@@ -66,7 +67,7 @@ async function integration(){
   runtime.tasks.preflight(task.id);checks++;
   const recipientId=fan(0).uid,claim=store.claimExternalAttempt(task,{recipientIdAlias:recipientId});runtime.tasks.update(task.id,{status:'sending',claimedAt:claim.claimedAt});
   validateOutreachRelations(studio.snapshot(),{...store.snapshot(),externalAttempts:store.getExternalAttempts()});checks++;
-  runtime.tasks.finishSend(task.id,{status:'sent',receipt:'platform:synthetic-confirmed'});
+  runtime.tasks.finishSend(task.id,{status:'unknown'});assert.throws(()=>runtime.tasks.confirmObserved(task.id,{claimedAt:'changed',receipt:'platform:synthetic-confirmed'}));checks++;runtime.tasks.confirmObserved(task.id,{claimedAt:claim.claimedAt,receipt:'platform:synthetic-confirmed'});assert.throws(()=>runtime.tasks.confirmObserved(task.id,{claimedAt:claim.claimedAt,receipt:'platform:synthetic-confirmed'}));checks++;
   validateOutreachRelations(studio.snapshot(),{...store.snapshot(),externalAttempts:store.getExternalAttempts()});checks++;
   eq(new OperationsStudio({directory}).outreachPage().tasks[0].origin,'own-fan');
   assert.throws(()=>validateOutreachTask({...task,accountId:crypto.randomUUID()}));checks++;

@@ -8,9 +8,12 @@ async function renderTests(){
  window.matrixDesktop={oneClickComments:async({command,args})=>{calls.push({command,args});if(command==='snapshot')return{result:structuredClone(data)};if(command==='preview'){const b={id:'batch',receiptId:'receipt',primaryId:'main',platform:'douyin',workId:'7777777777777777777',workUrl:'https://www.douyin.com/video/7777777777777777777',title:'合成作品',setName:'知识交流',status:'preview',createdAt:Date.now(),expiresAt:Date.now()+600000,rows:[{id:'row',accountId:'sender',accountName:'合成小号',text:'合成评论甲',status:'queued',detail:'待确认'}]};data.batches=[b];return{result:b};}if(command==='start'){data.batches[0].status='completed';data.batches[0].rows[0].status='sent';data.batches[0].rows[0].commentId='mock-receipt';return{result:data.batches[0]};}return{result:true};}};
  const {OneClickComments}=loadTs('client/src/components/workspace/OneClickComments.tsx',cache,overrides);const mounted=createRoot(document.getElementById('root')),wait=()=>new Promise(r=>setTimeout(r,60));let closed=false;
  const button=t=>[...document.querySelectorAll('button')].find(b=>b.textContent===t);
- try{mounted.render(React.createElement(OneClickComments,{receiptId:'receipt',platform:'douyin',primaryId:'main',title:'合成作品',close:()=>{closed=true;}}));await wait();await wait();
+ const source={kind:'receipt',receiptId:'receipt',accountId:'main'};
+ const target={accountId:'main',accountName:'主号',platform:'douyin',workId:'7777777777777777777',workUrl:'https://www.douyin.com/video/7777777777777777777',title:'合成作品'};
+ try{mounted.render(React.createElement(OneClickComments,{batchTarget:{source,target,locked:false},close:()=>{closed=true;}}));await wait();await wait();
   assert.equal(document.querySelectorAll('input[type=checkbox]').length,1);assert.equal(calls.filter(c=>c.command==='start').length,0);checks+=2;
   const select=document.querySelector('[aria-label="选择评论集"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'set');select.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('input[type=checkbox]').click();await wait();button('预览 1 个账号的评论').click();await wait();await wait();assert.ok(document.body.innerText.includes('合成评论甲'));assert.equal(calls.filter(c=>c.command==='start').length,0);checks+=2;
+  assert.deepEqual(calls.find(c=>c.command==='preview').args,{source,setId:'set',accountIds:['sender']});checks++;
   button('确认并执行本批评论').click();button('确认并执行本批评论')?.click();await wait();await wait();assert.equal(calls.filter(c=>c.command==='start').length,1);assert.ok(document.body.innerText.includes('已确认'));checks+=2;
   document.querySelector('[data-slot=dialog-close]').click();await wait();assert.equal(closed,true);checks++;
   return{checks,realReact:true,realPlatformSends:0};

@@ -5,14 +5,14 @@ const {workReference}=require('./publish-reference.cjs');
 const {createCommentExecutor}=require('./one-click-comment-executor.cjs');
 const platforms=['douyin','xiaohongshu','bilibili'];
 const publicError=e=>{const s=String(e?.message||'');return s.length<400&&/[\u4e00-\u9fff]/.test(s)&&!/(cookie|token|authorization|password|csrf|https?:|[A-Z]:\\)/i.test(s)?s:'一键评论操作失败，原记录保留；请核对后重试';};
-function registerOneClickComments({ipcMain,getWindow,authenticate,journal,userData,safeStorage,session,createOperationsWindow,resolveOperationsIdentity,inspectAccountHealth,getOwnWork}){
+function registerOneClickComments({ipcMain,getWindow,authenticate,journal,userData,safeStorage,session,createOperationsWindow,resolveOperationsIdentity,inspectAccountHealth,getOwnWork,verifyFollowup,verifyPage,canReviewPage}){
   let active,opening,closing=false;const locks=new Set();
   const open=async(event,token,owner)=>{
     if(closing)throw Error('软件正在退出');
     if(opening){await opening;return open(event,token,owner);}
     if(active?.owner===owner&&active.token===token)return active.queue;
     opening=(async()=>{
-      if(active)await active.queue.close();active=undefined;
+      if(active)await Promise.all([active.reviewer.close(),active.queue.close()]);active=undefined;
       if(!safeStorage.isEncryptionAvailable()||safeStorage.getSelectedStorageBackend?.()==='basic_text')throw Error('本机加密不可用，评论集不会以明文保存');
       const root=path.join(userData,'one-click-comments'),file=path.join(root,createHash('sha256').update(owner).digest('hex')+'.bin');
       await fs.mkdir(root,{recursive:true});if((await fs.lstat(root)).isSymbolicLink())throw Error('评论存档目录不能是链接');let state;
@@ -33,22 +33,32 @@ function registerOneClickComments({ipcMain,getWindow,authenticate,journal,userDa
         let handle;try{handle=await fs.open(temp,'wx',0o600);await handle.writeFile(bytes);await handle.sync();await handle.close();handle=undefined;await fs.rename(temp,file);}finally{await handle?.close();await fs.unlink(temp).catch(e=>{if(e.code!=='ENOENT')throw e;});}
       };
       const execute=createCommentExecutor({session,createOperationsWindow,resolveOperationsIdentity,inspectAccountHealth,owner,getEvent:()=>({sender:entry.event.sender,accessToken:entry.token})});
-      entry.queue=new CommentQueue({state,save,account,source,execute});active=entry;return entry.queue;
+      entry.queue=new CommentQueue({state,save,account,source,execute});
+      entry.reviewer=require('./automatic-result-review.cjs').createResultReview({queue:entry.queue,journal,owner,canReviewPage,verifyPage:record=>verifyPage(entry.event,token,record),verifyFollowup:async(child,parent)=>{
+        if(active!==entry||closing)throw Error('登录已变化');
+        return verifyFollowup(entry.event,token,child,parent);
+      }});
+      active=entry;return entry.queue;
     })();try{return await opening;}finally{opening=undefined;}
   };
   ipcMain.handle('matrix:one-click-comments',async(event,input)=>{
     let lock,acquired=false;
     try{
       const main=getWindow();if(!main||event.sender.id!==main.webContents.id||event.senderFrame&&event.senderFrame!==main.webContents.mainFrame)throw Error('仅允许远效主窗口执行评论');
-      if(!input||!['snapshot','save-set','delete-set','preview','start','pause','cancel','single-state','single-preview','single-start','single-cancel'].includes(input.command))throw Error('一键评论操作无效');
+      if(!input||!['auto-review','snapshot','save-set','delete-set','preview','start','pause','cancel','single-state','single-preview','single-start','single-cancel','single-recheck'].includes(input.command))throw Error('一键评论操作无效');
       const auth=await authenticate(input.accessToken);const q=await open(event,input.accessToken,auth.userId);
       if(input.command==='snapshot')return{result:q.snapshot()};
+      if(input.command==='auto-review'){
+        if(active?.queue!==q||locks.has(auth.userId))return{result:{nextInMs:15000}};
+        return{result:await active.reviewer.tick()};
+      }
       lock=auth.userId;if(locks.has(lock))throw Error('上一步尚未完成，请稍后');locks.add(lock);acquired=true;
       const args=input.args||{};let result;
       if(input.command==='single-state')result=await q.singleState(args.source);
       if(input.command==='single-preview')result=await q.previewSingle(args);
       if(input.command==='single-start'){q.singleBatch(args.id);result=await q.start(args.id);}
       if(input.command==='single-cancel'){q.singleBatch(args.id);result=await q.cancel(args.id);}
+      if(input.command==='single-recheck')result=await q.recheckSingle(args.id);
       if(input.command==='save-set')result=await q.saveSet(args);
       if(input.command==='delete-set')result=await q.removeSet(args.id);
       if(input.command==='preview')result=await q.preview(args);
@@ -58,6 +68,6 @@ function registerOneClickComments({ipcMain,getWindow,authenticate,journal,userDa
       return{result};
     }catch(e){return{error:publicError(e)};}finally{if(acquired)locks.delete(lock);}
   });
-  return{async close(){closing=true;if(opening)try{await opening;}catch{}await active?.queue.close();}};
+  return{async close(){closing=true;if(opening)try{await opening;}catch{}if(active)await Promise.all([active.reviewer.close(),active.queue.close()]);}};
 }
 module.exports={registerOneClickComments};

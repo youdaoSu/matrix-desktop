@@ -29,6 +29,16 @@ class OwnFanBatchPlan {
       throw error;
     }
   }
+  reconcileObservedTask(taskId){
+    const p=this.plan;
+    if(!p||p.status!=='paused'||this.working||p.taskId!==taskId)return false;
+    const task=this.getTask(taskId),fan=p.recipients[p.cursor];
+    if(!fan||task.origin!=='own-fan'||task.accountId!==p.accountId||task.primaryAccountId!==p.accountId||task.recipientId!==fan.id||task.replyText!==p.text||task.status!=='sent'||typeof task.receipt!=='string'||!/^platform:\S+$/.test(task.receipt))return false;
+    p.sent++;p.cursor++;p.taskId=null;p.nextAt=null;
+    if(p.cursor===p.recipients.length)p.status='completed';
+    p.detail='原任务已自动核对成功，已更新成功数。后续批次保持当前暂停状态。';
+    this.persist();return true;
+  }
   snapshot(){
     if(!this.plan)return null;
     const {recipients,binding,...p}=this.plan;

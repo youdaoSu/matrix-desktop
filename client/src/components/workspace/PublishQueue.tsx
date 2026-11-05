@@ -138,6 +138,23 @@ function PublishQueueProvider({ children }: { children: ReactNode }) {
       if (['confirmed','failed'].includes(event.status)) void refreshReceipts();
     });
     void refreshReceipts(); window.addEventListener('matrix:page-actions-updated', refreshReceipts);
+    let reviewTimer:ReturnType<typeof setTimeout>;
+    const reviewPending=async()=>{
+      if(!current()||!window.matrixDesktop?.oneClickComments)return;
+      let next=60000;
+      try{
+        if(!runner.running&&!runner.followupsRunning){
+          const reply=await desktop().oneClickComments({accessToken:token!,command:'auto-review'});
+          if(!current())return;
+          const review=reply.result as {checked?:string;nextInMs?:number}|undefined;
+          if(review?.checked==='comment')window.dispatchEvent(new Event('matrix:comment-review-updated'));
+          if(review?.checked==='followup'||review?.checked==='page')await refreshReceipts();
+          if(Number.isFinite(review?.nextInMs))next=Math.max(3000,Math.min(60000,review!.nextInMs!));
+        }
+      }catch{/* Keep the last result and allow the next authenticated tick. */}
+      if(current())reviewTimer=setTimeout(reviewPending,next);
+    };
+    reviewTimer=setTimeout(reviewPending,5000);
     const referenceBindingUpdated=(event:Event)=>{
       const detail=(event as CustomEvent<{ownerId?:string;account?:{id?:string;connectorSessionId?:string;nativeAccountKey?:string}}>).detail,account=detail?.account;
       if(!current()||detail?.ownerId!==userId||!account?.id||!account.connectorSessionId||!account.nativeAccountKey)return;
@@ -152,7 +169,7 @@ function PublishQueueProvider({ children }: { children: ReactNode }) {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (runner.running||runner.followupsRunning) { event.preventDefault(); event.returnValue = ''; } };
     const identityCheck = setInterval(() => { if (!current()) cancel(); }, 1000);
     window.addEventListener('beforeunload', beforeUnload);
-    return () => { cancel(); disposed = true; resultChecks.dispose(); referenceCollection.dispose(); runner.dispose(); unsubscribe?.(); clearInterval(identityCheck); window.removeEventListener('beforeunload', beforeUnload); window.removeEventListener('matrix:page-actions-updated', refreshReceipts);window.removeEventListener('matrix:account-profile-updated',referenceBindingUpdated); workspaceRef.current.lockJobs(false); };
+    return () => { cancel(); disposed = true; clearTimeout(reviewTimer); resultChecks.dispose(); referenceCollection.dispose(); runner.dispose(); unsubscribe?.(); clearInterval(identityCheck); window.removeEventListener('beforeunload', beforeUnload); window.removeEventListener('matrix:page-actions-updated', refreshReceipts);window.removeEventListener('matrix:account-profile-updated',referenceBindingUpdated); workspaceRef.current.lockJobs(false); };
   }, [token, userId]);
   if (!queue) return null;
   const stop = () => {
@@ -351,7 +368,7 @@ export function PublishQueuePanel() {
             {job.stage==='unknown'&&job.verification?.state!=='processing'&&<p className="text-xs text-muted-foreground" data-result-next-step>自动核对有等待上限，不会无限轮询。未找到作品不等于失败；可查看官方页面、手动刷新，或在本人核实未发布后结束原尝试。</p>}
             <PublishResultResolution job={job} onResolved={receipt=>queue.operationReceipt(receipt)} />
             {publishReviewLabel(job)&&<p role="status">审核：{publishReviewLabel(job)}{job.verification?.state==='rejected'&&<small>{job.verification.message}</small>}</p>}
-            {job.stage==='confirmed'&&!publishReviewLabel(job)&&job.receiptId&&['douyin','xiaohongshu','bilibili'].includes(job.platform)&&<Button size="sm" variant="outline" aria-label={`一键评论 ${job.id}`} disabled={workspace.jobsLocked} onClick={()=>navigate('/engage/comments?'+new URLSearchParams({commentReceipt:job.receiptId!,commentAccount:job.accountId,commentPlatform:job.platform}).toString())}>前往评论管理</Button>}
+            {job.stage==='confirmed'&&!publishReviewLabel(job)&&job.receiptId&&['douyin','xiaohongshu','bilibili'].includes(job.platform)&&<Button size="sm" variant="outline" aria-label={`一键评论 ${job.id}`} disabled={workspace.jobsLocked} onClick={()=>navigate('/engage/comments?'+new URLSearchParams({commentReceipt:job.receiptId!,commentAccount:job.accountId,commentPlatform:job.platform,commentOpen:'1'}).toString())}>一键评论</Button>}
             {job.stage==='confirmed'&&!publishReviewLabel(job)&&supportsPublishFollowup(job.platform)&&!job.config?.comment?.trim()&&<Button size="sm" variant="outline" aria-label={`添加追评 ${job.id}`} disabled={followupActions.has(job.id)} onClick={()=>setEditingFollowup(job)}>添加追评</Button>}
             <p>追评：<span title={job.followup?.message} className={job.followup?.status === 'confirmed' ? 'is-success' : ['failed','save_failed'].includes(job.followup?.status || '') ? 'is-failed' : ''}>{job.followup?.commentDeleted?'已删除（发表历史保留）':job.followup ? ({ pending: '待发表',running:'正在追评', save_failed: '待办保存失败', confirmed: '已发表', failed: '发表失败', unknown: '结果待核对' }[job.followup.status]) : job.config?.comment ? '等待作品发布' : '—'}</span>
               {job.stage === 'confirmed' && job.followup?.status === 'failed' && <Button className="matrix-task-retry" size="sm" variant="outline" title="只处理追评，不会重发作品" disabled={supportsPublishFollowup(job.platform)?followupActions.has(job.id):busy||queue.running} onClick={() => void (supportsPublishFollowup(job.platform)?followupAction(job,'start'):operate(job, 'comments'))}>重发追评</Button>}

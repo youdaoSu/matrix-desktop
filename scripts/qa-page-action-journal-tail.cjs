@@ -74,6 +74,14 @@ try {
   // run and leave that scenario unverified; do not retry through another API.
   fs.writeFileSync(file,JSON.stringify(row('new'))+'\n');
   compare(replacing,'find','a','new');compare(replacing,'find','a','replacement');
+  // Pending receipts are independent of the display cap, owner scoped and
+  // removed once a newer durable state resolves the original action.
+  const backlog=createJournal(directory);
+  const old={id:'older-pin',ownerId:'a',kind:'comments',status:'confirmed',pinResult:{status:'unknown'},createdAt:'2025-01-01'};
+  backlog.write(old);backlog.write({...old,ownerId:'b',id:'foreign'});
+  for(let i=0;i<201;i++)backlog.write({...old,id:'later-'+i,pinResult:{status:'confirmed'},createdAt:'2026-01-01'});
+  assert(!backlog.list('a').some(r=>r.id===old.id));assert.deepEqual(backlog.pendingReviews('a').map(r=>r.id),[old.id]);checks+=2;
+  backlog.write({...old,pinResult:{status:'confirmed'}});assert.equal(backlog.pendingReviews('a').length,0);checks++;
   const before=fs.readFileSync(file);replacing.find('a','new');replacing.history('a','new');replacing.list('a');assert.deepEqual(fs.readFileSync(file),before);checks++;
   fs.unlinkSync(file);assert.equal(replacing.find('a','new'),undefined);checks++;
   console.log(JSON.stringify({journalTailChecks:checks,syntheticRows:history.length,latestColdReadBytes:tailBytes,latestColdReadCalls:tailCalls,journalBytes:totalBytes,liveFileReplacementVerified:false,realAccountActions:false}));

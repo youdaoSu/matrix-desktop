@@ -68,6 +68,13 @@ class KeywordRoutes {
   if(new Set(hits.map(h=>h.id)).size!==hits.length)fail('关键词命中编号重复');
   this.state={version:1,rules,hits,cursors,detail:'规则未启用；重新启用只处理之后的新评论'};
   if(saved.hits.some(h=>['queued','dispatching'].includes(h.status)))this.commit(this.state);
+  const confirmed=new Map(this.tasks.snapshot().filter(t=>t.status==='sent'&&t.claimedAt&&typeof t.receipt==='string'&&/^platform:\S+$/.test(t.receipt)).map(t=>[t.id,t]));
+  const recovered=clone(this.state);let updated=false;
+  for(const hit of recovered.hits){
+   const task=confirmed.get(hit.taskId);
+   if(hit.status==='paused'&&task&&outreachDigest(task)===hit.taskDigest){hit.status='sent';hit.detail='已从原平台回执恢复成功统计';updated=true;}
+  }
+  if(updated)this.commit(recovered);
  }
  commit(value){write(this.file,value);this.state=value;}
  exportBusinessState(){return validateKeywordBusiness({version:1,rules:clone(this.state.rules),hits:clone(this.state.hits)});}
@@ -271,6 +278,14 @@ class KeywordRoutes {
    this.update(hit.id,{status:'paused',detail:'发送未确认完成，请核对原任务；不会自动重试或换号'});
    this.pauseAll('发送未确认完成，自动规则已暂停，请核对原任务');
   }finally{this.#grant=null;}
+ }
+ reconcileObservedTask(taskId){
+  const task=this.tasks.get(taskId);
+  if(task.status!=='sent'||!task.claimedAt||typeof task.receipt!=='string'||!/^platform:\S+$/.test(task.receipt))return false;
+  const hit=this.state.hits.find(h=>h.taskId===taskId&&h.status==='paused');
+  if(!hit||outreachDigest(task)!==hit.taskDigest)return false;
+  this.update(hit.id,{status:'sent',detail:'已自动核对原平台回执，成功额度已更新'});
+  return true;
  }
  snapshot(){const now=this.now(),tasks=this.state.rules.some(r=>r.quotaMode)?new Map(this.tasks.snapshot().map(t=>[t.id,t])):undefined;return{rules:this.state.rules.map(rule=>({...clone(rule),...(rule.quotaMode?{quotas:this.quotas(rule,now,undefined,tasks)}:{}),armed:this.#armed.has(rule.id),activatedAt:this.#armed.has(rule.id)?new Date(this.#armed.get(rule.id).at).toISOString():null})),hits:clone(this.state.hits.slice(0,100)),monitors:clone([...this.#monitors.values()]),totalHits:this.state.hits.length,detail:this.state.detail,running:Boolean(this.#running)};}
  close(){this.#closed=true;this.pauseAll('软件已停止自动分配，原任务保留供核对');}

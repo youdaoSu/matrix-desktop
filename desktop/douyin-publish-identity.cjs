@@ -5,7 +5,7 @@ async function readPublishIdentity(options, acquire) {
   let client;
   try {
     await options.assertCurrent();
-    client = await acquire({ ...options, independent: true });
+    client = await acquire({ ...options, independent: true, priorityIdentity: true });
     await client.check();
     await options.assertCurrent();
     const uid = client.ownUid;

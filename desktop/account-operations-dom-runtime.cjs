@@ -7,6 +7,7 @@ const {prepareWelcomeRecipient}=require('./vendor/hengyuan-interactions/src/welc
 const {prepareXhsRecipient}=require('./vendor/hengyuan-interactions/src/xhs-recipient.cjs');
 function createDomRuntime({directory,studio,store,call,verifyComment=async()=>{throw Error('原生评论重新核验尚未接通');},changed=()=>{},now=Date.now,paused=()=>false,canBatch=()=>true,beforeClaim=()=>{},Manager=InteractionManager,prepareWelcome=prepareWelcomeRecipient,prepareXhsWelcome=prepareXhsRecipient}){
  let closed=false,lastTick=0,ticking=null,outreachHooks;
+ const receiptReviews=require('./account-operations-result-review.cjs').createOperationResultReviews({now,paused:()=>closed||paused()});
  const fail=message=>{throw Error(message);};
  const account=id=>studio.getAccount(id);
  function intent(context){
@@ -34,6 +35,16 @@ function createDomRuntime({directory,studio,store,call,verifyComment=async()=>{t
   return{...result,run:(op,...args)=>proxy.withOperation(op,()=>run(op,...args),{accountId:options.account.id})};
  };}
  const manager=new Manager({dataDir:directory,studio:studio.managerView(),interactions:adaptedStore,createWindow:proxy.createWindow,changed,prepareWelcome:prepareAdapter(prepareWelcome),prepareXhsWelcome:prepareAdapter(prepareXhsWelcome)});
+ manager.deferReceipt=probe=>receiptReviews.enqueue('reply/'+probe.id,async()=>{
+  if(closed)return true;
+  const before=store.getReply(probe.id);
+  if(before.status!=='unknown'||before.claimId!==probe.claimId||before.replyText!==probe.text)return true;
+  const result=await proxy.withOperation('receipt',probe.read,{accountId:probe.accountId,replyId:probe.id});
+  if(closed)return true;
+  if(!result?.ok||result.failure||typeof result.receipt!=='string'||!/^platform:\S+$/.test(result.receipt))return false;
+  store.confirmObservedReply(probe.id,{...probe,receipt:result.receipt});
+  await reconcile(probe.id);changed();return true;
+ },probe.dispose);
  if(manager.control.firstConversations===undefined)manager.control.firstConversations={};
  if(!manager.control.firstConversations||typeof manager.control.firstConversations!=='object'||Array.isArray(manager.control.firstConversations)||Object.values(manager.control.firstConversations).some(v=>typeof v!=='boolean'))fail('首个单聊授权设置损坏，未扩大原规则的发送范围');
  manager.start=()=>{};manager.scheduleQueuedReply=()=>null;
@@ -84,7 +95,7 @@ function createDomRuntime({directory,studio,store,call,verifyComment=async()=>{t
    const rejection=typeof receipt==='string'&&/^platform-rejection:\S+$/.test(receipt);
    return{settled:r.status==='sent'&&(platformProof||Boolean(r.resolvedAt))||r.status==='failed'&&(rejection||Boolean(r.resolvedAt))};
   }
-  if(context.operation==='receipt'&&r.status==='sending'&&context.claimId===r.claimId)return{allowed:true};
+  if(context.operation==='receipt'&&!context.write&&['sending','unknown'].includes(r.status)&&context.claimId===r.claimId)return{allowed:true};
   if(context.inspection===true&&!context.write&&['scan','probe','probeComposer','selectThread','inspect-welcome','profile-identity','recipient-entry','recipient-navigation','idlePageProbe'].includes(context.operation)&&['unknown','failed','sent','skipped','cancelled'].includes(r.status))return{allowed:true};
   if(paused()&&!r.claimId)fail('当前窗口操作优先，未开始新的页面操作');
   if(store.getPolicy().paused||!['queued','sending'].includes(r.status)||!canBatch(r.id))fail('回复已暂停、取消、结束或批次已停止，未执行页面操作');
@@ -102,14 +113,19 @@ function createDomRuntime({directory,studio,store,call,verifyComment=async()=>{t
   if(name==='release-idle')return manager.releaseIdleConnections(args);
   fail('不支持的官网互动连接操作');
  }
- async function tick(){if(closed||paused()||ticking||now()-lastTick<5000||!Object.values(manager.control.channels).some(c=>c.monitorEnabled))return;lastTick=now();ticking=Promise.resolve().then(()=>manager.tick()).finally(()=>{ticking=null;});return ticking;}
+ async function tick(){
+  if(closed||paused())return;
+  await receiptReviews.tick();
+  if(closed||ticking||now()-lastTick<5000||!Object.values(manager.control.channels).some(c=>c.monitorEnabled))return;
+  lastTick=now();ticking=Promise.resolve().then(()=>manager.tick()).finally(()=>{ticking=null;});return ticking;
+ }
  function snapshot(){
   if(!manager.connections.size)return{connections:studio.activeAccounts().flatMap(a=>['dm','comment','follow'].map(channel=>({accountId:a.id,channel,status:'closed',detail:'尚未打开官网连接；登录问题请到账号管理处理',mode:store.getMode(a.id,channel),monitorEnabled:false,eventValidated:false,background:true,identityBound:Boolean(manager.control.bindings[a.id]),lastSuccessfulAt:null,firstConversationAllowed:firstConversationAllowed(a.id)}))),resources:{residentCount:0,visibleCount:0,hiddenCount:0,monitoringCount:0,busyCount:0,idleHiddenCount:0}};
-  const summary=manager.resourceSummary(),physical=proxy.snapshot().filter(w=>!w.destroyed),real=[...manager.connections.values()].filter(c=>!c.nativeComment&&!c.win.isDestroyed());return{connections:manager.snapshot().filter(row=>!manager.connections.get(manager.key(row.accountId,row.channel))?.nativeComment).map(({profile,...row})=>({...row,firstConversationAllowed:firstConversationAllowed(row.accountId)})),resources:{...summary,residentCount:physical.length,visibleCount:physical.filter(w=>w.visible).length,hiddenCount:physical.filter(w=>!w.visible).length,busyCount:new Set([...real.filter(c=>c.busy).map(c=>c.win.id),...(outreachHooks?.busyWindowIds?.()||[])]).size}};
+  const summary=manager.resourceSummary(),physical=proxy.snapshot().filter(w=>!w.destroyed),real=[...manager.connections.values()].filter(c=>!c.nativeComment&&!c.win.isDestroyed());return{connections:manager.snapshot().filter(row=>!manager.connections.get(manager.key(row.accountId,row.channel))?.nativeComment).map(({profile,...row})=>({...row,firstConversationAllowed:firstConversationAllowed(row.accountId)})),resources:{...summary,automaticReviews:receiptReviews.snapshot(),residentCount:physical.length,visibleCount:physical.filter(w=>w.visible).length,hiddenCount:physical.filter(w=>!w.visible).length,busyCount:new Set([...real.filter(c=>c.busy).map(c=>c.win.id),...(outreachHooks?.busyWindowIds?.()||[])]).size}};
  }
  function closeAccount(id){manager.closeAccount(id);}
- function close(){closed=true;manager.shutdown();proxy.close();}
+ function close(){closed=true;void receiptReviews.close();manager.shutdown();proxy.close();}
  function registerNativeIdentity(id,identity,verifiedAt){const a=account(id);if(a.platform!=='douyin'||typeof identity!=='string'||!/^[1-9]\d{0,63}$/.test(identity))fail('原生目录本人身份无效');const at=verifiedAt===undefined?new Date(now()).toISOString():verifiedAt;if(typeof at!=='string'||!Number.isFinite(Date.parse(at))||Date.parse(at)>now()||now()-Date.parse(at)>60000)fail('原生目录本人核验时间无效或已过期');const old=manager.control.bindings[id];if(old&&(old.platform!==a.platform||old.identity!==identity))fail('原生目录本人身份与运营绑定不一致，未更换身份');if(!old){manager.control.bindings[id]={platform:a.platform,identity,establishedAt:at};manager.saveControl();}return structuredClone(manager.control.bindings[id]);}
- return{manager,proxy,command,replyRoute,firstConversationAllowed,sendReply,reconcile,canOperation,tick,snapshot,closeAccount,close,receive:proxy.receive,registerNativeIdentity,attachOutreach(hooks){if(outreachHooks||!hooks||typeof hooks.intent!=='function'||typeof hooks.canOperation!=='function')fail('协作后台桥接无效或已注册');outreachHooks=hooks;}};
+ return{queueReceiptReview:receiptReviews.enqueue,manager,proxy,command,replyRoute,firstConversationAllowed,sendReply,reconcile,canOperation,tick,snapshot,closeAccount,close,receive:proxy.receive,registerNativeIdentity,attachOutreach(hooks){if(outreachHooks||!hooks||typeof hooks.intent!=='function'||typeof hooks.canOperation!=='function')fail('协作后台桥接无效或已注册');outreachHooks=hooks;}};
 }
 module.exports={createDomRuntime};

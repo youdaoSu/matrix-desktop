@@ -32,6 +32,14 @@ async function scenario(body){
 }
 (async()=>{
  await scenario(async f=>{
+  const first=f.engine.observe(f.comment());f.outcome('unknown');f.advance(15001);await f.engine.tick();
+  const task=f.tasks.get(first.taskId);eq(task.status,'unknown');eq(f.quotas()[0].reserved,1);
+  f.tasks.confirmObserved(first.taskId,{claimedAt:task.claimedAt,receipt:'platform:delayed-original'});
+  eq(f.engine.reconcileObservedTask(first.taskId),true);eq(f.engine.reconcileObservedTask(first.taskId),false);
+  eq(f.quotas()[0].success,1);eq(f.quotas()[0].reserved,0);eq(f.sends.length,1);eq(f.engine.snapshot().rules[0].armed,false);
+  f.restart();eq(f.engine.snapshot().hits.find(h=>h.id===first.id).status,'sent');eq(f.sends.length,1);
+ });
+ await scenario(async f=>{
   const hits=Array.from({length:6},()=>f.engine.observe(f.comment()));eq(hits.every(h=>h.status==='queued'),true);
   for(let i=0;i<6;i++){f.advance(15001);await f.engine.tick();}
   eq(f.sends.map(s=>s.accountId),[f.a.id,f.b.id,f.b.id]);eq(f.quotas().map(q=>[q.success,q.remaining]),[[1,0],[2,0]]);

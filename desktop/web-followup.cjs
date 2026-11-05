@@ -79,6 +79,9 @@ async function runWebFollowup({ event, input, auth, account, authenticate, journ
     }
     if (!verified) { record.status = previousConfirmed ? 'confirmed' : 'unknown'; record.message = '尚未读到本次作者评论的准确ID与时间，只能核对结果，不会重复发表'; save(); return { receipt: publicReceipt(record) }; }
     record.status = 'confirmed'; record.commentId = verified.id; record.evidence.commentId = verified.id; record.message = '已按原作品ID和本条作者评论ID确认追评'; record.checkpoint = 'followup_comment_id_received'; record.retryable = false; save();
+    if(operation==='verify'&&record.pinResult?.status==='unknown'&&verified.pinned===true){
+      record.pinResult={status:'confirmed',message:'作者侧已读到原评论的置顶标记'};
+    }
     if (operation === 'pin' || operation === 'start' && input.pin === true) {
       if (verified.pinned) record.pinResult = { status: 'confirmed', message: '官方已显示本条评论置顶' };
       else {

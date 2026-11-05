@@ -429,6 +429,18 @@ class OutreachBatchController {
       recoveryNotes: clone(this.#batch.recoveryNotes), remainingTaskIds, remainingCount: remainingTaskIds.length, canContinue: !this.active && ['paused', 'stopped'].includes(status) && remainingTaskIds.length > 0,
       ...(this.#batch.continuationOf ? { continuationOf: this.#batch.continuationOf } : {}) };
   }
+  reconcileObservedTask(taskId){
+    const batch=this.#batch;
+    if(!batch||this.active||!batch.accountedTaskIds.has(taskId))return false;
+    const failure=batch.failures.find(f=>f.taskId===taskId&&f.outcome==='unknown');
+    if(!failure)return false;
+    const task=this.fixedTask(batch,taskId);
+    if(task?.status!=='sent'||typeof task.receipt!=='string'||!/^platform:\S+$/.test(task.receipt)||!task.claimedAt)return false;
+    batch.unknown=Math.max(0,batch.unknown-1);batch.sent++;
+    batch.failures=batch.failures.filter(f=>f!==failure);
+    batch.recoveryNotes.push({taskId,outcome:'sent',detail:'已自动核对原平台回执并更新统计'});
+    this.notify();return true;
+  }
   async idle() { if (this.#worker) await this.#worker; }
 }
 

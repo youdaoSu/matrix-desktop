@@ -1,3 +1,4 @@
+import { InteractionAccountGate } from '@/components/workspace/InteractionAccountGate';
 import { useOfficialWorkspace } from '@/components/workspace/OfficialWorkspace';
 import { OfficialInteractionManager } from '@/components/workspace/OfficialInteractionManager';
 import { InteractionLiveFeed } from '@/components/workspace/InteractionLiveFeed';
@@ -87,7 +88,7 @@ export default function MessagesPage() {
   return <div data-interaction-view={aggregate ? 'messages-agg' : 'messages'} data-interaction-platform={platform} className={aggregate ? 'matrix-interaction-layout matrix-messages-aggregate' : 'matrix-interaction-layout matrix-messages-layout'}>{!aggregate && <InteractionAccountRail platformOnly platform={platform} selected={account?.id} onPlatformChange={changePlatform} onSelect={setAccount} />}<section className="matrix-interaction-content">
     <div className="matrix-interaction-toolbar"><h1>{aggregate ? '私信聚合' : '私信管理'} · {platformLabels[platform as PlatformType]}</h1>{aggregate && <InteractionPlatformSelect value={platform} onChange={changePlatform} allowAll={false} />}</div>
     {aggregate && <div className="matrix-interaction-toolbar"><InteractionAggregateFilters filter={filters} accountId={account?.id} onAccount={setAccount} /><small>分组筛选自动读取记录；日期仅筛选下方有平台时间的本机历史会话</small></div>}
-    {platform === 'douyin' ? <DouyinInboxView accounts={filters.accounts} accountId={account?.id} matches={aggregate ? id => !filters.group || filters.visibleAccounts.some(item => item.id === id) : undefined} /> : <InteractionLiveFeed kind="messages" syncPlatform platform={platform} account={account} matches={aggregate ? id => !filters.group || filters.visibleAccounts.some(item => item.id === id) : undefined} />}
+    {platform === 'douyin' ? <SelectedInboxGate account={account}><DouyinInboxView accounts={filters.accounts} accountId={account?.id} matches={aggregate ? id => !filters.group || filters.visibleAccounts.some(item => item.id === id) : undefined} /></SelectedInboxGate> : <InteractionLiveFeed kind="messages" syncPlatform platform={platform} account={account} matches={aggregate ? id => !filters.group || filters.visibleAccounts.some(item => item.id === id) : undefined} />}
     {platform !== 'douyin' && <InteractionTools title="本机历史会话与手动读取工具（非实时来源）">
     <div className="matrix-interaction-toolbar"><strong>历史会话</strong><label><input type="checkbox" checked={onlyUnread} onChange={event => { setOnlyUnread(event.target.checked); setSelectedId(''); setMessageView({key:'',items:[],loading:false}); }} />历史会话有未读</label><small>{sessions.length ? `本机历史未读: ${sessions.reduce((count, session) => count + session.unreadCount, 0)}` : '本机历史未读状态未获取'}</small><Button variant="outline" onClick={() => account ? void workspace.openAccount(account, 'messages') : workspace.show('messages')}>官方页面发私信</Button><Button variant="outline" disabled={loading} onClick={() => void loadSessions()}><RefreshCw size={14} />刷新历史</Button><Button variant="outline" disabled={!visibleSessions.length} onClick={() => exportInteractionRecords('sessions', visibleSessions)}>导出会话记录</Button></div>
     <Card className="matrix-message-panel flex overflow-hidden">
@@ -101,3 +102,5 @@ export default function MessagesPage() {
     </InteractionTools>}
   </section><ReplyTemplatePane /></div>;
 }
+
+function SelectedInboxGate({account,children}:{account?:PlatformAccount|null;children:React.ReactNode}){return account?<InteractionAccountGate account={account}>{children}</InteractionAccountGate>:<>{children}</>;}

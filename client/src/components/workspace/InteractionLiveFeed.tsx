@@ -1,3 +1,4 @@
+import { InteractionAccountGate } from './InteractionAccountGate';
 import { useEffect, useRef, useState } from 'react';
 import { getAuthToken, getUser } from '@/api';
 import type { PlatformAccount } from '@shared/api.interface';
@@ -25,6 +26,9 @@ type Entry = { sessionId?: string; snapshot?: InteractionSnapshot; status?: Inte
 // from owned rendered lists; no fabricated full-history or unread guarantees.
 type Props = { kind: InteractionKind; platform?: string; account?: PlatformAccount | null; syncPlatform?: boolean; matches?(accountId: string, timestamp?: string): boolean; commentView?: 'work' | 'aggregate'; workId?: string };
 export function InteractionLiveFeed(props: Props) {
+  return props.account?<InteractionAccountGate account={props.account}><VerifiedInteractionLiveFeed {...props}/></InteractionAccountGate>:<VerifiedInteractionLiveFeed {...props}/>;
+}
+function VerifiedInteractionLiveFeed(props: Props) {
   if (props.platform === 'douyin' && props.kind !== 'messages') return <DouyinInteractionFeed key={`${getUser()?.id || 'signed-out'}:${getAuthToken() || ''}:${props.kind}`} kind={props.kind} account={props.account} matches={props.matches} commentView={props.commentView} workId={props.workId} />;
   // These adapters do not yet prove a stable per-work association. Keep their
   // working aggregate entry, but never present an account snapshot as a

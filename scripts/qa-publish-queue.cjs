@@ -60,6 +60,37 @@ function fixture(overrides = {}) {
   f = fixture({ submit: async () => ({ cancelled: true }) }); const cancelBatch = f.queue.start([item('a')]); await done(f.queue); assert.equal(f.queue.jobs[0].stage, 'attention'); f.queue.discard(cancelBatch); assert.equal(f.queue.canResume(cancelBatch), false); assert.equal(f.queue.jobs[0].stage, 'cancelled'); checks += 3;
   const recovery = recoverPublishJobs([{ ...f.queue.jobs[0], stage: 'submitting' }, null, { id: 'invalid' }]); assert.equal(recovery.length, 1); assert.equal(recovery[0].stage, 'interrupted'); assert.deepEqual(recoverPublishJobs({}), []); checks += 3;
   f = fixture(); f.queue.startMany([[item('a'), item('b')], [item('a')]]); await done(f.queue); assert.equal(f.calls.uploads, 3); assert.equal(f.calls.submits, 2); assert.ok(f.queue.jobs.every(job => job.stage === 'confirmed')); checks += 3;
+  for (const mediaType of ['video', 'image']) {
+    const requestFor = (id, platform, work) => {
+      const request = item(id);
+      request.account.platform = platform;
+      request.media = { id: work, mediaType, files: [{ name: work + (mediaType === 'video' ? '.mp4' : '.jpg'), size: 10 }] };
+      return request;
+    };
+    let releaseSlow;
+    const prepared = [], uploaded = [], submitted = [];
+    const slow = new Promise(resolve => { releaseSlow = resolve; });
+    f = fixture({
+      prepare: async request => { prepared.push(request.account.id); if (request.account.id === 'slow') await slow; return { accountId: request.account.id }; },
+      upload: async (input, media) => { uploaded.push([input.accountId,media.mediaType,media.id]); return { uploadStarted: true }; },
+      submit: async entries => {
+        const ids = entries.map(entry => entry.accountId);
+        submitted.push(ids);
+        return { results: ids.map(id => ({ accountId:id, receipt:{id,status:id==='slow'?'unknown':'confirmed',message:'fixture'} })) };
+      },
+    });
+    f.queue.startMany([[requestFor('slow','xiaohongshu','work-one'),requestFor('same','xiaohongshu','work-one'),requestFor('fast','douyin','work-one')],[requestFor('fast','douyin','work-two')]]);
+    for (let i=0;i<100&&!submitted.length;i++) await tick();
+    assert.deepEqual(prepared,['slow','fast']);
+    assert.deepEqual(submitted,[['fast']]);
+    assert.deepEqual(uploaded,[['fast',mediaType,'work-one']]);
+    releaseSlow();
+    await done(f.queue);
+    assert.deepEqual(submitted,[['fast'],['slow','same']]);
+    assert.deepEqual(uploaded,[['fast',mediaType,'work-one'],['slow',mediaType,'work-one'],['same',mediaType,'work-one']]);
+    assert.deepEqual(f.queue.jobs.map(job=>job.stage),['unknown','confirmed','confirmed','cancelled']);
+    checks+=6;
+  }
   f = fixture({ submit: async entries => ({ results: [{ accountId: entries[0].accountId, receipt: { status: 'failed', message: '发布失败' } }] }) }); f.queue.startMany([[item('a')], [item('a')]]); await done(f.queue); assert.equal(f.calls.uploads, 1); assert.equal(f.queue.jobs[1].stage, 'cancelled');
   const failedId = f.queue.jobs[0].id; f.deps.submit = async entries => ({ results: entries.map(entry => ({ accountId: entry.accountId, receipt: { id: 'success', status: 'confirmed', message: '发布成功' } })) });
   f.queue.retry(failedId); await done(f.queue); assert.equal(f.queue.jobs.length, 2); assert.equal(f.queue.jobs[0].stage, 'confirmed'); assert.equal(f.queue.jobs[0].id, failedId); assert.equal(f.queue.jobs[0].attempts[0].stage, 'failed'); checks += 6;

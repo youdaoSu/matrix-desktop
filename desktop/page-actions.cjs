@@ -242,9 +242,41 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
   const openWorkContext=require('./web-followup-context.cjs').createWebFollowupContext({session,inspectPlatformSession,createWindow:createResultWindow,createEdgeResultContext,inspectNativeAccount});
   const collectPublishReference=require('./publish-reference.cjs').createPublishReferenceCollector({getWindow,authenticate,journal,openContext:openWorkContext,sleep});
   ipcMain.handle('matrix:collect-publish-reference',collectPublishReference);
-  require('./publish-followup.cjs').registerPublishFollowup({ipcMain,getWindow,authenticate,session,journal,openWebContext:openWorkContext,collectPublishReference});
+  const verifyFollowup=require('./publish-followup.cjs').registerPublishFollowup({ipcMain,getWindow,authenticate,session,journal,openWebContext:openWorkContext,collectPublishReference});
   require('./douyin-interaction.cjs').registerDouyinInteraction({ ipcMain, context, journal, dialog, busy });
   const run = (guest, command, input) => runOfficialDOM(guest, pageAction, [command, input], 'matrix-page-actions');
+  const originalPages=new Map();
+  function rememberOriginalPage(record,guest,nonce){
+    if(record.kind==='publish'||!record.clicked||record.status!=='unknown')return;
+    // Keep only the original guest ID and read nonce, never a window or token.
+    if(originalPages.size>=200)originalPages.delete(originalPages.keys().next().value);
+    originalPages.set(record.id,{guestId:guest.id,nonce,expires:Date.now()+30*60000});
+  }
+  function canReviewPage(record){
+    const page=originalPages.get(record.id);
+    if(!page)return false;
+    if(record.status!=='unknown'||page.expires<Date.now()){originalPages.delete(record.id);return false;}
+    return true;
+  }
+  async function verifyPage(event,accessToken,record){
+    if(!canReviewPage(record))return;
+    const page=originalPages.get(record.id);
+    const input={accessToken,accountId:record.accountId,platform:record.platform,sessionId:record.sessionId,webContentsId:page.guestId,nonce:page.nonce};
+    const owner=await authenticate(accessToken,record.accountId);
+    const checked=async()=>{
+      const ctx=await context(event,input);
+      if(ctx.auth.userId!==owner.userId||ctx.guest.id!==page.guestId||!record.nativeAccountKey||ctx.observedNativeAccountKey!==record.nativeAccountKey)throw Error('原页面或账号绑定已变化');
+      return ctx;
+    };
+    const {guest}=await checked();
+    const observed=await run(guest,'result',{nonce:page.nonce});
+    if(!['confirmed','failed'].includes(observed?.status))return;
+    await checked();
+    const latest=journal.find(owner.userId,record.id);
+    if(!latest||latest.status!=='unknown'||latest.accountId!==record.accountId||latest.sessionId!==record.sessionId||latest.nativeAccountKey!==record.nativeAccountKey)return;
+    journal.write({...latest,status:observed.status,message:observed.message,checkpoint:'official_result',resultSource:observed.source||'official_notice',completedAt:new Date().toISOString()});
+    originalPages.delete(record.id);
+  }
   const validation = async (guest, input = {}) => {
     const value = await runOfficialDOM(guest, publishValidation, [input], 'matrix-page-actions');
     if (value?.version !== 1 || !Array.isArray(value.errors)) throw Error('官方表单校验结果未读到，尚未确认提交');
@@ -310,7 +342,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
       return { nonce, nickname: ctx.nickname, visibility, expiresAt: new Date(plan.expires).toISOString(), ...details };
     } catch (error) { return { error: error.message }; }
   });
-  async function submitPage(event, input, batchApproved = false, notify = () => {}) {
+  async function submitPage(event, input, batchApproved = false, notify = () => {}, isStopped = () => false) {
     let guestId, record, resultReader, dispatched = false;
     const saveRecord = () => {
       const latest = journal.list(record.ownerId).filter(item=>item.id===record.id).at(-1);
@@ -337,6 +369,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
       if (plan.visibility && (await runOfficialDOM(ctx.guest, publishVisibility, ['read', { platform: input.platform }], 'matrix-publish-visibility')).visibility !== plan.visibility) throw Error('官方可见范围已变化，未提交，请重新核对');
       if (plan.kind === 'publish') await validateBeforePublish(ctx.guest);
       await run(ctx.guest, 'validate', { nonce: input.nonce, index: input.index });
+      if (isStopped()) return { cancelled: true };
       plans.delete(input.nonce);
       record = { id: randomUUID(), ownerId: ctx.auth.userId, accountId: input.accountId, platform: input.platform, nickname: ctx.nickname, kind: plan.kind, taskId: plan.taskId, attemptId: plan.attemptId, expectedTitle: plan.expectedTitle, visibility: plan.visibility, pageUrl: plan.details.pageUrl, button: selected.label, summary: (plan.kind === 'withdraw' ? selected.context : plan.details.fields.filter(f => f.value.trim()).map(f => f.value).join('\n')).slice(0, 1000), status: 'submitting', message: '正在提交官方表单', createdAt: new Date().toISOString() };
       if(plan.platform==='wechat'&&plan.kind==='publish')record.expectedContent=plan.details.fields.find(field=>field.value.split(/\r?\n/)[0].trim()===plan.expectedTitle)?.value.slice(0,20000);
@@ -388,6 +421,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
         } catch { /* Document changes are not proof of a sent comment/message. */ }
       }
       record.completedAt = new Date().toISOString(); saveRecord();
+      rememberOriginalPage(record,ctx.guest,input.nonce);
       const { ownerId: _, ...receipt } = record;
       return { receipt };
     } catch (error) {
@@ -396,8 +430,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
     } finally { resultReader?.close(); if (guestId !== undefined) busy.delete(guestId); }
   }
   ipcMain.handle('matrix:submit-page-action', (event, input) => submitPage(event, input));
-  let batchRunning = false;
-  let activeBatch;
+  const activePublishPlatforms = new Map();
   const cancelledBatches = new Set();
   ipcMain.handle('matrix:cancel-publish-batch', async (event, input) => {
     try {
@@ -405,44 +438,53 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
       if (typeof input?.batchId !== 'string' || input.batchId.length > 100) throw new Error('任务标识无效');
       cancelledBatches.add(`${auth.userId}:${input.batchId}`);
       if (cancelledBatches.size > 200) cancelledBatches.delete(cancelledBatches.values().next().value);
-      if (activeBatch && activeBatch.id === input?.batchId && activeBatch.owner === auth.userId) activeBatch.stopped = true;
+      for (const batch of activePublishPlatforms.values()) if (batch.id === input.batchId && batch.owner === auth.userId) batch.stopped = true;
       return { stopped: true };
     } catch (error) { return { error: error.message }; }
   });
   ipcMain.handle('matrix:submit-publish-batch', async (event, input) => {
-    let acquired = false;
+    let activeBatch;
     try {
       host(event);
       const entries = input?.entries;
       if (!Array.isArray(entries) || !entries.length || entries.length > 20 || new Set(entries.map(e => e.accountId)).size !== entries.length || new Set(entries.map(e => e.edgeGuestId !== undefined ? 'edge:' + e.edgeGuestId : 'electron:' + e.webContentsId)).size !== entries.length) throw new Error('请选择 1 至 20 个不同账号');
-      if (batchRunning) throw new Error('正在批量发布，请勿重复提交');
-      batchRunning = true; acquired = true;
+      const byPlatform = new Map();
       let owner;
       for (const entry of entries) {
         const ctx = await context(event, entry), plan = plans.get(entry.nonce);
-        if (!plan || plan.kind !== 'publish' || plan.expires < Date.now() || plan.ownerId !== ctx.auth.userId || plan.accountId !== entry.accountId || plan.guestId !== ctx.guest.id || (plan.nativeAccountKey?plan.nativeAccountKey!==ctx.nativeAccountKey:plan.nickname!==ctx.nickname) || !Number.isInteger(entry.index) || !plan.details.candidates[entry.index]) throw new Error('账号发布表单已变化，请重新检查全部所选账号');
+        if (!plan || plan.kind !== 'publish' || plan.platform !== entry.platform || plan.expires < Date.now() || plan.ownerId !== ctx.auth.userId || plan.accountId !== entry.accountId || plan.guestId !== ctx.guest.id || (plan.nativeAccountKey?plan.nativeAccountKey!==ctx.nativeAccountKey:plan.nickname!==ctx.nickname) || !Number.isInteger(entry.index) || !plan.details.candidates[entry.index]) throw new Error('账号发布表单已变化，请重新检查全部所选账号');
         if (owner && owner !== ctx.auth.userId) throw new Error('不能跨远效用户批量操作');
         owner = ctx.auth.userId;
+        const lane = byPlatform.get(plan.platform) || [];
+        lane.push(entry);
+        byPlatform.set(plan.platform, lane);
       }
-      activeBatch = { id: typeof input.batchId === 'string' ? input.batchId.slice(0, 100) : '', owner, stopped: cancelledBatches.has(`${owner}:${input.batchId}`) };
-      if (activeBatch.stopped) return { cancelled: true, results: [] };
+      const id = typeof input.batchId === 'string' ? input.batchId.slice(0, 100) : '';
+      if (cancelledBatches.has(`${owner}:${id}`)) return { cancelled: true, results: [] };
+      if ([...byPlatform.keys()].some(platform => activePublishPlatforms.has(platform))) throw new Error('所选平台已有发布正在进行，请勿重复提交');
+      activeBatch = { id, owner, stopped: false };
+      for (const platform of byPlatform.keys()) activePublishPlatforms.set(platform, activeBatch);
       const progress = (entry, status, message) => { try { if (activeBatch.id && !event.sender.isDestroyed?.()) event.sender.send?.('matrix:publish-batch-progress', { batchId: activeBatch.id, accountId: entry.accountId, status, message }); } catch { /* Display notifications must not change submission results. */ } };
       // This endpoint is called only by an explicit Publish/Retry/Continue
       // action. Plans remain short-lived, owner/account-bound and single-use;
       // submitPage rechecks the live form, visibility and hit target per account.
-      const results = [];
-      for (const entry of entries) {
-        if (activeBatch.stopped) break;
-        progress(entry, 'submitting', '正在向官方提交，等待官方结果');
-        const result = await submitPage(event, entry, true, message => progress(entry, 'submitting', message));
-        progress(entry, result.receipt?.status || (result.mayHaveSubmitted ? 'unknown' : 'attention'), result.receipt?.message || result.error || '未提交');
-        results.push({ accountId: entry.accountId, ...result });
-        const accepted=result.receipt?.status==='unknown'&&Number.isFinite(Date.parse(result.receipt.acceptedAt||''))&&result.receipt.verification?.state==='processing';
-        if (result.receipt?.status !== 'confirmed' && !accepted && !(result.receipt?.status === 'failed' && result.receipt.clicked === false)) break;
-      }
-      return { results, remaining: entries.slice(results.length).map(e => e.accountId) };
+      const settled = new Map();
+      await Promise.all([...byPlatform.values()].map(async lane => {
+        for (const entry of lane) {
+          if (activeBatch.stopped) break;
+          progress(entry, 'submitting', '正在向官方提交，等待官方结果');
+          const result = await submitPage(event, entry, true, message => progress(entry, 'submitting', message), () => activeBatch.stopped)
+            .catch(error => ({ error: error.message, mayHaveSubmitted: true }));
+          if (result.cancelled) break;
+          progress(entry, result.receipt?.status || (result.mayHaveSubmitted ? 'unknown' : 'attention'), result.receipt?.message || result.error || '未提交');
+          settled.set(entry.accountId, { accountId: entry.accountId, ...result });
+          const accepted=result.receipt?.status==='unknown'&&Number.isFinite(Date.parse(result.receipt.acceptedAt||''))&&result.receipt.verification?.state==='processing';
+          if (result.receipt?.status !== 'confirmed' && !accepted && !(result.receipt?.status === 'failed' && result.receipt.clicked === false)) break;
+        }
+      }));
+      return { results: entries.flatMap(entry => settled.get(entry.accountId) || []), remaining: entries.filter(entry => !settled.has(entry.accountId)).map(entry => entry.accountId) };
     } catch (error) { return { error: error.message }; }
-    finally { if (acquired) { batchRunning = false; activeBatch = undefined; } }
+    finally { if (activeBatch) for (const [platform, batch] of activePublishPlatforms) if (batch === activeBatch) activePublishPlatforms.delete(platform); }
   });
   ipcMain.handle('matrix:list-page-actions', async (event, input) => {
     try { host(event); const auth = await authenticate(input?.accessToken); return { items: journal.list(auth.userId).map(normalizePublishAcceptance) }; }
@@ -578,6 +620,7 @@ function registerPageActions({ ipcMain, dialog, webContents, session, getWindow,
   ipcMain.handle('matrix:verify-publish-result',verifyPublishResult);
   require('./publish-manual-reconcile.cjs').registerManualPublishReconciliation({ipcMain,getWindow,authenticate,journal,verifyPublishResult});
   require('./publish-resolution.cjs').registerPublishResolution({ipcMain,getWindow,authenticate,journal,dialog,verifyPublishResult,inspectAccountHealth});
+  return {verifyFollowup,canReviewPage,verifyPage};
 }
 
 module.exports = { registerPageActions, createJournal, pageAction, settlePublishEditor };

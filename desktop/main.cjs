@@ -652,7 +652,7 @@ registerPersonalAssist({ ipcMain, dialog, webContents, session, getWindow: () =>
   evidenceStore: require('./publish-evidence.cjs').createPublishEvidenceStore(path.join(publishDataDirectory, 'operation-records')),
   resolveEdgeContext: edgeEmbed.resolveContext,
 });
-registerPageActions({ ipcMain, dialog, webContents, session, getWindow: () => mainWindow, platforms: PLATFORM, inspectPlatformSession,
+const pageReview=registerPageActions({ ipcMain, dialog, webContents, session, getWindow: () => mainWindow, platforms: PLATFORM, inspectPlatformSession,
   journal: publishJournal, authenticate: authenticateDesktop,
   inspectAccountHealth:accountHealth.inspect,
   resolveEdgeContext: edgeEmbed.resolveContext,
@@ -660,7 +660,7 @@ registerPageActions({ ipcMain, dialog, webContents, session, getWindow: () => ma
   inspectNativeAccount: edgeEmbed.inspectAccountProfile,
 });
 
-const oneClickComments=require('./one-click-comments.cjs').registerOneClickComments({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,journal:publishJournal,userData:app.getPath('userData'),safeStorage:require('electron').safeStorage,session,...operationsBrowserServices,inspectAccountHealth:accountHealth.inspect,getOwnWork:input=>douyinInteractions.findOwnWork(input)});
+const oneClickComments=require('./one-click-comments.cjs').registerOneClickComments({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,journal:publishJournal,userData:app.getPath('userData'),safeStorage:require('electron').safeStorage,session,...operationsBrowserServices,...pageReview,inspectAccountHealth:accountHealth.inspect,getOwnWork:input=>douyinInteractions.findOwnWork(input)});
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;

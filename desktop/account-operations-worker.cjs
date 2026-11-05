@@ -36,6 +36,7 @@ const dom=createDomRuntime({directory:workerData.directory,studio,store,call:req
 const directoryPending=new Map();
 function requestDirectory(args){return new Promise((resolve,reject)=>{const id=randomUUID(),timer=setTimeout(()=>{directoryPending.delete(id);reject(Error('原生目录重新核对超时，未继续发送'));},60000);directoryPending.set(id,{resolve,reject,timer});parentPort.postMessage({type:'directory-request',id,args});});}
 const outreach=createOutreachRuntime({directory:workerData.directory,studio,store,dom,refreshDirectory:requestDirectory,beforeClaim:reserveSendFloor,
+  onObserved:id=>keywordRoutes?.reconcileObservedTask(id),
   authorizeAutomatic:(authority,ids)=>keywordRoutes?.authorized(authority,ids)===true,
   verifyAutomaticSource:async task=>{
     const message=store.getMessage(task.sourceMessageId),proof=await requestProof('comment-verify',{accountId:task.primaryAccountId,message}),r=proof?.record;
@@ -161,6 +162,10 @@ async function command(command,args) {
   if(command==='policy'){if(args.paused){outreach.fanPlan.pause('全局暂停，保留粉丝批次进度');keywordRoutes.pauseAll('全局暂停，自动分配已停止');batch.stop();outreach.batch.stop('全局暂停，未开始的任务停止');}return store.updatePolicy(args);}
   if(command==='cancel')return store.cancelReply(args.id);
   if(command==='resolve'){const result=store.resolveUnknown(args.id,{sent:args.sent});if(dom.replyRoute(result))try{await dom.reconcile(args.id);}catch{/* Keep uncertain pages when native proof cannot be rechecked. */}return result;}
+  if(command==='observed-native-messages'){
+    if(closing||halted||!accounts.has(args.accountId))throw Error('原账号运行上下文已关闭');
+    return store.confirmNativeMessages(args.accountId,args.proofs);
+  }
   if(command==='send') {if(busy||batchLock)throw Error('已有回复正在执行');busy=true;try{return await send(args.id);}finally{busy=false;}}
   if(command==='can-commit'){if(halted||closing)throw Error('互动已停止');const r=store.getReply(args.id);if(batchLock&&!batch.isAuthorized(r.id,batchLock))throw Error('批次已停止，未发送');return store.assertCanCommit(args.id);}
   if(command==='can-dom-operation'){if(halted||closing)throw Error('互动已停止');return dom.canOperation(args);}

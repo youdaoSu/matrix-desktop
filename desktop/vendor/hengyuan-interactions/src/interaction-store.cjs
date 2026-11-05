@@ -1195,6 +1195,39 @@ class InteractionStore {
       return reply;
     });
   }
+  confirmObservedReply(replyId,input){
+    const evidence=receipt(input.receipt,true);
+    return this._transaction(state=>{
+      const reply=find(state.replies,replyId,'回复');
+      if(reply.status!=='unknown'||reply.claimId!==input.claimId||reply.accountId!==input.accountId||reply.replyText!==input.text)throw new Error('自动核对与原回复领取记录不一致');
+      if(typeof evidence!=='string'||!/^platform:\S+$/.test(evidence))throw new Error('自动核对缺少原平台回执');
+      const at=this._date();
+      this._mark(reply,'sent','platform_confirmed_sent','已自动核对原平台回执',at);
+      reply.receipt=evidence;reply.sentAt=at;reply.resolvedAt=at;reply.resolution='sent';delete reply.error;
+      return reply;
+    });
+  }
+  confirmNativeMessages(accountId,proofs){
+    this._account(accountId);
+    if(!Array.isArray(proofs)||proofs.length>50)throw new Error('自动私信核对范围无效');
+    const requests=new Set(proofs.map(p=>p?.requestId));
+    if(!this.#select(state=>state.replies.some(r=>r.accountId===accountId&&r.status==='unknown'&&requests.has(r.claimId))))return {resolved:0};
+    return this._transaction(state=>{
+      let resolved=0;
+      const byRequest=new Map(proofs.filter(p=>p&&typeof p.requestId==='string'&&/^\d{1,25}$/.test(p.messageId||'')).map(p=>[p.requestId,p]));
+      const messages=new Map(state.messages.map(m=>[m.id,m]));
+      for(const reply of state.replies){
+        if(reply.accountId!==accountId||reply.status!=='unknown'||(reply.deliveryChannel||reply.channel)!=='dm')continue;
+        const p=byRequest.get(reply.claimId),m=messages.get(reply.messageId);
+        if(!p||!m||m.platform!=='douyin'||m.senderId!==p.peer||m.channel==='dm'&&m.threadId!==p.threadId)continue;
+        const fingerprint=require('node:crypto').createHash('sha256').update(JSON.stringify([p.threadId,reply.replyText])).digest('hex');
+        if(fingerprint!==p.fingerprint)continue;
+        const at=this._date();this._mark(reply,'sent','platform_confirmed_sent','已从官网原消息核对发送结果',at);
+        reply.receipt={kind:'platform-ack',requestId:reply.claimId,messageId:p.messageId};reply.sentAt=at;reply.resolvedAt=at;reply.resolution='sent';delete reply.error;resolved++;
+      }
+      return {resolved};
+    });
+  }
   shutdown() {
     return this._transaction(state => {
       this._cancelUnsent(state, () => true, 'shutdown', '工作台已停止，未开始发送的回复已取消。');

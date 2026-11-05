@@ -13,6 +13,7 @@ async function run(){
  entries.a.rows[0].liked=false;entries.a.rows[0].likeCount=2;entries.a.rows[0].replyCount=1;
  const requests=[];stub('client/src/api/index.ts',{getUser:()=>({id:owner}),getAuthToken:()=> 'qa-token-'+owner,axiosForBackend:{get:async(url,options)=>{requests.push({url,params:options?.params});return{data:{data:{items:url==='/api/platform/accounts'?accounts:[],total:0}}};}}});
  window.matrixDesktop={douyinInteractions:async input=>{requests.push({url:'qa-native-action',input});return{accountId:'a',sessionId:'session-a',receipt:{state:'confirmed',message:input.command==='reply'?'QA 回复已确认':'QA 点赞操作已确认',commentId:input.command==='reply'?'209':undefined},...(input.command==='reply'?{records:[{platformId:'209',platformUserId:'999',author:'QA本人',content:input.text,workId:'1001',parentPlatformId:'201'}]}:{})};}};
+ window.matrixDesktop.inspectAccountHealth=async({accountId})=>{const a=accounts.find(a=>a.id===accountId);return{state:'normal',accountId,sessionId:a.connectorSessionId,nativeAccountKey:a.nativeAccountKey};};
  const workspace={accounts,jobsLocked:false,accountError:'',openAccount:()=>{throw Error('No official navigation expected');}};
  stub('client/src/components/workspace/OfficialWorkspace.tsx',{useOfficialWorkspace:()=>workspace,platformLabels:{douyin:'抖音',bilibili:'B站',xiaohongshu:'小红书',wechat:'视频号'}});
  stub('client/src/components/workspace/AccountAvatar.tsx',{AccountAvatar:({account})=>React.createElement('span',null,account.nickname)});
@@ -74,9 +75,22 @@ async function run(){
   // passed to the native comment feed or used to silently select all works.
   const receiptCalls=[];let delayedReceipt;
   window.matrixDesktop.oneClickComments=async input=>{receiptCalls.push(input);assert.equal(input.command,'single-state');if(input.args.source.receiptId==='delayed')await new Promise(r=>delayedReceipt=r);return{result:{target:{accountId:'a',accountName:'QA账号甲',platform:'douyin',workId:'1001',title:'QA原任务作品',workUrl:'https://www.douyin.com/video/1001'},running:false,batches:[]}};};
-  search='?commentReceipt=original&commentAccount=a&commentPlatform=douyin';mount++;render();await until(()=>document.body.textContent.includes('已关联原发布任务'));eq(body().includes('QA作品一评论'),true);eq(body().includes('QA作品二评论'),false);eq(workRail().querySelector('[aria-pressed="true"]').getAttribute('data-interaction-post-id'),'1001');eq([...document.querySelectorAll('button')].find(b=>b.textContent==='一键评论').disabled,false);eq(receiptCalls.length,1);
+  search='?commentReceipt=original&commentAccount=a&commentPlatform=douyin';mount++;render();await until(()=>document.body.textContent.includes('已关联原发布任务'));eq(body().includes('QA作品一评论'),true);eq(body().includes('QA作品二评论'),false);eq(workRail().querySelector('[aria-pressed="true"]').getAttribute('data-interaction-post-id'),'1001');eq(receiptCalls.length,1);
+  const commentButton=()=>[...document.querySelectorAll('[aria-label="当前作品操作"] button')].find(b=>b.textContent==='一键评论');
+  eq(commentButton().disabled,false);
+  commentButton().click();
+  await until(()=>document.querySelector('[aria-label="选择发送账号"]'));
+  eq(document.querySelector('[role="dialog"] h2').textContent,'评论当前作品');
+  document.querySelector('[data-slot="dialog-close"]').click();
+  await until(()=>!document.querySelector('[role="dialog"]'));
   accountButton('b').click();await until(()=>workRail().textContent.includes('QA乙作品'));eq(document.body.textContent.includes('QA原任务作品'),false);eq(body().includes('QA作品一评论'),false);
   search='?commentReceipt=delayed&commentAccount=a&commentPlatform=douyin';render();await until(()=>delayedReceipt);accountButton('b').click();await until(()=>workRail().textContent.includes('QA乙作品'));delayedReceipt();await new Promise(r=>setTimeout(r,60));eq(document.body.textContent.includes('QA原任务作品'),false);eq(body().includes('QA作品一评论'),false);eq(receiptCalls.every(c=>c.command==='single-state'),true);search='';
+  route='/engage/comments';search='?commentReceipt=original&commentAccount=a&commentPlatform=douyin&commentOpen=1';mount++;render();
+  await until(()=>document.querySelector('[aria-label="选择发送账号"]'));const senderSelect=document.querySelector('[aria-label="选择发送账号"]');senderSelect.value='b';senderSelect.dispatchEvent(new Event('change',{bubbles:true}));
+  await until(()=>document.querySelector('textarea[aria-label="本条作品评论"]'));
+  eq(document.querySelector('h1').textContent,'评论管理');eq(body().includes('QA作品一评论'),true);eq(!!document.querySelector('[aria-label="话术库"]'),true);eq(requests.some(r=>r.url==='/api/comments'),false);
+  const currentText=document.querySelector('textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(currentText,'切换前的草稿');currentText.dispatchEvent(new Event('input',{bubbles:true}));
+  accountButton('b').click();await until(()=>!document.querySelector('textarea'));eq(document.body.textContent.includes('切换前的草稿'),false);eq(receiptCalls.every(c=>c.command==='single-state'),true);
   entries.a.works=Array.from({length:101},(_,i)=>({platformId:i===0?'2001':String(10000+i),title:'QA分页监控作品'+i}));entries.a.rows=[{...entries.a.rows[0],workId:'2001'},{...entries.a.rows[1],workId:'2001'}];
   const Monitor=loadTs('client/src/components/workspace/DouyinCommentMonitor.tsx',cache,overrides).DouyinCommentMonitorPanel;component.render(React.createElement(Monitor));await until(()=>document.querySelectorAll('[aria-label="抖音作品评论监控"] article').length===100);
   eq(document.body.textContent.includes('102 个本机缓存作品'),true);eq(document.querySelector('article small').textContent.includes('已缓存 2 条评论'),true);[...document.querySelectorAll('button')].find(button=>button.textContent==='下一页').click();await until(()=>document.querySelectorAll('article').length===2);eq(document.querySelectorAll('article').length,2);eq([...document.querySelectorAll('article small')].some(node=>node.textContent.includes('QA账号乙 · 已缓存 1 条评论')),true);eq([...document.querySelectorAll('button')].find(button=>button.textContent==='下一页').disabled,true);

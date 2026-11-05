@@ -1529,3 +1529,20 @@ test('manual draft rejects unresolved older send on the same thread until it is 
   f.store.resolveUnknown(reply.id, { sent: false });
   assert.equal(f.store.checkManualDraft({ messageId: next.id, replyText: 'new answer' }).message.id, next.id);
 });
+
+test('late DOM receipt settles only its original unknown claim and survives restart',t=>{
+ const f=fixture(t);f.rule();f.auto();const original=f.reply(f.ingest()),claim=send(f,original,'unknown').reply;
+ const proof={accountId:claim.accountId,claimId:claim.claimId,text:claim.replyText,receipt:'platform:confirmed-original'};
+ for(const patch of [{claimId:randomUUID()},{accountId:f.two.id},{text:'changed'},{receipt:'guessed'}])assert.throws(()=>f.store.confirmObservedReply(claim.id,{...proof,...patch}));
+ assert.equal(f.store.getReply(claim.id).status,'unknown');assert.equal(f.store.confirmObservedReply(claim.id,proof).status,'sent');
+ f.reopen();assert.equal(f.store.getReply(claim.id).receipt,proof.receipt);assert.throws(()=>f.store.beginSend(claim.id));assert.throws(()=>f.store.confirmObservedReply(claim.id,proof));
+});
+test('native acknowledgement matches UUID, account, peer, conversation and frozen reply text',t=>{
+ const f=fixture(t);f.rule();f.auto(f.two.id);const original=f.reply(f.ingest({accountId:f.two.id,senderId:'123456',threadId:'original-thread'})),claim=send(f,original,'unknown').reply;
+ const fingerprint=require('node:crypto').createHash('sha256').update(JSON.stringify(['original-thread',claim.replyText])).digest('hex');
+ const proof={requestId:claim.claimId,messageId:'123456789012',peer:'123456',threadId:'original-thread',fingerprint};
+ for(const patch of [{requestId:randomUUID()},{peer:'other'},{threadId:'other'},{fingerprint:'bad'}])assert.equal(f.store.confirmNativeMessages(f.two.id,[{...proof,...patch}]).resolved,0);
+ assert.equal(f.store.confirmNativeMessages(f.one.id,[proof]).resolved,0);
+ assert.equal(f.store.confirmNativeMessages(f.two.id,[proof]).resolved,1);assert.equal(f.store.confirmNativeMessages(f.two.id,[proof]).resolved,0);
+ assert.equal(f.store.getReply(claim.id).receipt.messageId,proof.messageId);assert.throws(()=>f.store.beginSend(claim.id));
+});

@@ -444,6 +444,12 @@ class OutreachStore {
     if (task.status !== 'review' || this.interactions.getExternalAttempt(task.id)) throw new Error('已开始发送或结果未知的任务不能取消，请人工核对。');
     return this.update(task.id, { status: 'cancelled', reason: '已取消，未开始发送。' });
   }
+  confirmObserved(taskId,{claimedAt,receipt}){
+    const task=this.get(taskId),attempt=this.interactions.getExternalAttempt(taskId);
+    if(task.status!=='unknown'||!attempt||attempt.taskDigest!==outreachDigest(task)||task.claimedAt!==claimedAt||attempt.claimedAt!==claimedAt)throw new Error('自动复核与原协作发送记录不一致');
+    if(typeof receipt!=='string'||!/^platform:\S+$/.test(receipt))throw new Error('自动复核缺少原平台回执');
+    return this.update(taskId,{status:'sent',receipt,resolvedAt:this.date(),failure:undefined,reason:'已自动核对原平台发送回执'});
+  }
   cancelAccountUnsent(accountId) {
     this.studio.getAccount(accountId);
     const attempted = new Set(this.interactions.getExternalAttempts().map(attempt => attempt.id));

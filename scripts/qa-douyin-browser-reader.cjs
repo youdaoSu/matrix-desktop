@@ -173,6 +173,39 @@ function managerFixture(options = {}) {
   m.pages[0].webContents.emit('console-message',{},3,'TypeError: PRIVATE_BODY',1,asset+'?cookie=PRIVATE');m.pages[0].webContents.emit('console-message',{},3,'TypeError: PRIVATE_BODY',1,'https://www.douyin.com/user/PRIVATE');m.pages[0].webContents.emit('console-message',{},1,'TypeError: PRIVATE_BODY',1,asset);eq(evidence.length,1);
   await client.readWeb('followers',{cursor:'0',offset:'0',sourceType:'1'});m.pages[0].webContents.emit('console-message',{},3,'ReferenceError: PRIVATE_VARIABLE',2,asset);eq(evidence.at(-1).phase,'follower-starting');eq(evidence.at(-1).category,'reference-error');eq(evidence.at(-1).mask,0);client.close();m.reader.close();
   m=managerFixture({initializationEvidence(){throw Error('Synthetic observer failure');}});client=await m.acquire();m.pages[0].webContents.emit('console-message',{},3,'TypeError: PRIVATE',1,asset);eq(client.ownUid,own);client.close();m.reader.close();
+  // Explicit identity checks wait for the current lease, then precede new
+  // background reads. The existing view/cursor stays intact throughout.
+  {
+    const q=managerFixture();const held=await q.acquire();const page=q.pages[0];
+    let admitted=false;const first=q.acquire({priorityIdentity:true}).then(c=>{admitted=true;return c;});
+    await assert.rejects(q.acquire(),/正在读取另一页/);checks++;
+    await new Promise(resolve=>setTimeout(resolve,150));eq(admitted,false);eq(page.destroyed,false);
+    held.close();const a=await first;eq(admitted,true);eq(q.pages.length,1);eq(a.ownUid,own);
+    let secondAdmitted=false;const second=q.acquire({priorityIdentity:true}).then(c=>{secondAdmitted=true;return c;});
+    await new Promise(resolve=>setTimeout(resolve,150));eq(secondAdmitted,false);
+    a.close();const b=await second;b.close();const ordinary=await q.acquire();ordinary.close();eq(q.pages.length,1);q.reader.close();
+  }
+  {
+    let clock=0;const q=managerFixture({now:()=>clock});const held=await q.acquire();
+    const waiting=q.acquire({priorityIdentity:true});clock=6001;
+    await assert.rejects(waiting,/等待已结束/);checks++;held.close();
+    const after=await q.acquire();after.close();eq(q.pages.length,1);q.reader.close();
+  }
+  {
+    const opts={};const q=managerFixture(opts);const held=await q.acquire();
+    const waiting=q.acquire({priorityIdentity:true});opts.ownerFailed=true;
+    await assert.rejects(waiting,/owner changed/);checks++;opts.ownerFailed=false;held.close();
+    const after=await q.acquire();after.close();q.reader.close();
+  }
+  {
+    const q=managerFixture();const held=await q.acquire();const waiting=q.acquire({priorityIdentity:true});
+    q.reader.close();await assert.rejects(waiting,/已关闭/);checks++;held.close();
+  }
+  {
+    const q=managerFixture();q.readerFixture.state.verify=true;
+    await assert.rejects(q.acquire({priorityIdentity:true}),/验证/);checks++;
+    eq(q.pages.length,1);eq(q.readerFixture.state.selfGets||0,0);q.reader.close();
+  }
   eq(blockedRequest({url:score+'?is_pc=true',method:'GET',resourceType:'fetch'}),false);
   for(const request of [{url:score+'?is_pc=true',method:'POST'},{url:score+'?is_pc=false',method:'GET'},{url:score+'?is_pc=true&mark_read=1',method:'GET'},{url:score+'/?is_pc=true',method:'GET'},{url:score+'?is_pc=true',method:'HEAD'}])eq(blockedRequest({...request,resourceType:'fetch'}),true);
   console.log(JSON.stringify({ checks, syntheticRuntimeOnly: true, exactOwnerIds: true, nativeImInitialization: false, boundEnvironmentReused:true, scopedRequestGuards:true, accountStorageNotCopiedOrCleared:true, outgoingMessages: 0, markRead: 0, realAccountAccessed: false }));

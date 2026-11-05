@@ -14,7 +14,7 @@ function safeFailure(error){const message=typeof error?.message==='string'?error
 
 function registerPublishFollowup({ipcMain,getWindow,authenticate,session,journal,createTransport=createBilibiliFollowupTransport,openWebContext,collectPublishReference,timeoutMs=45000}){
   const busy=new Set();
-  ipcMain.handle('matrix:publish-followup',async(event,input)=>{
+  const handle=async(event,input)=>{
     let key,record,client,ended=false,dispatched=false,pinDispatched=false,previousConfirmed=false,previousMayHaveSent=false,acquired=false,previousRequestId,managementOperation,managementStarted=false;
     const startedAt=Date.now();
     const save=()=>{try{
@@ -113,6 +113,8 @@ function registerPublishFollowup({ipcMain,getWindow,authenticate,session,journal
       if(record){const mayHaveSent=dispatched||previousMayHaveSent;record.status=previousConfirmed?'confirmed':mayHaveSent?'unknown':'failed';record.clicked=mayHaveSent||previousConfirmed||false;record.message=message;record.retryable=!mayHaveSent&&!previousConfirmed;record.completedAt=new Date().toISOString();if(pinDispatched)record.pinResult={status:'unknown',message:'置顶结果待核对；原追评无需重发'};try{save();}catch{}return{error:message,receipt:publicReceipt(record),mayHaveSubmitted:mayHaveSent};}
       return{error:message};
     }finally{ended=true;client?.close();if(acquired)busy.delete(key);}
-  });
+  };
+  ipcMain.handle('matrix:publish-followup',handle);
+  return (event,accessToken,child,parent)=>handle(event,{accessToken,accountId:child.accountId,receiptId:parent.id,operation:'verify'});
 }
 module.exports={registerPublishFollowup,bilibiliReference,publicReceipt};

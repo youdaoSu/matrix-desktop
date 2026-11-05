@@ -226,7 +226,22 @@ function registerAccountOperations({ipcMain,getWindow,authenticate,safeStorage,u
     if(!Array.isArray(records)||records.length>50000||entry.commentAdmissions.size>=8){entry.queueWarning='本轮评论接收超过本地处理范围，原评论记录保留；请核对监控状态，不会自动补发。';return Promise.resolve({kind:'operations-intake',status:'partial'});}
     const task=observeComments(entry,a,ownUid,records,signal);entry.commentAdmissions.add(task);void task.finally(()=>entry.commentAdmissions.delete(task));return task;
   }
-  const timer=setInterval(()=>{const entry=active;if(entry?.alive&&monotonicNow()-entry.heartbeat>45000){void stop(entry);return;}if(entry?.alive&&entry.configured&&entry.heartbeatMode==='main-event')requestHeartbeat(entry,entry.workspaceId);if(entry?.alive&&entry.commentMonitor){const task=entry.commentMonitor.tick();entry.sends.add(task);void task.catch(()=>{entry.queueWarning='关键词评论监控未完成，原队列保留；请核对监控状态';}).finally(()=>entry.sends.delete(task));}},5000);timer.unref?.();
+  async function reviewNativeReplies(entry){
+    if(entry.receiptReviewing||monotonicNow()<(entry.nextReceiptReview||0))return;
+    entry.receiptReviewing=true;entry.nextReceiptReview=monotonicNow()+60000;
+    try{
+      for(const a of entry.accounts.values()){
+        if(a.platform!=='douyin')continue;
+        try{
+          const proofs=getInbox().operationsView(entry.owner,a.accountId,a.binding).reviewedProofs?.()||[];
+          if(!proofs.length)continue;
+          await current(entry,a);
+          await rpc(entry,'observed-native-messages',{accountId:a.id,proofs});
+        }catch{/* Await the next current, bound inbox snapshot. */}
+      }
+    }finally{entry.receiptReviewing=false;}
+  }
+  const timer=setInterval(()=>{const entry=active;if(entry?.alive&&monotonicNow()-entry.heartbeat>45000){void stop(entry);return;}if(entry?.alive&&entry.configured&&!entry.receiptReviewing){const review=reviewNativeReplies(entry);entry.sends.add(review);void review.finally(()=>entry.sends.delete(review));}if(entry?.alive&&entry.configured&&entry.heartbeatMode==='main-event')requestHeartbeat(entry,entry.workspaceId);if(entry?.alive&&entry.commentMonitor){const task=entry.commentMonitor.tick();entry.sends.add(task);void task.catch(()=>{entry.queueWarning='关键词评论监控未完成，原队列保留；请核对监控状态';}).finally(()=>entry.sends.delete(task));}},5000);timer.unref?.();
   return {observe,async close(){closed=true;clearInterval(timer);await stop(active);}};
 }
 module.exports={registerAccountOperations};

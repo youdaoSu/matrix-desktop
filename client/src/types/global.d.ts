@@ -202,7 +202,7 @@ interface Window {
     readOpenDouyinFollowers(input:{accessToken:string;accountId:string;webContentsId:number}):Promise<{error?:string;accountId?:string;sessionId?:string;loaded?:number;avatars?:number;complete?:false}>;
     syncDouyinFollowers(input:{accessToken:string;accountId:string;webContentsId:number;command:'prepare'|'inspect'|'start'|'next'|'pause'|'resume';cursor?:string}):Promise<{error?:string;accountId?:string;sessionId?:string;cursor?:string;loaded?:number;avatars?:number;complete?:boolean;status?:'running'|'paused'|'complete';reason?:string;retryAfterMs?:number;ready?:boolean;waiting?:boolean;inspection?:MatrixFollowerResponseFacts;platformCode?:number}>;
     douyinInteractionImage(input: import('@shared/douyin-interactions').DouyinInteractionImageInput): Promise<import('@shared/douyin-interactions').DouyinInteractionImageResult>;
-    inspectAccountHealth(input:{accessToken:string;accountId:string}):Promise<MatrixAccountHealth>;
+    inspectAccountHealth(input:{accessToken:string;accountId:string;purpose?:'publish-identity'}):Promise<MatrixAccountHealth>;
     readPublishTrace(input:{accessToken:string;receiptId:string}):Promise<MatrixPublishTrace>;
     resolvePublishReceipt(input:{accessToken:string;receiptId:string;kind:'identity_rename'|'not_published'}):Promise<{error?:string;cancelled?:boolean;receipt?:MatrixPageActionReceipt}>;
     extraPlatformWorkspaces(input: { command: 'list' | 'add' | 'open'; accessToken: string; provider?: string; name?: string; remark?: string; url?: string; id?: string }): Promise<{ error?: string; items?: MatrixExtraWorkspace[]; item?: MatrixExtraWorkspace; session?: { partition: string; url: string } }>;

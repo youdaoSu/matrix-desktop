@@ -224,8 +224,10 @@ class OutreachManager {
   }
   async run(page, operation, payload = {}, options = {}) {
     const generation = page.generation;
-    this.assertCurrent(page, generation);
+    if(operation==='receipt'&&options.independentRead)this.assertReadCurrent(page,generation);
+    else this.assertCurrent(page, generation);
     const task = this.tasks.get(page.id);
+    if(options.independentRead&&(operation!=='receipt'||task.status!=='unknown'||!task.claimedAt||payload.claimedAt!==task.claimedAt))throw new Error('只读复核与原任务领取时间不一致');
     const recipientOperation = ['probeComposer', 'send', 'commit', 'receipt'].includes(operation);
     if (page.profileChat || task.sourceKind === 'fan-directory' && recipientOperation) {
       const mapping = page.recipientMapping;
@@ -923,7 +925,7 @@ class OutreachManager {
     if (this.busyAccounts.has(task.accountId)) throw new Error('这个账号正在发送，请稍后检查结果');
     this.busyAccounts.add(task.accountId);
     let page;
-    let claimed = false, commitStarted = false, stage = 'preflight';
+    let claimed = false, commitStarted = false, stage = 'preflight', receiptProbe;
     try {
       page = this.pages.get(id);
       if (!page || !page.ready) throw new Error('协作页面已关闭或发生变化，请重新检查');
@@ -937,6 +939,11 @@ class OutreachManager {
       const filled = await this.run(page, 'send', payload);
       this.assertCurrent(page, generation);
       if (!filled?.ok || filled.needsNativeInput) throw new Error(filled?.detail || '无法填写协作内容');
+      const originalReceiptPayload={...payload,before:filled.before,beforeClientIds:filled.beforeClientIds,claimedAt:this.tasks.get(id).claimedAt};
+      receiptProbe={id,accountId:task.accountId,claimedAt:originalReceiptPayload.claimedAt,read:async()=>{
+        this.assertReadCurrent(page,generation);
+        return this.run(page,'receipt',originalReceiptPayload,{independentRead:true});
+      }};
       await this.wait(120);
       this.assertCurrent(page, generation); this.tasks.assertCanCommit(id, { recipientId: payload.recipientId });
       stage = 'commit';
@@ -980,6 +987,7 @@ class OutreachManager {
       error.failure = failure;
       throw error;
     } finally {
+      if(commitStarted&&receiptProbe&&this.tasks.get(id).status==='unknown')this.deferReceipt?.(receiptProbe);
       this.busyAccounts.delete(task.accountId); if (page) page.ready = false;
       // Notification is observational. A renderer/snapshot listener failure
       // must not replace the actual persisted send result or original error.

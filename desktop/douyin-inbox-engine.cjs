@@ -91,6 +91,65 @@ function createEngine({ transport, store, assertCurrent, changed = () => {}, onF
     for (const raw of metadata) mergeThread(state, c.thread(raw, ownUid));
     for (const m of mapped) { if (!state.threads[m.threadId]) mergeThread(state, c.thread({ id: m.threadId, shortId: m.shortId, type: m.type }, ownUid)); mergeMessage(state, m); }
   }
+  // History/push echoes must identify the same client request, server message,
+  // recipient conversation, sender UID and exact original text.
+  async function reconcileMessagePage(rows){
+    const outbox=store.get().outbox;
+    if(!outbox||!rows?.length)return;
+    const found=new Map();
+    for(const raw of rows){
+      const requestId=raw.ext?.['s:client_message_id']||raw.clientMessageId;
+      if(!require('./douyin-inbox-send.cjs').clientId(requestId)||outbox[requestId]?.receipt?.state!=='unknown')continue;
+      if(raw.clientMessageId&&raw.clientMessageId!==requestId)continue;
+      const m=c.message(raw,ownUid);
+      if(m.sender!==ownUid||m.messageType!==7||m.status!==0)continue;
+      let text;try{text=JSON.parse(raw.content)?.text;}catch{continue;}
+      if(typeof text!=='string')continue;
+      const fingerprint=crypto.createHash('sha256').update(JSON.stringify([m.threadId,text])).digest('hex');
+      if(outbox[requestId].fingerprint!==fingerprint)continue;
+      const prior=found.get(requestId);
+      found.set(requestId,prior===undefined||prior?.id===m.id?{id:m.id,threadId:m.threadId}:null);
+    }
+    if(!found.size)return;
+    await guard();
+    await commit(next=>{
+      for(const [requestId,match] of found){
+        const entry=next.outbox[requestId];
+        if(!match||entry?.receipt?.state!=='unknown')continue;
+        const messageId=match.id;entry.threadId=match.threadId;
+        entry.resolvedAt=now();
+        entry.receipt={state:'confirmed',requestId,messageId,message:'已在官网会话记录中核对原消息'};
+      }
+    },['outbox']);
+  }
+  let reviewingMessage=false,cachedOutbox,pendingMessageReviews=[],reviewed=[];
+  function indexOutbox(outbox){
+    if(outbox===cachedOutbox)return;
+    cachedOutbox=outbox;
+    const entries=Object.entries(outbox||{});
+    reviewed=entries.map(([,e])=>e).filter(e=>e.resolvedAt).sort((a,b)=>b.resolvedAt-a.resolvedAt).slice(0,50).map(e=>e.receipt);
+    pendingMessageReviews=entries.filter(([,e])=>e.threadId&&e.receipt?.state==='unknown'&&(e.reviewCount||0)<3);
+  }
+  async function reviewPendingMessage(){
+    if(closed||reviewingMessage||paused()||error||!transport.read)return;
+    const state=store.get();
+    const gaps=[60000,240000,600000];
+    indexOutbox(state.outbox);
+    const due=pendingMessageReviews.find(([,e])=>{
+      const gap=gaps[e.reviewCount||0];
+      return gap!==undefined&&e.receipt?.state==='unknown'&&state.threads[e.threadId]&&now()>=(e.reviewAt||e.at)+gap;
+    });
+    if(!due)return;
+    reviewingMessage=true;
+    try{
+      const [requestId,entry]=due;
+      await guard();
+      await commit(next=>{const e=next.outbox[requestId];e.reviewCount=(e.reviewCount||0)+1;e.reviewAt=now();},['outbox']);
+      const page=await read('history',{...state.threads[entry.threadId],cursor:'0',direction:'older'});
+      if((page.messages||[]).every(m=>m.conversationId===entry.threadId))await reconcileMessagePage(page.messages);
+    }catch{/* Preserve uncertainty and resume only after the reserved delay. */}
+    finally{reviewingMessage=false;}
+  }
   // A completed receive-only catch-up may contain no messages, or only the
   // exact messages already durably stored. Only its completion marker can be
   // deferred. A crash simply rechecks those GET pages; no push ACK or message
@@ -119,6 +178,7 @@ function createEngine({ transport, store, assertCurrent, changed = () => {}, onF
         else for (const row of page.messages || []) { const t = c.thread({ ...row, conversationType: 1 }, ownUid); mergeThread(next, t); ingest(next, [...(row.messages || []), ...(row.extMessages || [])]); }
         next[kind === 'init' ? 'init' : 'strangers'] = { cursor: page.cursor, done: !page.hasMore };
       },['threads','messages',kind==='init'?'init':'strangers']);
+      if(store.get().outbox)await reconcileMessagePage(kind==='init'?page.messages:(page.messages||[]).flatMap(row=>[...(row.messages||[]),...(row.extMessages||[])]));
       void refreshNames();
     }
     throw Error('抖音会话超过本轮分页上限，已保留断点；未声称历史完整');
@@ -143,6 +203,7 @@ function createEngine({ transport, store, assertCurrent, changed = () => {}, onF
       phase = direction === 'older' ? `同步会话历史（${Object.values(store.get().threads).filter(t => t.history.done).length}/${Object.keys(store.get().threads).length} 已到末页）` : '补拉断线期间的新消息'; changed();
       const t = store.get().threads[threadId], page = await read('history', { ...t, cursor, direction });
       if ((page.messages || []).some(m => m.conversationId !== threadId)) throw Error('抖音历史响应混入其他会话，已停止');
+      await reconcileMessagePage(page.messages);
       if (page.hasMore && (seen.has(page.cursor) || !(page.messages || []).length)) throw Error('抖音历史分页重复或提前返回空页，未标记完整');
       if(direction==='newer'&&!page.hasMore&&deferredCompletions){
         const current=store.get(),latest=current.threads[threadId];
@@ -240,6 +301,7 @@ function createEngine({ transport, store, assertCurrent, changed = () => {}, onF
       if (cursor) { const map = new Map((next.frontier[fileName] || []).map(r => [`${r.service}/${r.name}`, r])); const k = `${cursor.service}/${cursor.name}`, prev = map.get(k); if (!prev || BigInt(prev.value) < BigInt(cursor.value)) map.set(k, cursor); next.frontier[fileName] = [...map.values()]; }
     },message?['threads','messages','frontier']:overflow?['frontier']:['protocolEvents','frontier']);
     progress('post-owner-check'); await guard();
+    if(message)await reconcileMessagePage([notify.message]);
     if (message) {
       // Feed only verified live text pushes, after archive persistence and owner
       // revalidation. History discovery cannot create automatic reply tasks.
@@ -291,12 +353,12 @@ function createEngine({ transport, store, assertCurrent, changed = () => {}, onF
       const pending = { state: 'unknown', requestId, message: '发送请求结果尚未确认，请先核对，勿重复发送' };
       // Durable reservation BEFORE any write. Replays, restarts and lost IPC
       // responses return this same receipt instead of sending a second time.
-      await commit(next => { next.outbox ||= {}; next.outbox[requestId] = { fingerprint, receipt: pending, at: now() }; next.lastSendAt = now(); },['outbox','lastSendAt']);
+      await commit(next => { next.outbox ||= {}; next.outbox[requestId] = { fingerprint, threadId, receipt: pending, at: now() }; next.lastSendAt = now(); },['outbox','lastSendAt']);
       let receipt;
       try { await guard(); if(beforeCommit)await beforeCommit();await guard(); receipt = await transport.sendText({ thread, text, requestId }); await guard(); }
       catch (e) { receipt = { ...pending, message: `发送结果未确认：${require('./douyin-inbox-send.cjs').reason(e?.message) || '连接中断或当前账号已变化'}；请核对原会话，勿重复发送` }; }
       if (!['confirmed', 'failed', 'unknown'].includes(receipt?.state) || receipt.requestId !== requestId) receipt = pending;
-      try { await commit(next => { next.outbox[requestId].receipt = receipt; },['outbox']); }
+      try { await commit(next => { const entry=next.outbox[requestId];if(entry.resolvedAt&&receipt.state==='unknown')receipt=entry.receipt;else entry.receipt=receipt; },['outbox']); }
       catch { return { ...pending, message: '发送后回执未能保存，结果未确认；原发送编号已保留，勿重复发送' }; }
       // Do not fabricate an archive message/index or mark the conversation read.
       if (receipt.state === 'confirmed' && transport.read) void (async () => {
@@ -314,7 +376,15 @@ function createEngine({ transport, store, assertCurrent, changed = () => {}, onF
       sendTail=result.then(()=>{pendingSends--;},()=>{pendingSends--;});return result;
     },
     attachment(threadId, messageId) { const state=store.get(),m=state.messages[`${threadId}/${messageId}`];if(!state.threads[threadId]||!m)throw Error('图片消息不属于当前会话');return require('./douyin-inbox-media.cjs').imageAttachment(m.rawContent,m.messageType,m.status??0); },
-    start() { void sync(); void connect(); }, poll() { if(!closed && !busy && !error && now()-recentAt>=15000) void sync(); }, resume() { if (!closed) { if (!['connected', 'connecting'].includes(push)) { stopSocket?.(); clearTimeout(reconnect); void connect(); } void sync(true); } },
+    reviewedReceipts(){indexOutbox(store.get().outbox);return reviewed;},
+    reviewedProofs(){
+      const state=store.get();indexOutbox(state.outbox);
+      return reviewed.flatMap(receipt=>{
+        const entry=state.outbox[receipt.requestId],thread=state.threads[entry.threadId];
+        return thread?.type===1?[{...receipt,threadId:thread.id,peer:thread.peer,fingerprint:entry.fingerprint}]:[];
+      });
+    },
+    start() { void sync(); void connect(); }, poll() { if(!closed && !busy && !error && now()-recentAt>=15000) void sync();void reviewPendingMessage(); }, resume() { if (!closed) { if (!['connected', 'connecting'].includes(push)) { stopSocket?.(); clearTimeout(reconnect); void connect(); } void sync(true); } },
     close() { closed = true; resumeRequested=false;messageIndex.clear();clearTimeout(reconnect); clearTimeout(catchupTimer);try{stopSocket?.();}catch(e){report('close',e);}try{transport.close();}catch(e){report('close',e);}return store.drain?.(); },
     arm() { if (push !== 'connected') throw Error('请等待抖音推送通道连接成功后再验证'); marker = { text: `远效接收验证-${crypto.randomBytes(3).toString('hex')}`, at: now(), existing: new Set(Object.keys(store.get().messages)) }; verifiedAt = undefined; return marker.text; },
     status() { const state = store.get(), ts = messageIndex.get(state).resolved, done = ts.filter(t => t.history.done && (!t.catchup || t.catchup === '0')).length;

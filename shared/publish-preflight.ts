@@ -4,7 +4,7 @@ import { publishPlatformFields, bilibiliCreationDeclarations } from './publish-p
 import { publishMediaSupportError } from './publish-capabilities';
 
 type Media = { id: string; mediaType: 'image' | 'video'; files: { name: string; size: number }[] };
-export type PublishPreflightTarget = { account: Pick<PlatformAccount, 'id' | 'nickname' | 'platform' | 'connectorSessionId'>; config: PublishConfig; media?: Media; item?: number };
+export type PublishPreflightTarget = { account: Pick<PlatformAccount, 'id' | 'nickname' | 'platform' | 'connectorSessionId'>; config: PublishConfig; media?: Media; expectedMediaType?: Media['mediaType']; item?: number };
 export interface PublishPreflightIssue { field: string; message: string; accountId?: string; accountName?: string; platform?: PlatformAccount['platform']; item?: number }
 
 // Admission rules for publishing, not draft saving. Incomplete drafts remain
@@ -12,7 +12,7 @@ export interface PublishPreflightIssue { field: string; message: string; account
 export function collectPublishPreflight(targets: PublishPreflightTarget[], item?: number, now = Date.now()): PublishPreflightIssue[] {
   if (!targets.length) return [{ field: 'account', message: '请至少选择一个已绑定账号', item }];
   if (targets.length > 100) return [{ field: 'account', message: `本次有${targets.length}个发布任务，一次最多100个，请减少作品或账号` }];
-  return targets.flatMap(({ account, config, media, item: targetItem }) => {
+  return targets.flatMap(({ account, config, media, expectedMediaType, item: targetItem }) => {
     const issues: PublishPreflightIssue[] = [];
     const add = (field: string, message: string) => issues.push({ field, message, accountId: account.id, accountName: account.nickname || '未命名账号', platform: account.platform, item: targetItem ?? item });
     const schema = publishPlatformFields[account.platform];
@@ -37,6 +37,7 @@ export function collectPublishPreflight(targets: PublishPreflightTarget[], item?
     if (config.covers && (config.covers.length > 2 || new Set(config.covers.map(cover => cover.index)).size !== config.covers.length || config.covers.some(cover => !cover.id || !cover.name || ![1,2].includes(cover.index)))) add('covers', '封面选择已失效或封面序号重复，请重新选择');
     if (!media?.id || !['image','video'].includes(media.mediaType) || !media.files.length || media.files.length > (media.mediaType === 'video' ? 1 : 9)) add('media', '请选择一个视频或1至9张图片');
     else {
+      if (expectedMediaType && media.mediaType !== expectedMediaType) add('media', expectedMediaType === 'video' ? '本条应使用视频，请重新选择视频素材' : '本条应使用图文，请重新选择图片素材');
       const unsupported = publishMediaSupportError(account.platform, media.mediaType);
       if (unsupported) add('media', unsupported);
       if (media.files.some(file => !Number.isFinite(file.size) || file.size <= 0 || !(media.mediaType === 'video' ? /\.(mp4|mov|webm|mkv)$/i : /\.(png|jpe?g|webp)$/i).test(file.name))) add('media', '素材为空或格式不支持，请重新选择视频或图片');

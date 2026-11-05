@@ -7,7 +7,7 @@ const {OutreachBatchController}=require('./vendor/hengyuan-interactions/src/outr
 const {FanFollowupStore}=require('./vendor/hengyuan-interactions/src/fan-followup.cjs');
 const {OperationsDirectory}=require('./account-operations-directory.cjs');
 const {OwnFanBatchPlan}=require('./own-fan-batch-plan.cjs');
-function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,reserve,release,canRun,canWrite,beforeClaim=()=>{},authorizeAutomatic=()=>false,verifyAutomaticSource=async()=>{throw Error('自动规则来源核验尚未接通');},now=Date.now}){
+function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,reserve,release,canRun,canWrite,beforeClaim=()=>{},onObserved=()=>{},authorizeAutomatic=()=>false,verifyAutomaticSource=async()=>{throw Error('自动规则来源核验尚未接通');},now=Date.now}){
  let closed=false,tasks,followup,previewEpoch=0,pendingPreviewAccounts=null;const fail=message=>{throw Error(message);};
  const binding=id=>{studio.getAccount(id);return dom.manager.control.bindings[id]||null;};
  const fans=new OperationsDirectory({studio,getBinding:binding});
@@ -15,6 +15,17 @@ function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,rese
  tasks=new OutreachStore({studio,interactions:store,fans,getFollowup:options=>followup.snapshot(options),getBinding:binding,now});
  const begin=tasks.beginSend.bind(tasks);tasks.beginSend=(id,options)=>{const deadline=dom.proxy.currentOperation()?.intentExpiresAt;if(!Number.isSafeInteger(deadline)||deadline<=now())fail('本条协作发送准备已过期，尚未领取或提交');const selected=tasks.get(id);if(selected.origin==='own-fan'&&(!['running','waiting'].includes(fanPlan.plan?.status)||fanPlan.plan?.taskId!==id))fail('本人粉丝任务需从原计划按间隔继续');beforeClaim(selected.accountId);return begin(id,options);};
  const manager=new OutreachManager({studio,tasks,createWindow:dom.proxy.createWindow,now});
+ manager.deferReceipt=probe=>dom.queueReceiptReview('outreach/'+probe.id,async()=>{
+  if(closed)return true;
+  const before=tasks.get(probe.id);
+  if(before.status!=='unknown'||before.claimedAt!==probe.claimedAt)return true;
+  const result=await probe.read();
+  if(closed)return true;
+  if(!result?.ok||result.failure||typeof result.receipt!=='string'||!/^platform:\S+$/.test(result.receipt))return false;
+  tasks.confirmObserved(probe.id,{claimedAt:probe.claimedAt,receipt:result.receipt});
+  batch.reconcileObservedTask(probe.id);fanPlan.reconcileObservedTask(probe.id);onObserved(probe.id);
+  await finalize(probe.id);return true;
+ });
  const execute=manager.execute.bind(manager);manager.execute=(page,script,options={})=>dom.proxy.withOperation(options.operationName||'probe',()=>execute(page,script,options),{accountId:page.accountId,outreachId:page.id});
  const run=manager.run.bind(manager);manager.run=(page,op,payload={},options)=>dom.proxy.withOperation(op,()=>run(page,op,payload,options),{accountId:page.accountId,outreachId:page.id,...(payload.recipientId?{recipientId:payload.recipientId}:{})});
  function sync(input){dom.registerNativeIdentity(input.primaryAccountId,input.ownerIdentity,input.nativeDirectoryProof?.verifiedAt);dom.registerNativeIdentity(input.accountId,input.readerIdentity,input.nativeDirectoryProof?.verifiedAt);const page=fans.merge(input),history=followup.snapshot(),ids=new Set(page.items.map(f=>f.id));return{...page,contactRecords:history.records.filter(r=>ids.has(r.fanId)),coverage:history.coverage};}
@@ -77,7 +88,7 @@ function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,rese
   async canOperation(context){
    if(closed)fail('协作服务已停止');const task=tasks.get(context.outreachId);studio.getAccount(task.accountId);if(task.accountId!==context.accountId||context.claimId&&context.claimId!==task.id)fail('协作原账号、任务或领取凭据已变化');
    const attempt=store.getExternalAttempt(task.id);if(context.operation==='finalize'){const receipt=task.receipt;return{settled:Boolean(attempt)&&(task.status==='sent'&&(typeof receipt==='string'&&/^platform:\S+$/.test(receipt)||Boolean(task.resolvedAt))||task.status==='failed'&&(task.failure?.outcome==='not-sent'&&['commit','receipt'].includes(task.failure.stage)||Boolean(task.resolvedAt)))};}
-   if(context.operation==='receipt'&&task.status==='sending'&&context.claimId===task.id&&attempt)return{allowed:true};
+   if(context.operation==='receipt'&&!context.write&&['sending','unknown'].includes(task.status)&&context.claimId===task.id&&attempt)return{allowed:true};
    if(!['review','sending'].includes(task.status)||store.getPolicy().paused||!canWrite(task.id))fail('协作任务已结束、暂停或批次已停止，未继续操作');
    if(context.write){if(task.origin==='own-fan'&&(!['running','waiting'].includes(fanPlan.plan?.status)||fanPlan.plan?.taskId!==task.id))fail('本人粉丝计划已暂停或对象已变化');if(!Number.isSafeInteger(context.intentExpiresAt)||context.intentExpiresAt<=now())fail('协作发送确认已过期，未继续提交');if(task.status!=='sending'||!attempt||context.claimId!==task.id)fail('协作发送缺少持久领取记录');await refreshTask(task);if(batch.snapshot()?.executionKind==='keyword-rule'&&batch.active)await verifyAutomaticSource(task);if(!canWrite(task.id))fail('协作批次已停止，未提交');tasks.assertCanCommit(task.id,{recipientId:context.recipientId});}
    return{allowed:true};
@@ -123,6 +134,11 @@ function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,rese
  }
  function closeAccount(id){if(fanPlan.plan?.accountId===id)fanPlan.pause('原账号连接已关闭，保留进度');if(pendingPreviewAccounts?.has(id))invalidatePreview();batch.stopAccount(id);manager.closeAccount(id);fans.closeAccount(id);}
  function close(){fanPlan.pause('互动已关闭，保留进度');closed=true;invalidatePreview();batch.stop('应用已退出，旧批次不会自动续发');manager.shutdown();}
- return{fanPlan,command,sync,tasks,followup,fans,batch,manager,closeAccount,close,idle:()=>batch.idle(),get active(){return batch.active;},snapshot:query=>({...studio.outreachPage(query),batch:batch.snapshot()})};
+ function reconcileSummaries(){
+  if(closed||batch.active)return;
+  for(const failure of batch.snapshot()?.failures||[])if(failure.outcome==='unknown')batch.reconcileObservedTask(failure.taskId);
+  if(fanPlan.plan?.taskId)fanPlan.reconcileObservedTask(fanPlan.plan.taskId);
+ }
+ return{fanPlan,command,sync,tasks,followup,fans,batch,manager,closeAccount,close,idle:()=>batch.idle(),get active(){return batch.active;},snapshot:query=>{reconcileSummaries();return{...studio.outreachPage(query),batch:batch.snapshot()};}};
 }
 module.exports={createOutreachRuntime};

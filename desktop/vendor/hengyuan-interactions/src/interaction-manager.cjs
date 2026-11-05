@@ -1290,7 +1290,7 @@ class InteractionManager {
     const sendLease = { id, source, connection, epoch: this.serviceGeneration };
     this.activeSends.set(reply.accountId, sendLease);
     connection.busy = source.busy = true;
-    let claimed = false, commitStarted = false, welcomePage = null, welcomeWindow = null;
+    let claimed = false, commitStarted = false, welcomePage = null, welcomeWindow = null, receiptProbe;
     const generation = connection.generation, sourceGeneration = source.generation;
     const checkReplyState = () => {
       if (this.interactions.getPolicy().paused || this.interactions.getReply(id).status !== (claimed ? 'sending' : 'queued')) throw new Error('回复已暂停、取消或结束，未继续发送');
@@ -1376,6 +1376,12 @@ class InteractionManager {
       const filled = await run('send', payload); check();
       if (!filled?.ok) throw new Error(filled?.detail || '无法填写回复');
       if (filled.needsNativeInput) throw new Error('旧式跨页面输入已停用，请更新内置页面适配器');
+      const originalReceiptPayload={threadId,replyText:claim.reply.replyText,before:filled.before,replyTo:filled.replyTo,claimedAt:claim.reply.claimedAt,...(welcome?{...routing,message:claim.message,beforeClientIds:filled.beforeClientIds}:{})};
+      receiptProbe={id,accountId:reply.accountId,claimId:claim.reply.claimId,text:claim.reply.replyText,
+        dispose:()=>welcomePage?.close({preserve:this.interactions.getReply(id).status!=='sent'}),read:async()=>{
+        this.assertCurrent(connection,generation);
+        return welcomePage?welcomePage.run('receipt',originalReceiptPayload):this.runPage(connection,'receipt',originalReceiptPayload);
+      }};
       await this.waitForPage(120); check();
       this.interactions.assertCanCommit(id);
       if (!batchAuthorization && !commentPrivate) commitStarted = true;
@@ -1420,9 +1426,10 @@ class InteractionManager {
     } finally {
       let unknown = true;
       try { unknown = ['sending', 'unknown'].includes(this.interactions.getReply(id).status); } catch { /* Preserve uncertain work. */ }
+      const deferred=unknown&&receiptProbe&&commitStarted&&this.deferReceipt?.(receiptProbe);
       // Submission is not delivery. Keep the actual page until an uncertain
       // result can be reconciled, even if its composer is already empty.
-      try { await welcomePage?.close({ preserve: unknown }); }
+      try { if(!deferred)await welcomePage?.close({ preserve: unknown }); }
       finally {
         if (welcomeWindow) {
           this.welcomePages.retain(welcomeWindow, { unknown });

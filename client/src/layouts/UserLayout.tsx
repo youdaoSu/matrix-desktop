@@ -93,7 +93,7 @@ const topMenuItems: TopMenuItem[] = [
       {
         label: '内容发布',
         items: [
-          { to: '/publish/create', label: '发单条视频', icon: PlaySquare },
+          { to: '/publish/create', label: '发单条作品', icon: PlaySquare },
           { to: '/publish/batch-video', label: '批量发视频', icon: ListVideo },
           { to: '/publish/batch-image', label: '批量发图文', icon: FileText },
         ],

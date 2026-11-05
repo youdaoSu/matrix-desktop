@@ -104,6 +104,18 @@ async function runEditorTests() {
     batchButton().click();await until(() => resolveLate,'route check pending');
     fixture.path='/publish/batch-image';render();await sleep();resolveLate({valid:true});await sleep();
     assert.equal(fixture.starts.length,0);assert.equal(fixture.navigations.length,0);assert.equal(batchButton().disabled,false);assert.equal(fixture.toasts.length,0);checks+=4;
+    const image = id => ({ id,mediaType:'image',files:[{name:`${id}-1.png`,size:1000},{name:`${id}-2.jpg`,size:1000}] });
+    await mount('/publish/create', { 'single:selected':[account.id],'single:common':config('QA 单条图文'),'single:media-type':'image','single:media':image('qa-single-image') });
+    singleButton().click();await until(()=>fixture.starts.length===1,'single image admitted');
+    assert.deepEqual(fixture.starts[0].requests.map(item=>item.media),[image('qa-single-image')]);checks++;
+    await mount('/publish/batch-image', { 'batch-image:selected':[account.id],'batch-image:rows':[row('qa-wrong-video','QA 错误类型')] });
+    batchButton().click();await until(()=>/本条应使用图文/.test(errorText()),'reject wrong material before preflight');
+    assert.equal(fixture.starts.length,0);assert.equal(fixture.mediaChecks.length,0);checks+=2;
+    const imageRows = ['qa-first-image','qa-second-image'].map(id=>({...row(id,id),media:image(id)}));
+    await mount('/publish/batch-image', { 'batch-image:selected':[account.id],'batch-image:rows':imageRows });
+    batchButton().click();await until(()=>fixture.starts.length===1,'batch image admitted');
+    assert.deepEqual(fixture.starts[0].groups.map(group=>group.map(item=>item.media)),imageRows.map(item=>[item.media]));
+    assert.deepEqual(fixture.navigations,[['/publish/tasks']]);checks+=2;
     await mount('/publish/create', { 'single:selected':[account.id],'single:common':config('QA 取消后保留'),'single:media':media('qa-cancel') });
     fixture.validate=()=>new Promise(resolve=>{resolveLate=resolve;});resolveLate=undefined;
     singleButton().click();await until(()=>resolveLate && findButton(/^取消检查$/),'cancel control available');

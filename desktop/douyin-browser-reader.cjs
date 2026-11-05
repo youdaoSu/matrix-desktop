@@ -340,7 +340,7 @@ function createBrowserReader({ createWindow, now = Date.now, idleMs = 120000, ti
   // Identity-only leases keep the page and its continuation but need timers
   // only while a read is actually outstanding. Avatar work shares this page.
   const updateActivity=r=>setReaderActive(r.win,!!r.avatarActive||(r.activeReads||0)>0||!!r.busy&&!r.passiveLease);
-  const records = new Map(), opening = new Set(); let quitting = false,collectorGeneration=0;
+  const records = new Map(), opening = new Set(), identityWaiters = new Map(); let quitting = false,collectorGeneration=0;
   // A normal browser execution world, not preload world 999 and not a new
   // session/device. Same origin, cookies, sandbox and read-only webRequest
   // policy; no access to website SDKs, signatures, closures or auth options.
@@ -360,7 +360,35 @@ function createBrowserReader({ createWindow, now = Date.now, idleMs = 120000, ti
     if(r.traceToken&&!r.closed){try{const token=r.traceToken,code=`(()=>{const value=window.__matrixReaderProgress;return value?.token===${JSON.stringify(token)}?{phase:value.phase}:null})()`;const sample=await Promise.race([r.win.webContents.executeJavaScript(code,false),new Promise(resolve=>{probeTimer=setTimeout(()=>resolve(null),250);})]);if(!settled&&sample&&Object.hasOwn(stageNames,sample.phase))r.readStage=sample.phase;}catch{}finally{clearTimeout(probeTimer);}}
     if(settled)return;const diagnostic=requestDiagnostic(r);dispose(r);reject(Error(`抖音${phase}超时，已暂停且保留已有记录（${diagnostic}）`));
   },ms);})]);}finally{settled=true;clearTimeout(timer);clearTimeout(probeTimer);}};
-  async function acquire({ accountSession, publicHandle, assertCurrent, refreshFollowers = false, onDiagnostic, independent = false, suspendIdleIdentity = false }) {
+  // Reserve the next idle turn for an explicit identity check. Do not interrupt
+  // an active page, reset its cursor, or retry any request/platform refusal.
+  async function acquire(options) {
+    const {accountSession, assertCurrent, priorityIdentity = false} = options;
+    if(typeof priorityIdentity !== 'boolean')throw Error('抖音身份核验优先级参数无效');
+    if(!priorityIdentity){
+      if(identityWaiters.has(accountSession))throw Error('此抖音账号正在读取另一页，请稍候');
+      return acquireNow(options);
+    }
+    if(quitting)throw Error('抖音网页采集已关闭');
+    const queue=identityWaiters.get(accountSession)||[];
+    if(queue.length>=8)throw Error('该账号身份核验正在排队，请稍后继续');
+    const ticket={};queue.push(ticket);identityWaiters.set(accountSession,queue);
+    const until=now()+6000;
+    try{
+      while(true){
+        if(quitting)throw Error('抖音网页采集已关闭');
+        await assertCurrent();
+        if(queue[0]===ticket&&!opening.has(accountSession)&&!records.get(accountSession)?.busy)break;
+        if(now()>=until)throw Error('账号正在完成上一轮读取，本次核验等待已结束；尚未发送评论，请稍后重试');
+        await new Promise(resolve=>setTimeout(resolve,125));
+      }
+      return await acquireNow(options);
+    }finally{
+      queue.splice(queue.indexOf(ticket),1);
+      if(!queue.length&&identityWaiters.get(accountSession)===queue)identityWaiters.delete(accountSession);
+    }
+  }
+  async function acquireNow({ accountSession, publicHandle, assertCurrent, refreshFollowers = false, onDiagnostic, independent = false, suspendIdleIdentity = false }) {
     const useIndependent=independentReads&&independent===true;
     if(typeof suspendIdleIdentity!=='boolean')throw Error('抖音身份页活动参数无效');
     if(typeof refreshFollowers!=='boolean')throw Error('抖音粉丝刷新参数无效');

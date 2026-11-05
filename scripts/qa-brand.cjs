@@ -1,6 +1,12 @@
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..'), { brand, configureBrand } = require('../desktop/brand.cjs');
 const pkg = require('../package.json'), lock = require('../package-lock.json');
+assert.equal(pkg.build.electronVersion, pkg.devDependencies.electron, 'Builder must not infer an obsolete runtime from another dependency tree');
+assert.equal(lock.packages['node_modules/electron'].version, pkg.build.electronVersion);
+const { verify: verifyRuntime } = require('./verify-packaged-runtime.cjs');
+assert.throws(() => verifyRuntime('fixture.exe', pkg.build.electronVersion, () => ({status: 0, stdout: '33.4.11\n'})), /Packaged Electron differs/);
+assert.throws(() => verifyRuntime('fixture.exe', pkg.build.electronVersion, () => ({status: 1, stderr: 'probe failed'})), /probe failed/);
+assert.equal(verifyRuntime('fixture.exe', pkg.build.electronVersion, (exe, args, options) => { assert.equal(options.env.ELECTRON_RUN_AS_NODE, '1'); assert.equal(options.windowsHide, true); return {status: 0, stdout: pkg.build.electronVersion + '\n'}; }).applicationStarted, false);
 assert.equal(brand.name, '远效');assert.equal(pkg.build.productName, brand.name);assert.equal(pkg.build.nsis.shortcutName, brand.name);
 assert.equal(pkg.name, brand.legacyDataName);assert.equal(pkg.build.appId, brand.appId);assert.equal(pkg.build.executableName, brand.legacyExecutableName);assert.equal(lock.version, pkg.version);assert.equal(lock.packages[''].version, pkg.version);
 const main = fs.readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8');

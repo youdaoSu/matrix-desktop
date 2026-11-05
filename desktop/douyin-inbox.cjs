@@ -118,6 +118,7 @@ function registerDouyinInbox({ ipcMain, getWindow, authenticate, session, safeSt
         messages = entry.engine.messages(input.threadId, input.before);
       }
       const result = { accountId: account.id, sessionId: account.connectorSessionId, error: input.command === 'messages' ? undefined : entry.error || undefined, status: entry.engine.status(), threads: input.command === 'messages' ? undefined : entry.engine.threads(), ...messages };
+      if(input.command==='watch')result.reviewedReceipts=entry.engine.reviewedReceipts?.();
       const after = await authenticate(input.accessToken, account.id);
       if (identity(after) !== binding || connections.get(key) !== entry || entry.stopped) throw Error(entry.stopped && entry.error || '抖音账号连接已变化，未返回旧账号消息');
       return result;
@@ -136,7 +137,7 @@ function registerDouyinInbox({ ipcMain, getWindow, authenticate, session, safeSt
       // Operations use a currently verified native connection, never a caller
       // supplied recipient or a cached archive masquerading as a live session.
       const check=()=>{if(closed||!entry||entry.stopped||entry.refreshing||entry.error||connections.get(key)!==entry||entry.binding!==expected||!entry.engine||Date.now()-entry.heartbeat>30000)throw Error('同账号私信连接尚未就绪，未发送');};
-      check();return {ownUid:entry.ownUid,contactEvidence(fans){check();return entry.engine.contactEvidence(fans);},threads(){check();return entry.engine.threads();},messages(threadId){check();const t=entry.engine.threads().find(t=>t.id===threadId&&t.type===1);if(!t)throw Error('请选择当前账号的已有单聊');return entry.engine.messages(threadId).messages.filter(m=>m.contentKind==='text').map(m=>({...m,type:1}));},async send(threadId,text,requestId,beforeCommit){check();return entry.engine.sendText(threadId,text,requestId,async()=>{check();await beforeCommit();check();});}};
+      check();return {ownUid:entry.ownUid,reviewedProofs(){check();return entry.engine.reviewedProofs?.()||[];},contactEvidence(fans){check();return entry.engine.contactEvidence(fans);},threads(){check();return entry.engine.threads();},messages(threadId){check();const t=entry.engine.threads().find(t=>t.id===threadId&&t.type===1);if(!t)throw Error('请选择当前账号的已有单聊');return entry.engine.messages(threadId).messages.filter(m=>m.contentKind==='text').map(m=>({...m,type:1}));},async send(threadId,text,requestId,beforeCommit){check();return entry.engine.sendText(threadId,text,requestId,async()=>{check();await beforeCommit();check();});}};
     },
     close() { if(closeTask)return closeTask;closed=true;clearInterval(timer);for(const [key]of connections)shutdown(key);starts.clear();imageDisk.clearMemory?.();closeTask=Promise.all([...closing.values()]).then(()=>{});return closeTask; }
   };

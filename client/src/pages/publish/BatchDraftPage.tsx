@@ -30,7 +30,7 @@ const message = (error: any) => error?.response?.data?.message || error?.message
 
 export default function BatchDraftPage() {
   const { pathname, state } = useLocation();
-  const mediaType = pathname.endsWith('batch-image') ? 'image' : 'video';
+  const mediaType: 'image' | 'video' = pathname.endsWith('batch-image') ? 'image' : 'video';
   const source = `batch-${mediaType}` as 'batch-video' | 'batch-image';
   const candidate = state?.localDraft;
   const restored = useMemo(() => { const draft = normalizeLocalDraft(candidate, true); return draft?.source === source ? draft : undefined; }, [candidate, source, getAuthToken()]);
@@ -139,21 +139,27 @@ export default function BatchDraftPage() {
     await workspace.openAccount(account, 'publish', false, [draft.title, draft.content].filter(Boolean).join('\n\n'), { title: draft.title || '', body: draft.content || '' });
   };
   const importFiles = async (files: File[], target?: Row) => {
-    if (busy || !files.length || !window.matrixDesktop) return;
-    if (files.length > (mediaType === 'video' ? 50 : 9)) return toast.error(mediaType === 'video' ? '一次最多 50 个视频' : '每篇图文最多 9 张图片，不会静默截断');
-    setBusy(true);
+    if (lock.current || busy || !files.length || !window.matrixDesktop) return;
+    const limit = mediaType === 'image' ? 9 : target ? 1 : 50;
+    if (files.length > limit) return toast.error(mediaType === 'image' ? '每篇图文最多 9 张图片，不会静默截断' : target ? '替换本条作品时只可拖入一个视频；批量添加请拖到页面顶部' : '一次最多 50 个视频');
+    const current = generation.current, token = getAuthToken();
+    const stillCurrent = () => generation.current === current && currentSource.current === source && getAuthToken() === token;
+    lock.current = true; setBusy(true);
     try {
       const groups = mediaType === 'video' ? files.map(file => [file]) : [files];
       if (!target && rows.filter(row => row.media || row.title || row.content).length + groups.length > 50) throw Error('作品总数不能超过 50 条，请先移除部分作品');
       const additions: Row[] = [];
       for (const group of groups) {
         const result = await window.matrixDesktop.importMedia(group, mediaType);
+        if (!stillCurrent()) return;
         if (result.error || !result.selection) throw Error(result.error || '素材未导入');
+        if (result.selection.mediaType !== mediaType) throw Error('返回的素材类型与当前发布页面不符，请重新选择');
         additions.push({ ...newRow(), title: group[0].name.replace(/\.[^.]+$/, ''), media: result.selection });
       }
-      if (target && additions.length === 1) change(target.id, { media: additions[0].media });
+      if (target) { change(target.id, { media: additions[0].media }); setMediaPreviewRow(target.id); }
       else setRows(current => [...current.filter(row => row.media || row.title || row.content), ...additions]);
-    } catch (error) { toast.error(message(error)); } finally { setBusy(false); }
+    } catch (error) { if (stillCurrent()) toast.error(message(error)); }
+    finally { lock.current = false; if (generation.current === current) setBusy(false); }
   };
   const publishAll = async (approved = false) => {
     if (lock.current) return;
@@ -170,7 +176,7 @@ export default function BatchDraftPage() {
         const config = { title: row.title, body: row.content, topics: parseTopics(row.topics || ''), comment: row.comment || '', options: {} };
         return targets.map(account => {
           const accountConfig = withPublishPlatformDefaults(account.platform, { ...configs[account.id], ...config, options: configs[account.id]?.options || {} });
-          return { account, config: accountConfig, media: row.media, item, ...(origin ? { draft: { ...origin, rowId: row.id } } : {}) };
+          return { account, config: accountConfig, media: row.media, expectedMediaType: mediaType, item, ...(origin ? { draft: { ...origin, rowId: row.id } } : {}) };
         });
       });
       const issues = collectPublishPreflight(groups.flat());
@@ -195,6 +201,7 @@ export default function BatchDraftPage() {
         <header><strong>批量{mediaType === 'image' ? '图文' : '视频'}通用配置</strong><span>{rows.length} 条内容</span></header>
         <div className="matrix-batch-toolbar"><strong>批量操作</strong><span className="text-primary">通用</span><span>分发设置：按顺序 · 多对多</span><select aria-label="批量设置字段" value={batchField} onChange={event => setBatchField(event.target.value as typeof batchField)}><option value="title">标题</option><option value="content">简介</option><option value="topics">话题</option><option value="comment">追评</option></select><Input aria-label="批量设置内容" value={batchText} onChange={event => setBatchText(event.target.value)} placeholder="填写后应用到全部作品" /><Button size="sm" variant="outline" disabled={busy} onClick={() => setRows(current => current.map(row => ({ ...row, [batchField]: batchText, saved: false })))}>应用到全部</Button></div>
         <p className="matrix-batch-notice">本页编辑自动同步到本地草稿箱，批量视频与图文分别保存；清空本页数据会删除对应编辑草稿。任务记录与平台作品不受影响。重新打开磁盘草稿时素材需重新选择。</p>
+        <p className="matrix-batch-notice">每篇沿用单条发布的队列。不同平台并行处理，同平台按账号顺序提交。当前作品未确认时，后续作品不会上传。</p>
         {mediaType === 'video' && <div className="matrix-batch-drop" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); void importFiles(Array.from(event.dataTransfer.files)); }}><label className="matrix-file-button">添加视频<input type="file" accept=".mp4,.mov,.webm,.mkv" multiple disabled={busy} onChange={event => { void importFiles(Array.from(event.target.files || [])); event.target.value = ''; }} /></label><p>拖入视频文件到这里识别</p><small>支持一次拖入多个视频文件，每个视频一条作品</small></div>}
         {loadError && <p role="alert" className="p-2 text-destructive">{loadError}</p>}
         <div className="matrix-batch-row-list">
