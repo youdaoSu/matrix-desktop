@@ -129,7 +129,8 @@ function runProcess(file, args, options = {}) {
     child.stdout?.on('data', (data) => { output += data.toString(); });
     child.stderr?.on('data', (data) => { output += data.toString(); });
     child.once('error', reject);
-    child.once('close', (code) => {
+    // Windows PostgreSQL can keep inherited stdout and stderr pipes open after pg_ctl exits.
+    child.once(process.platform === 'win32' ? 'exit' : 'close', (code) => {
       if (code === 0) resolve(output);
       else { const error = new Error(output.trim() || `${path.basename(file)} 退出代码 ${code}`); error.exitCode = code; reject(error); }
     });
