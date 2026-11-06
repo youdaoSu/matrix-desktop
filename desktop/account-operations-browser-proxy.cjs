@@ -1,7 +1,7 @@
 // Worker-side browser facade. Private RPC only: no Electron, credentials,
 // network API, renderer IPC endpoint or arbitrary shell execution exists here.
 const {EventEmitter}=require('node:events'),{AsyncLocalStorage}=require('node:async_hooks'),{randomUUID}=require('node:crypto');
-const operations=new Set(['scan','prepare','send','commit','receipt','probe','probeComposer','activateFirst','activateFollow','activateProfileTarget','scrollProfileTargets','selectThread','switchInbox','refreshOpen','refreshSort','idlePageProbe','prepare-recipient','profile-identity','recipient-entry','recipient-navigation','recipient-cleanup','inspect-welcome']);
+const operations=new Set(['scan','prepare','send','commit','receipt','probe','probeComposer','activateFirst','activateFollow','activateProfileTarget','scrollProfileTargets','selectThread','switchInbox','refreshOpen','refreshSort','idlePageProbe','prepare-recipient','profile-identity','recipient-entry','recipient-navigation','recipient-cleanup','inspect-welcome','own-fan-follow','own-fan-follow-status']);
 function createBrowserProxy({call,getAccount,getIntent=()=>null,onError=()=>{},now=Date.now,operationTimeoutMs=10000}){
  if(typeof call!=='function'||typeof getAccount!=='function'||typeof getIntent!=='function'||typeof onError!=='function'||typeof now!=='function'||!Number.isFinite(operationTimeoutMs)||operationTimeoutMs<10||operationTimeoutMs>60000)throw Error('账号运营页面代理参数无效');
  const windows=new Map(),scope=new AsyncLocalStorage();let closed=false;
@@ -60,7 +60,7 @@ function createBrowserProxy({call,getAccount,getIntent=()=>null,onError=()=>{},n
      for(const key of ['replyId','outreachId','claimId'])if(context[key]!==undefined&&intent[key]!==undefined&&context[key]!==intent[key])throw failure('持久操作凭据已变化，旧操作取消');
      context={...context,...intent,accountId:this.accountId};
     }
-    if(payload.operation==='commit')this.lastIntent={accountId:this.accountId,replyId:context.replyId,outreachId:context.outreachId,claimId:context.claimId};
+    if(['commit','own-fan-follow','own-fan-follow-status'].includes(payload.operation))this.lastIntent={accountId:this.accountId,replyId:context.replyId,outreachId:context.outreachId,claimId:context.claimId};
    }
    const result=await this.raw(action,payload,context);this.apply(result.state);this.current(cleanup);return result.value;
   }

@@ -9,8 +9,10 @@ async function renderTests(){
  try{
  mounted.render(React.createElement(OperationsOwnFans,props));await wait();
  assert.equal(document.querySelectorAll('select option').length,2);checks++;assert.equal(calls.length,0);checks++;assert.equal(document.querySelector('option[value=owner]').textContent,'本人账号 · 抖音');checks++;
+ assert.equal(document.querySelector('[aria-label="核对全部粉丝"]').checked,true);assert.equal(document.querySelector('[aria-label="发送失败先关注"]').checked,true);checks+=2;
  input('粉丝批次发送账号','owner');await wait();input('粉丝批次文案','合成问候');await wait();input('每批粉丝人数','3');input('粉丝逐条间隔','12');input('粉丝批次间隔','120');await wait();
  button('核对未联系粉丝，不发送').click();await wait();assert.equal(calls.length,1);assert.equal(calls[0].args.batchSize,3);assert.equal(calls[0].args.intervalSeconds,12);assert.equal(calls[0].args.batchGapSeconds,120);checks+=4;
+ assert.equal(calls[0].args.scanAll,true);assert.equal(calls[0].args.followOnFailure,true);checks+=2;
  assert(document.body.textContent.includes('待核对历史 1 位'));checks++;window.confirm=()=>false;button('开始分批发送').click();await wait();assert.equal(calls.length,1);checks++;
  window.confirm=()=>true;button('开始分批发送').click();await wait();assert.equal(calls[1].command,'own-fan-start');assert.equal(calls[1].args.token,'fixed-token');checks+=2;
  data.ownFanPlan={id:'plan',accountId:'owner',status:'waiting',cursor:3,total:8,sent:2,skipped:1,remaining:5,working:false,nextAt:'2026-11-02T13:30:00Z',detail:'等待下一批',nextOffset:8};mounted.render(React.createElement(OperationsOwnFans,props));await wait();assert(document.body.textContent.includes('平台确认发送 2'));assert(document.body.textContent.includes('最早继续时间'));checks+=2;button('暂停并保留进度').click();await wait();assert.equal(calls.at(-1).command,'own-fan-pause');checks++;

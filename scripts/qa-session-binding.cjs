@@ -54,7 +54,7 @@ for (const patch of [{ value: '' }, { expirationDate: 1 }]) { assert.equal(class
   stableClock += 1; await stableRunner.run(); assert.equal(stableSaves, 1); checks++;
   await stableRunner.run(); assert.equal(stableSaves, 1); checks++;
   const returning = createAutoBinding({ ...options, persist: async () => { throw Error('binding save failed'); }, returnToLogin: async () => { returnedToLogin++; } });
-  await returning.run(); await returning.run(); assert.equal(returnedToLogin, 1); checks++;
+  await returning.run(); await returning.run(); assert.equal(returnedToLogin, 0); checks++;
   let recoveringResult = login, recoveringSaves = 0, recoveringFail = true;
   const recovering = createAutoBinding({ ...stableOptions, detect: async () => recoveringResult,
     persist: async () => { recoveringSaves++; if (recoveringFail) throw Error('server unavailable'); return { id: 'recovered' }; },

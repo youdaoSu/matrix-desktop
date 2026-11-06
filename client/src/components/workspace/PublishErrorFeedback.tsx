@@ -32,7 +32,7 @@ export function PublishErrorFeedback({ job }: { job: PublishJob }) {
       if (getAuthToken() !== token || getUser()?.id !== owner) return;
       const next = buildPublishErrorReport(job, info?.version);
       if (send) { reportOwner.current={token,id:owner};setResult('');setReport(next); }
-      else { const url = URL.createObjectURL(new Blob([JSON.stringify(next,null,2)],{type:'application/json'}));const anchor=document.createElement('a');anchor.href=url;anchor.download=`Matrix-error-${job.id.slice(0,8)}.json`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000); }
+      else { const url = URL.createObjectURL(new Blob([JSON.stringify(next,null,2)],{type:'application/json'}));const anchor=document.createElement('a');anchor.href=url;anchor.download=`YuanXiao-error-${job.id.slice(0,8)}.json`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000); }
     } catch { toast.error('错误报告生成失败，原任务未改动'); } finally { preparing.current = false; }
   };
   const submit = async () => {

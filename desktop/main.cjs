@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell, webContents } = require('electron');
 const path = require('node:path');
 require('./brand.cjs').configureBrand(app);
+app.userAgentFallback = require('./browser-user-agent.cjs').chromiumUserAgent(app.userAgentFallback, app.getName());
 const { randomBytes, randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const { spawn, spawnSync } = require('node:child_process');
@@ -90,6 +91,20 @@ const applyDesktopSettings = require('./settings.cjs').registerDesktopSettings({
 registerRecoveryMailSettings({ app, ipcMain, dialog, shell, getWindow: () => mainWindow, getAppUrl: () => appUrl });
 const testUserDataArg = process.argv.find((value) => value.startsWith('--matrix-user-data-dir='));
 if (testUserDataArg) app.setPath('userData', testUserDataArg.slice('--matrix-user-data-dir='.length));
+const platformCheckCooldown = require('./platform-check-cooldown.cjs').createPlatformCheckCooldown({ file: path.join(app.getPath('userData'), 'platform-check-cooldown.json') });
+const platformBindingGuard = require('./platform-binding-guard.cjs').createPlatformBindingGuard({
+  cooldown: platformCheckCooldown, platforms: PLATFORM,
+  notify: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('matrix:platform-binding-paused', state); },
+});
+const observedPlatformSessions = new WeakSet();
+function observePlatformSession(platform, isolated) {
+  if (observedPlatformSessions.has(isolated)) return;
+  require('./douyin-scoped-request-policy.cjs').registerScopedRequestObserver(isolated, details => {
+    const limit = platformCheckCooldown.observe(platform, details);
+    if (limit) platformBindingGuard.limitPlatform(platform, limit);
+  });
+  observedPlatformSessions.add(isolated);
+}
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) app.quit();
 
@@ -349,6 +364,9 @@ const readBilibiliProfile = require('./bilibili-profile.cjs').createBilibiliProf
   readProfile: guest => require('./official-dom.cjs').runOfficialDOM(guest, readPlatformProfile, ['bilibili'], 'matrix-account-profile'),
 });
 async function inspectPlatformSession(platform, isolatedSession, contents) {
+  observePlatformSession(platform, isolatedSession);
+  const cooldown = platformCheckCooldown.get(platform);
+  if (cooldown && contents) return { authenticated: false, profile: cooldown };
   const config = PLATFORM[platform];
   const pageUrlBefore = contents && !contents.isDestroyed() ? contents.getURL() : config.home;
   const current = new URL(pageUrlBefore);
@@ -357,6 +375,10 @@ async function inspectPlatformSession(platform, isolatedSession, contents) {
   let profile = { nickname: '', avatarUrl: '', pageUrl: config.home, title: '' };
   if (contents && !contents.isDestroyed()) {
     profile = await contents.executeJavaScript(`(${readPlatformProfile.toString()})(${JSON.stringify(platform)})`, true);
+  }
+  if (profile.rateLimited) {
+    profile = { ...profile, ...platformCheckCooldown.limit(platform) };
+    platformBindingGuard.limitPlatform(platform);
   }
   if (contents && platform === 'bilibili' && (!profile.nickname||!profile.ownIdentity?.key) && classifySession(platform, cookies, profile, pageUrlBefore).authenticated) {
     const own = await readBilibiliProfile(isolatedSession, cookies);
@@ -469,6 +491,9 @@ async function openPlatformWindow(platform, existingSessionId) {
 
   const partition = `persist:matrix-${platform}-${sessionId}`;
   const isolatedSession = session.fromPartition(partition, { cache: true });
+  const cooldown = platformCheckCooldown.get(platform);
+  if (cooldown) throw Error(cooldown.error);
+  observePlatformSession(platform, isolatedSession);
   isolatedSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 
   const win = new BrowserWindow({
@@ -488,6 +513,7 @@ async function openPlatformWindow(platform, existingSessionId) {
     const finish = async () => {
       try {
         const state = await inspectPlatformSession(platform, isolatedSession, win.webContents);
+        if (state.profile?.rateLimited) throw Error(state.profile.error || bindingProfile(state.profile, config.label).error);
         if (!state.authenticated) throw new Error(`尚未检测到${config.label}登录状态，请先完成扫码或账号登录`);
         const profile = bindingProfile(state.profile, config.label);
         if ('error' in profile) throw new Error(profile.error);
@@ -534,10 +560,13 @@ async function openPlatformWindow(platform, existingSessionId) {
 function preparePlatformSession(platform, existingSessionId) {
   const config = PLATFORM[platform];
   if (!config) throw new Error('不支持的平台');
+  const cooldown = platformCheckCooldown.get(platform);
+  if (cooldown) throw Error(cooldown.error);
   const sessionId = existingSessionId || randomUUID();
   if (!safeSessionId(sessionId)) throw new Error('本地会话标识无效');
   const partition = `persist:matrix-${platform}-${sessionId}`;
   const isolatedSession = session.fromPartition(partition, { cache: true });
+  observePlatformSession(platform, isolatedSession);
   isolatedSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'clipboard-sanitized-write');
   });
@@ -558,6 +587,11 @@ async function completeEmbeddedPlatformLogin(input) {
   if (contents.session !== expectedSession) {
     return { error: '当前页面与所选账号会话不一致，请重新打开' };
   }
+  if (input.binding === true) {
+    platformBindingGuard.track(input.platform, input.sessionId, contents);
+    const limit = platformCheckCooldown.get(input.platform);
+    if (limit) return limit;
+  }
   let currentUrl;
   try {
     currentUrl = new URL(contents.getURL());
@@ -570,7 +604,9 @@ async function completeEmbeddedPlatformLogin(input) {
   }
   try {
     const state = await inspectPlatformSession(input.platform, expectedSession, contents);
-    if (state.profile?.accountIssue) return bindingProfile(state.profile, config.label);
+    const limit = platformCheckCooldown.get(input.platform);
+    if (input.binding === true && limit) return limit;
+    if (state.profile?.accountIssue || state.profile?.rateLimited) return bindingProfile(state.profile, config.label);
     if (!state.authenticated) {
       return { error: `尚未检测到${config.label}登录状态，请先在上方官方页面完成扫码或账号登录`, loginRequired: true };
     }
@@ -603,7 +639,17 @@ ipcMain.handle('matrix:prepare-platform-login', (_event, input) => {
     return { error: error instanceof Error ? error.message : String(error) };
   }
 });
-ipcMain.handle('matrix:complete-platform-login', (_event, input) => completeEmbeddedPlatformLogin(input));
+ipcMain.handle('matrix:complete-platform-login', (event, input) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return { error: '只允许远效主窗口核验本机会话' };
+  return completeEmbeddedPlatformLogin(input);
+});
+ipcMain.handle('matrix:end-platform-binding', (event, input) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  if (!PLATFORM[input?.platform] || !safeSessionId(input?.sessionId) || !Number.isInteger(input?.webContentsId)) return;
+  const contents = webContents.fromId(input.webContentsId);
+  if (!contents || contents.isDestroyed() || contents.getType() !== 'webview' || contents.session !== session.fromPartition(`persist:matrix-${input.platform}-${input.sessionId}`)) return;
+  platformBindingGuard.end(contents, input.sessionId);
+});
 ipcMain.handle('matrix:check-platform-session', (event, input) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return { healthy: false, message: '只允许远效主窗口检查本机会话' };
   return checkPlatformSession(input);
@@ -616,7 +662,7 @@ const authenticateDesktop = require('./desktop-authentication.cjs').createDeskto
   getSession:()=>mainWindow.webContents.session,
 });
 const edgeEmbed = require('./edge-embed.cjs').registerEdgeEmbed({ ipcMain, getWindow: () => mainWindow, authenticate: authenticateDesktop,
-  userData: app.getPath('userData'), helperPath: app.isPackaged ? path.join(process.resourcesPath, 'edge-host', 'MatrixEdgeHost.exe') : path.join(__dirname, '..', '.desktop-runtime', 'edge-host', 'MatrixEdgeHost.exe') });
+  userData: app.getPath('userData'), helperPath: app.isPackaged ? path.join(process.resourcesPath, 'edge-host', 'YuanXiaoEdgeHost.exe') : path.join(__dirname, '..', '.brand-runtime', 'edge-host', 'YuanXiaoEdgeHost.exe') });
 require('./bilibili-interactions.cjs').registerBilibiliInteractions({ ipcMain, getWindow: () => mainWindow, authenticate: authenticateDesktop, session });
 const followerLayoutProbe=require('./douyin-follower-layout-probe.cjs').createFollowerLayoutProbe({directory:app.getPath('logs'),version:app.getVersion()});
 const douyinPublicAssetManifest=require('./douyin-public-asset-manifest.cjs').createPublicAssetManifest({directory:app.getPath('logs'),version:app.getVersion()});
@@ -645,7 +691,7 @@ const douyinInbox = require('./douyin-inbox.cjs').registerDouyinInbox({ ipcMain,
 const operationsBrowserServices=require('./account-operations-native-browser.cjs').createOperationsBrowserServices({BrowserWindow,session,getInbox:()=>douyinInbox,acquireDouyinIdentity:douyinBrowserReader.acquire});
 accountOperations=require('./account-operations.cjs').registerAccountOperations({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,safeStorage:require('electron').safeStorage,userData:app.getPath('userData'),getInbox:()=>douyinInbox,getInteractions:()=>douyinInteractions,...operationsBrowserServices,paused:()=>windowInteractionLease.paused()});
 require('./douyin-public-emoji.cjs').registerPublicEmoji({ipcMain,getWindow:()=>mainWindow});
-const accountHealth=require('./account-health.cjs').registerAccountHealth({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,session,platforms:PLATFORM,inspectPlatformSession,inspectNative:hasNativeWechat ? edgeEmbed.inspectAccountProfile : undefined,diagnostics:douyinDiagnostics,
+const accountHealth=require('./account-health.cjs').registerAccountHealth({ipcMain,getWindow:()=>mainWindow,authenticate:authenticateDesktop,session,platforms:PLATFORM,inspectPlatformSession,inspectNative:hasNativeWechat ? edgeEmbed.inspectAccountProfile : undefined,diagnostics:douyinDiagnostics,platformCheckCooldown,observePlatformSession,
   prepareReadContext:require('./douyin-profile-context.cjs').createProfileContext(),
   readDouyinIdentity:require('./douyin-profile-preload.cjs').readObservedIdentity,
   readDouyinPublishIdentity:options=>require('./douyin-publish-identity.cjs').readPublishIdentity(options,douyinBrowserReader.acquire),
@@ -685,6 +731,8 @@ const oneClickComments=require('./one-click-comments.cjs').registerOneClickComme
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
   try {
+    try { require('./brand.cjs').migrateLegacyAutoStart(app); }
+    catch { console.warn('远效开机启动入口未完成更新，请在设置中重新保存开机启动选项'); }
     await startPackagedServer();
     if (app.isQuitting) return;
     mainWindow = createMainWindow();

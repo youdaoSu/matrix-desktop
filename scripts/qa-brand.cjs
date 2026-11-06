@@ -8,7 +8,7 @@ assert.throws(() => verifyRuntime('fixture.exe', pkg.build.electronVersion, () =
 assert.throws(() => verifyRuntime('fixture.exe', pkg.build.electronVersion, () => ({status: 1, stderr: 'probe failed'})), /probe failed/);
 assert.equal(verifyRuntime('fixture.exe', pkg.build.electronVersion, (exe, args, options) => { assert.equal(options.env.ELECTRON_RUN_AS_NODE, '1'); assert.equal(options.windowsHide, true); return {status: 0, stdout: pkg.build.electronVersion + '\n'}; }).applicationStarted, false);
 assert.equal(brand.name, '远效');assert.equal(pkg.build.productName, brand.name);assert.equal(pkg.build.nsis.shortcutName, brand.name);
-assert.equal(pkg.name, brand.legacyDataName);assert.equal(pkg.build.appId, brand.appId);assert.equal(pkg.build.executableName, brand.legacyExecutableName);assert.equal(lock.version, pkg.version);assert.equal(lock.packages[''].version, pkg.version);
+assert.equal(pkg.name, brand.legacyDataName);assert.equal(pkg.build.appId, brand.appId);assert.equal(pkg.build.executableName, brand.executableName);assert.equal(lock.version, pkg.version);assert.equal(lock.packages[''].version, pkg.version);
 const main = fs.readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8');
 assert(main.indexOf('configureBrand(app)') < main.indexOf('registerDesktopSettings('));assert(main.indexOf('configureBrand(app)') < main.indexOf('requestSingleInstanceLock('));
 function fixture(isPackaged, argv, expected) {
@@ -28,3 +28,12 @@ const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];let offset = 6 + sizes.leng
 sizes.forEach((size, n) => { const at = 6 + n * 16, length = ico.readUInt32LE(at + 8);assert.equal(ico[at] || 256, size);assert.equal(ico[at + 1] || 256, size);assert.equal(ico.readUInt32LE(at + 12), offset);assert.equal(ico.readUInt32LE(offset),40);assert.equal(ico.readInt32LE(offset+4),size);assert.equal(ico.readInt32LE(offset+8),size*2);assert.equal(ico.readUInt16LE(offset+14),32);assert.equal(length,40+size*size*4+Math.ceil(size/32)*4*size);offset += length; });assert.equal(offset, ico.length);
 const html = fs.readFileSync(path.join(root, 'client/index.html'), 'utf8');assert(html.includes('<title>远效</title>'));assert(!/矩效/.test(html));
 console.log(JSON.stringify({ brand: brand.name, iconFrames: sizes, existingProfilePreserved: true, upgradeIdentityPreserved: true, layoutMarks: 4, externalActions: 0 }));
+const {migrateLegacyAutoStart}=require('../desktop/brand.cjs');
+const legacy='E:\\中文 路径\\矩效 Matrix.exe',current='E:\\中文 路径\\远效.exe';
+let changes=[];
+const entry={name:brand.name,path:legacy,args:[],scope:'user',enabled:true};
+const startup=(items)=>({isPackaged:true,getPath:()=>current,getLoginItemSettings:options=>{assert.deepEqual(options,{path:legacy,args:[]});return{launchItems:items};},setLoginItemSettings:value=>changes.push(value)});
+for(const enabled of [true,false]){assert.equal(migrateLegacyAutoStart(startup([{...entry,enabled}]),'win32'),true);assert.deepEqual(changes.at(-1),{openAtLogin:true,enabled,name:brand.name,path:current,args:[]});}
+for(const patch of [{name:'another app'},{path:'E:\\other\\矩效 Matrix.exe'},{scope:'machine'},{args:['--unrecognized']},{enabled:undefined}])assert.equal(migrateLegacyAutoStart(startup([{...entry,...patch}]),'win32'),false);
+assert.equal(migrateLegacyAutoStart(startup([]),'win32'),false);assert.equal(changes.length,2);
+assert.equal(migrateLegacyAutoStart({},'darwin'),false);

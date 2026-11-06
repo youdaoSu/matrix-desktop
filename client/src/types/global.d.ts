@@ -70,6 +70,8 @@ interface MatrixDesktopCancelledResult {
 
 interface MatrixDesktopErrorResult {
   error: string;
+  rateLimited?: boolean;
+  retryAt?: number;
   pendingProfile?: boolean;
   loginLoop?: boolean;
   loginRequired?: boolean;
@@ -115,7 +117,7 @@ interface MatrixPublishVerification {
   message: string;
   checkedAt: string;
 }
-interface MatrixAccountHealth {error?:string;accountId?:string;sessionId?:string;platform?:MatrixDesktopPlatform;state?:'normal'|'offline'|'abnormal'|'banned'|'unknown';verificationRequired?:boolean;nickname?:string;avatarUrl?:string;nativeAccountKey?:string;metrics?:{followersCount?:number;followingCount?:number;likesCount?:number};metricEvidence?:import('@shared/account-metrics').AccountMetricEvidence;metricsError?:string;renamed?:boolean;checkedAt?:number;message?:string}
+interface MatrixAccountHealth {error?:string;accountId?:string;sessionId?:string;platform?:MatrixDesktopPlatform;state?:'normal'|'offline'|'abnormal'|'banned'|'unknown';verificationRequired?:boolean;rateLimited?:boolean;retryAt?:number;nickname?:string;avatarUrl?:string;nativeAccountKey?:string;metrics?:{followersCount?:number;followingCount?:number;likesCount?:number};metricEvidence?:import('@shared/account-metrics').AccountMetricEvidence;metricsError?:string;renamed?:boolean;checkedAt?:number;message?:string}
 interface MatrixPublishOutcomeObservation {startedAt:string;deadlineAt:string;checks:number;lastReason:string;lastCheckedAt?:string;finishedAt?:string;elapsedMs?:number;lastError?:string;workListLoads?:number;lastWorkListLoadAt?:string}
 interface MatrixPublishTrace {error?:string;receiptId?:string;taskId?:string;attemptId?:string;status?:string;resultSource?:string;scope?:string;evidence?:MatrixPageActionReceipt['evidence'];outcomeObservation?:MatrixPublishOutcomeObservation;items?:{sequence:number;at:string;timeInferred?:boolean;status:string;checkpoint:string;clicked?:boolean;acceptedAt?:string;resultSource:string;message:string;verification?:MatrixPublishVerification;evidence?:MatrixPageActionReceipt['evidence'];outcomeObservation?:MatrixPublishOutcomeObservation}[]}
 interface MatrixPageActionReceipt {
@@ -218,6 +220,7 @@ interface Window {
     bilibiliInteractions(input: { accessToken: string; accountId: string; kind: 'comments' | 'messages' | 'followers'; workId?: string; cursor?: string }): Promise<{ error?: string; accountId?: string; sessionId?: string; platform?: string; kind?: string; capturedAt?: string; source?: string; complete?: boolean; nextCursor?: string; total?: number; coverage?: string; records?: { platformId: string; author: string; content: string; avatarUrl?: string; displayTime?: string; unreadState?: 'unread' | 'read'; unreadCount?: number; parentPlatformId?: string; workId?: string }[] }>;
     openEdgePublishEntry(input: MatrixPageActionInput & { mediaType: 'image' | 'video' }): Promise<{ error?: string; opened?: boolean; waiting?: boolean; navigating?: boolean }>;
     onOfficialPageOpen(listener: (event: { webContentsId: number; url: string; blocked: boolean }) => void): () => void;
+    onPlatformBindingPaused(listener: (event: { webContentsId: number; rateLimited: true; retryAt: number; error: string }) => void): () => void;
     inspectPageAction(input: MatrixPageActionInput & { kind: 'publish' | 'comments' | 'messages' | 'withdraw' }): Promise<MatrixPageActionPlan | MatrixDesktopErrorResult>;
     submitPageAction(input: MatrixPageActionInput & { nonce: string; index: number }): Promise<{ error?: string; cancelled?: boolean; mayHaveSubmitted?: boolean; receipt?: MatrixPageActionReceipt }>;
     listPageActions(accessToken: string): Promise<{ error?: string; items?: MatrixPageActionReceipt[] }>;
@@ -250,7 +253,9 @@ interface Window {
       platform: MatrixDesktopPlatform;
       sessionId: string;
       webContentsId: number;
+      binding?: boolean;
     }): Promise<MatrixDesktopLoginResult | MatrixDesktopErrorResult>;
+    endPlatformBinding(input: { platform: MatrixDesktopPlatform; sessionId: string; webContentsId: number }): Promise<void>;
     checkPlatformSession(platform: MatrixDesktopPlatform, sessionId: string): Promise<{
       healthy: boolean;
       message: string;

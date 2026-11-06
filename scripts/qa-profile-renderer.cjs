@@ -16,6 +16,21 @@ app.whenReady().then(async () => {
     assert.equal(result.nickname, expected); checks++; return result;
   };
   try {
+    for (const message of ['访问太频繁，请稍后再试', '操作过于频繁，请稍后重试', '登录频繁，请稍后再试', 'Too many requests']) {
+      const limited = await fixture(`<div class="user"><span class="name">本人</span></div><div role="alert">${message}</div>`, '本人');
+      assert.equal(limited.rateLimited, true); checks++;
+      assert.equal(bindingProfile(limited, '平台').rateLimited, true); checks++;
+    }
+    const classless = await fixture('<main>' + '普通登录说明'.repeat(100) + '</main><div class="message">访问太频繁，请稍后再试</div>', '');
+    assert.equal(classless.rateLimited, true); checks++;
+    for (const html of ['<article><div role="alert">访问太频繁，请稍后再试</div></article>', '<div><article>访问太频繁，请稍后再试</article></div>', '<div role="alert" style="display:none">访问太频繁，请稍后再试</div>', '<div class="comment-item"><div class="error">访问太频繁，请稍后再试</div></div>']) {
+      const unrelated = await fixture('<div class="user"><span class="name">本人</span></div><main>' + '普通内容'.repeat(70) + '</main>' + html, '本人');
+      assert.equal(unrelated.rateLimited, undefined); checks++;
+    }
+    const shortContent = await fixture('<article>访问太频繁，请稍后再试</article>', '');
+    assert.equal(shortContent.rateLimited, undefined); checks++;
+    const errorPage = await fixture('<p>访问太频繁，请稍后再试</p>', '');
+    assert.equal(errorPage.rateLimited, true); checks++;
     await fixture('<div class="user"><span class="name">小健身 🏋️</span></div>', '小健身 🏋️');
     await fixture('<div class="user-info"><span class="name">我的账号</span></div>', '我的账号');
     await fixture('<span class="user-name" title="完整账号名称">完整账…</span>', '完整账号名称');

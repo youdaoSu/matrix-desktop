@@ -113,7 +113,7 @@ function recipientCleanupScript(profileUrl) {
 // Directory records contain a public secUID route, whereas chat models expose
 // numeric UIDs. Resolve that relationship from the exact rendered profile;
 // neither a nickname nor a newly selected chat can supply this mapping.
-function readRecipientIdentity(profileUrl, identity) {
+function readRecipientIdentity(profileUrl, identity, requireSender = false) {
   const fail = (detail, renderPending = false) => ({ ok: false, renderPending, detail });
   const pending = (stage, detail) => ({ ...fail(`${detail}（${stage}）`, true), stage });
   let expected;
@@ -157,7 +157,7 @@ function readRecipientIdentity(profileUrl, identity) {
       let fiber = keys[0] && get(element, keys[0]);
       if (!fiber) return { pending: pending(`profile-${surface}-fiber`, `粉丝主页${surface === 'title' ? '标题' : '私信入口'}组件尚未就绪`) };
       const visited = new Set(), recipients = new Set();
-      let fullContexts = 0, loginSeen = false, nearestUserSeen = false, nearestRecipientId = '', privateProfile = false;
+      let fullContexts = 0, loginSeen = false, nearestUserSeen = false, nearestRecipientId = '', privateProfile = false, senderVerified = false;
       for (let depth = 0; fiber && depth < 100 && !visited.has(fiber); depth++, fiber = get(fiber, 'return')) {
         visited.add(fiber);
         const props = get(fiber, 'memoizedProps');
@@ -193,6 +193,7 @@ function readRecipientIdentity(profileUrl, identity) {
         }
         if (own(props, 'selfInfo')) {
           if (uid(get(get(get(props, 'selfInfo'), 'info'), 'uid')) !== identity) throw new Error('粉丝主页登录账号与任务不一致');
+          senderVerified = true;
         }
         if (['currentUserInfo', 'currentUserUid', 'selfInfo'].every(field => own(props, field))) {
           if (get(props, 'isSelf') !== false) throw new Error('粉丝主页不能是发送账号自己');
@@ -200,7 +201,7 @@ function readRecipientIdentity(profileUrl, identity) {
         }
       }
       if (fiber || recipients.size > 1) throw new Error('粉丝主页组件祖先或收件人身份不一致');
-      if (recipients.size === 1 && (nearestRecipientId || (fullContexts && loginSeen))) return { recipientId: [...recipients][0], privateProfile };
+      if (recipients.size === 1 && (nearestRecipientId || (fullContexts && loginSeen)) && (!requireSender || senderVerified)) return { recipientId: [...recipients][0], privateProfile };
       return { pending: pending(`profile-${surface}-model`, `粉丝主页${surface === 'title' ? '标题' : '私信入口'}缺少可核对的身份资料`) };
     };
     const title = inspect(titles[0], 'title'), button = inspect(buttons[0], 'button');
@@ -214,10 +215,10 @@ function readRecipientIdentity(profileUrl, identity) {
   } catch (error) { return fail(error?.message || '粉丝主页身份无法核对'); }
 }
 
-function recipientIdentityScript(profileUrl, identity) {
+function recipientIdentityScript(profileUrl, identity, requireSender = false) {
   const frozenUrl = validateProfileUrl('douyin', profileUrl);
   if (typeof identity !== 'string' || !/^[1-9]\d{0,63}$/.test(identity)) throw new Error('粉丝私信缺少已核对的发送账号身份');
-  return `(${readRecipientIdentity.toString()})(${JSON.stringify(frozenUrl)},${JSON.stringify(identity)})`;
+  return `(${readRecipientIdentity.toString()})(${JSON.stringify(frozenUrl)},${JSON.stringify(identity)},${requireSender===true})`;
 }
 
 function probeRecipientEntry(profileUrl, identity, recipientId, fixedPoint, readIdentity, inspectEntry, entryOperation = 'probe') {

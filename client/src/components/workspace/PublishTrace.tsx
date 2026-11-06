@@ -28,7 +28,7 @@ export function PublishTrace({job}:{job:PublishJob}){
         workReference:job.workReference,referenceCollection:job.referenceCollection,
         workflowHistory:{source:'本机编辑器阶段记录，不单独证明平台发布成功',items:job.history.filter(item=>!job.lastAttemptAt||item.at>=job.lastAttemptAt)},
         notes:['上传100%或视频可预览不等于发布成功','点击提交不等于平台已接收','已接收或审核中不等于审核完成','缺少证据的历史记录不会补造结果','报告仅保存在本机，不自动上传开发者']};
-      const url=URL.createObjectURL(new Blob([JSON.stringify(bundle,null,2)],{type:'application/json'})),anchor=document.createElement('a');anchor.href=url;anchor.download=`Matrix-publish-trace-${job.id.slice(0,8)}.json`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      const url=URL.createObjectURL(new Blob([JSON.stringify(bundle,null,2)],{type:'application/json'})),anchor=document.createElement('a');anchor.href=url;anchor.download=`YuanXiao-publish-trace-${job.id.slice(0,8)}.json`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch{setError('溯源导出未完成，请稍后重试；原记录未改动');}finally{setExporting(false);}
   };
   const observation=trace?.outcomeObservation,status=trace?.status||job.stage;

@@ -10,16 +10,17 @@ export function createAutoBinding<T>(options: {
   waiting?(message: string): void;
   confirmationMilliseconds?: number;
   now?(): number;
-  returnToLogin?(): Promise<void>;
 }) {
   let inFlight = false, completed = false, paused = false, disposed = false;
   let stableProfile = '', stableSince = 0, sawLoginAfterFailure = false;
+  let retryAt = 0;
   const now = options.now || Date.now;
   const confirmation = options.confirmationMilliseconds ?? 3000;
   return {
     dispose() { disposed = true; },
     async run(automatic = true) {
       if (disposed || inFlight || completed || !options.isCurrent()) return;
+      if (now() < retryAt) return;
       if (!automatic && paused) { paused = false; stableProfile = ''; }
       inFlight = true;
       let saving = false;
@@ -28,6 +29,12 @@ export function createAutoBinding<T>(options: {
         if (disposed || !options.isCurrent()) return;
         if ('error' in result) {
           stableProfile = ''; stableSince = 0;
+          if (result.rateLimited) {
+            retryAt = Number.isSafeInteger(result.retryAt) && result.retryAt! > now() ? result.retryAt! : now() + 60 * 60000;
+            options.waiting?.(result.error);
+            options.failed(result.error);
+            return;
+          }
           // A profile/network error is not evidence that the official login page returned.
           if (paused && result.loginRequired === true) sawLoginAfterFailure = true;
           options.waiting?.(result.pendingProfile || result.loginLoop ? result.error : '');
@@ -53,10 +60,6 @@ export function createAutoBinding<T>(options: {
         // A quota, server or save error must not hammer the API on every poll.
         if (saving) { paused = true; stableProfile = ''; sawLoginAfterFailure = false; }
         if (!disposed && options.isCurrent() && (saving || !automatic)) options.failed(failure?.response?.data?.error?.message || failure?.response?.data?.message || failure?.message || '账号绑定失败，请重试');
-        if (saving && !disposed && options.isCurrent() && options.returnToLogin) {
-          try { await options.returnToLogin(); }
-          catch { if (!disposed && options.isCurrent()) options.failed('绑定未完成，官方登录入口打开失败，请刷新重试；原账号和会话未清除'); }
-        }
       } finally { inFlight = false; if (saving && !disposed) options.saving(false); }
     },
   };

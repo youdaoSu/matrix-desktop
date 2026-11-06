@@ -9,6 +9,10 @@ require('./qa-console-pipe.cjs').guardQaConsolePipes();
 const root = path.resolve(__dirname, '..');
 const reportPath = path.join(root, 'logs', 'publish-stability-latest.json');
 const suites = [
+  ['all-uncontacted-fans-frozen-roster-durable-exclusions-and-pacing', 'scripts/qa-own-fan-welcome.cjs'],
+  ['native-own-fan-follow-on-failure-one-retry-and-no-friend-application', 'scripts/qa-own-fan-welcome-native.cjs'],
+  ['native-binding-http200-transient-notice-unload-and-session-retention', 'scripts/qa-platform-binding-guard.cjs'],
+  ['platform-rate-limit-cooldown-restart-and-passive-binding', 'scripts/qa-platform-check-cooldown.cjs'],
   ['interaction-memory-budget-streaming-and-canceled-preview-release', 'scripts/qa-interaction-memory.cjs'],
   ['interaction-memory-account-churn-and-provider-cleanup', 'scripts/qa-interaction-memory-lifecycle.cjs'],
   ['single-work-comment-source-confirmation-durable-deduplication', 'scripts/qa-single-work-comment.cjs'],

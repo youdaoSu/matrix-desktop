@@ -210,6 +210,15 @@ function readPlatformProfile(platform, componentRoots = []) {
     const image = (owner ? [...owner.querySelectorAll(selector)] : query(selector)).find(visible);
     if (!avatarUrl && image && /^https?:/.test(image.src)) { avatarUrl = image.src; break; }
   }
+  const frequencyNotice = /^(?:(?:提示|温馨提示|安全提示)[：:]?\s*)?(?:(?:您的?|当前)?(?:访问|操作|请求|登录|获取验证码)(?:次数)?(?:过于|太|过)?频繁|请求过多|Too many requests|Rate limit(?: exceeded)?)(?:[，。！!：:\s]|$)/i;
+  const notices = query('div,span,p,[role=alert],[role=alertdialog]');
+  const contentPage = document.querySelector('article,[class*=comment],[class*=message-item],[class*=conversation],[class*=video-card],[class*=note-item]');
+  const pageMessage = !nickname && !contentPage ? normalize(document.body?.innerText || '') : '';
+  const excludedNotices = 'article,script,style,textarea,input,[contenteditable=true],[class*=comment],[class*=message-item],[class*=conversation],[class*=video-card],[class*=note-item],[data-comment-id],[data-conversation-id]';
+  const rateLimited = notices.some(element => {
+    const message = normalize(element.textContent);
+    return message && message.length <= 200 && frequencyNotice.test(message) && visible(element) && !within(element, excludedNotices) && !element.querySelector(excludedNotices);
+  }) || Boolean(pageMessage && pageMessage.length <= 200 && frequencyNotice.test(pageMessage));
   let accountIssue;
   for (const element of query('[role=alert],[role=alertdialog],[class*=account-status],[class*=accountStatus],[data-account-state]')) {
     if (!visible(element) || within(element,'article,[class*=comment],[class*=message-item],[class*=conversation],[class*=video-card],[class*=note-item]')) continue;
@@ -220,12 +229,13 @@ function readPlatformProfile(platform, componentRoots = []) {
     if (/^(?:您的|你的|当前|该|此)?(?:账号|帐号|账户)(?:状态)?异常[。！!\s]*$/.test(message)) { accountIssue = { kind: 'abnormal', message }; break; }
   }
   const verificationRequired=/^(?:验证码中间页|安全验证|Captcha(?: Verification)?)(?:\s*[-|].*)?$/i.test(document.title.trim())||query('iframe').some(frame=>visible(frame)&&/captcha|verifycenter|verify\.snssdk\.com/i.test(frame.getAttribute('src')||'')&&!within(frame,'article,[class*=comment],[class*=message-item]'));
-  return { nickname, avatarUrl, ...(ownIdentity ? { ownIdentity } : {}), ...(metrics ? { metrics } : {}), ...(accountIssue ? { accountIssue } : {}), ...(verificationRequired?{verificationRequired:true}:{}), pageUrl: location.href, title: document.title.trim(),
+  return { nickname, avatarUrl, ...(ownIdentity ? { ownIdentity } : {}), ...(metrics ? { metrics } : {}), ...(accountIssue ? { accountIssue } : {}), ...(rateLimited?{rateLimited:true}:{}), ...(verificationRequired?{verificationRequired:true}:{}), pageUrl: location.href, title: document.title.trim(),
     loginVisible: query('input').some(el => visible(el) && /密码|验证码|手机号|password|one-time-code/.test([el.type, el.placeholder, el.autocomplete].join(' '))),
   };
 }
 
 function bindingProfile(profile, label) {
+  if(profile.rateLimited)return {error:profile.error||`${label}官方提示访问频繁，自动识别已暂停，请稍后再试`,rateLimited:true,retryAt:profile.retryAt};
   if(profile.verificationRequired)return {error:`${label}官方页面要求本人验证，请在官方页面正常完成验证后再核验；未改动已有绑定`,verificationRequired:true};
   if (profile.accountIssue) return { error: `官方页面显示${label}账号状态异常：${profile.accountIssue.message}`, accountIssue: profile.accountIssue };
   if (!profile.nickname?.trim()) return { error: `已登录${label}，正在读取账号昵称。请停留在官方首页；如长时间未识别，可展开右上角头像菜单后重试。`, pendingProfile: true };

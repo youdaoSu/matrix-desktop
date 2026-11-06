@@ -1,5 +1,5 @@
 // Real WebView2 + real Matrix IPC handlers, synthetic local pages and new profiles.
-// The QA-only document handler is not compiled into the shipped MatrixEdgeHost.exe.
+// The QA-only document handler is not compiled into the shipped YuanXiaoEdgeHost.exe.
 const { app, BrowserWindow } = require('electron');
 require('./qa-console-pipe.cjs').guardQaConsolePipes({ exit: code => app.exit(code) });
 require('../desktop/audio-policy.cjs').registerSilentAudio({ app });
@@ -19,7 +19,7 @@ fs.mkdirSync(fixtureFolder);
 const helper = path.join(profile, 'MatrixEdgeHost.Qa.exe');
 const compile = spawnSync(path.join(process.env.WINDIR, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'), ['/nologo','/target:winexe','/platform:x64','/define:MATRIX_EDGE_QA', '/out:' + helper, '/r:System.Windows.Forms.dll','/r:System.Drawing.dll','/r:System.Web.Extensions.dll','/r:' + path.join(sdk,'lib/net462/Microsoft.Web.WebView2.Core.dll'),'/r:' + path.join(sdk,'lib/net462/Microsoft.Web.WebView2.WinForms.dll'),path.resolve('desktop/edge-host/MatrixEdgeHost.cs')], { windowsHide:true, encoding:'utf8' });
 if (compile.status !== 0) { console.error(compile.stdout || compile.stderr); app.exit(1); }
-for (const file of ['Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll']) fs.copyFileSync(path.resolve('.desktop-runtime/edge-host',file),path.join(profile,file));
+for (const file of ['Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll']) fs.copyFileSync(path.resolve('.brand-runtime/edge-host',file),path.join(profile,file));
 fs.writeFileSync(path.join(fixtureFolder,'home.html'), '<meta charset=utf-8><div class=finder-nickname>QA 本人视频号</div><div hidden data-svg-padding="'+ 'x'.repeat(1200000) +'"></div><div id=home-probe></div><script>document.querySelector("#home-probe").attachShadow({mode:"closed"}).innerHTML="<span>QA closed component</span>"</script><button onclick="location.href=\'/platform/post/create\'">发表视频</button>');
 const editorFixture = `<meta charset=utf-8>
 <style>body{font:14px sans-serif}input,select,button{display:block;margin:10px}img{width:80px;height:80px}.input-editor{height:80px;width:500px}#crop{display:none}#cover{width:100px;height:110px;display:none}.ant-upload{width:500px;height:80px}</style>
@@ -42,7 +42,7 @@ app.whenReady().then(async()=>{
   const call=async(name,input={})=>handlers.get('matrix:'+name)({sender:win.webContents},{accessToken:'qa-owner',...input});
   const wait=async(fn,label)=>{for(let i=0;i<100;i++){try{const result=await fn();if(result)return result;}catch{}await pause(100);}throw Error(label);};
   try {
-    const shipped = fs.readFileSync(path.resolve('.desktop-runtime/edge-host/MatrixEdgeHost.exe'));
+    const shipped = fs.readFileSync(path.resolve('.brand-runtime/edge-host/YuanXiaoEdgeHost.exe'));
     assert.equal(shipped.includes(Buffer.from('MATRIX_EDGE_QA_FIXTURES','utf16le')),false);checks++;
     assert.equal(fs.readFileSync(helper).includes(Buffer.from('MATRIX_EDGE_QA_FIXTURES','utf16le')),true);checks++;
     win=new BrowserWindow({show:false,width:1280,height:850,webPreferences:{sandbox:true,contextIsolation:true}});await win.loadURL('data:text/html,Matrix%20isolated%20native%20publish%20QA');

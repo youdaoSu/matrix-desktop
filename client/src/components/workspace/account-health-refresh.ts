@@ -33,7 +33,7 @@ export function createAccountHealthRefresh<T extends AccountIdentity>(deps: {
           try{const result=await deps.check(account);state=typeof result==='string'?result:result.state;if(typeof result!=='string'&&Number.isSafeInteger(result.minimumDelayMs)&&result.minimumDelayMs>=0)minimumDelay=Math.min(60*60000,result.minimumDelayMs);}catch{/* The check owns its own cosmetic diagnostic. */}
           if(!current())return;
           const failures=state==='unknown'?(next.get(key(account))?.failures||0)+1:0;
-          const delay=state==='normal'?5*60000:state==='unknown'?Math.min(15*60000,60000*2**Math.min(failures-1,4)):15*60000;
+          const delay=state==='normal'?30*60000:state==='unknown'?Math.min(60*60000,5*60000*2**Math.min(failures-1,4)):60*60000;
           next.set(key(account),{at:now()+Math.max(delay,minimumDelay),failures});
         },()=>current()&&!deps.paused(),2);
         if(current())deps.onFinish(initial);

@@ -1,6 +1,6 @@
 {
   "name": "fullstack-nestjs-template",
-  "version": "2.10.0-rc.338",
+  "version": "2.10.0-rc.342",
   "main": "desktop/main.cjs",
   "private": true,
   "flags": {
@@ -146,7 +146,7 @@
     "electronVersion": "44.7.2",
     "appId": "com.matrix.desktop",
     "productName": "远效",
-    "executableName": "矩效 Matrix",
+    "executableName": "远效",
     "asar": true,
     "asarUnpack": [
       "desktop/account-operations-worker.cjs",
@@ -164,7 +164,9 @@
       "desktop/account-operations-keyword-routes.cjs",
       "desktop/account-operations-keyword-quota.cjs",
       "desktop/account-operations-comment-monitor.cjs",
-      "desktop/own-fan-batch-plan.cjs"
+      "desktop/own-fan-batch-plan.cjs",
+      "desktop/own-fan-follow.cjs",
+      "desktop/own-fan-welcome-ledger.cjs"
     ],
     "directories": {
       "output": "release"
@@ -196,10 +198,10 @@
       "artifactName": "YuanXiao-${version}-Setup.${ext}",
       "extraResources": [
         {
-          "from": ".desktop-runtime/edge-host",
+          "from": ".brand-runtime/edge-host",
           "to": "edge-host",
           "filter": [
-            "*.exe",
+            "YuanXiaoEdgeHost.exe",
             "*.dll",
             "*.txt"
           ]

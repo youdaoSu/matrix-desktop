@@ -39,7 +39,7 @@ const read=input=>handler({sender:{id:1}},input);
   app.isPackaged=false;expect(!!(await read({command:'auto-start',enabled:true})).error,true);expect(autoStart,false);
   await read({command:'notify',category:'test'});expect(notifications,1);
   expect(!!(await read({command:'notify',category:'other'})).error,true);expect(notifications,1);
-  await read({command:'releases',url:'https://example.com'});expect(external,'https://github.com/youdaoSu/matrix-desktop/releases');
+  await read({command:'releases',url:'https://example.com'});expect(external,'https://github.com/youdaoSu/yuanxiao/releases');
   const exportsObject={};new Function('exports',ts.transpile(fs.readFileSync('shared/app-preferences.ts','utf8'),{module:ts.ModuleKind.CommonJS}))(exportsObject);
   expect(exportsObject.normalizePreferences({desktopAlerts:'true',startupPage:'https://example.com',maskAccountDetails:true}).desktopAlerts,false);
   expect(exportsObject.normalizePreferences({startupPage:'https://example.com'}).startupPage,'/dashboard');

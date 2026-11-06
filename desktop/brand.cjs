@@ -13,4 +13,19 @@ function configureBrand(app, argv = process.argv) {
   if (process.platform === 'win32') app.setAppUserModelId(brand.appId);
   return directory;
 }
-module.exports = { brand, configureBrand };
+// Move only our existing per-user startup entry in this installation. Keep its
+// approval state and leave other executables, arguments and machine entries alone.
+function migrateLegacyAutoStart(app, platform = process.platform) {
+  if (platform !== 'win32' || !app.isPackaged) return false;
+  const current = app.getPath('exe');
+  if (path.win32.basename(current) !== brand.executableName + '.exe') return false;
+  const previous = path.win32.join(path.win32.dirname(current), brand.legacyExecutableName + '.exe');
+  const entries = app.getLoginItemSettings({path:previous,args:[]}).launchItems || [];
+  const owned = entries.find(item => item.name === brand.name && item.scope === 'user'
+    && typeof item.path === 'string' && item.path.toLowerCase() === previous.toLowerCase()
+    && Array.isArray(item.args) && item.args.length === 0 && typeof item.enabled === 'boolean');
+  if (!owned) return false;
+  app.setLoginItemSettings({openAtLogin:true,enabled:owned.enabled,name:owned.name,path:current,args:[]});
+  return true;
+}
+module.exports = { brand, configureBrand, migrateLegacyAutoStart };

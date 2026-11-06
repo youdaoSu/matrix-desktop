@@ -11,7 +11,7 @@ app.whenReady().then(async()=>{
     win=new BrowserWindow({show:true,x:-20000,y:-20000,width:1280,height:850,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
     await win.loadURL('data:text/html,Matrix%20isolated%20native%20embedding%20QA');
     const hwnd=win.getNativeWindowHandle().readBigUInt64LE().toString();
-    const child=spawn(path.resolve('.desktop-runtime/edge-host/MatrixEdgeHost.exe'),[hwnd,path.join(profile,'edge')],{windowsHide:true,stdio:['pipe','pipe','pipe']});
+    const child=spawn(path.resolve('.brand-runtime/edge-host/YuanXiaoEdgeHost.exe'),[hwnd,path.join(profile,'edge')],{windowsHide:true,stdio:['pipe','pipe','pipe']});
     transport=createEdgeTransport(child,{timeout:15000});
     const ready=await new Promise((resolve,reject)=>{
       const stages=[];

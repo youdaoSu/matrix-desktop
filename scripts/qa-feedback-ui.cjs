@@ -9,7 +9,7 @@ async function runFeedbackUiTests(){
  stub('client/src/components/ui/dialog.tsx',{Dialog:({open,children})=>open?React.createElement('section',null,children):null,...Object.fromEntries(['DialogContent','DialogDescription','DialogFooter','DialogHeader','DialogTitle'].map(name=>[name,wrapper('div')]))});
  window.matrixDesktop={systemSettings:async()=>({version:'2.10.0-rc.67'})};
  const originalCreate=URL.createObjectURL,originalRevoke=URL.revokeObjectURL;
- const originalClick=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){assert.match(this.download,/^Matrix-error-/);};
+ const originalClick=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){assert.match(this.download,/^YuanXiao-error-/);};
  URL.createObjectURL=blob=>{exported=blob;return 'blob:qa-report';};URL.revokeObjectURL=()=>{};
  const prevent=event=>{if(event.target.tagName==='A')event.preventDefault();};document.addEventListener('click',prevent,true);
  const {PublishErrorFeedback}=loadTs('client/src/components/workspace/PublishErrorFeedback.tsx',cache,overrides);

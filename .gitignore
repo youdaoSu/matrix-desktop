@@ -4,6 +4,7 @@ node_modules/
 .desktop-deps/
 .desktop-cache/
 .desktop-runtime/
+.brand-runtime/
 
 # Production builds
 dist/

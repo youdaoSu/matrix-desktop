@@ -96,9 +96,7 @@ export function EdgeOfficialBrowser({ tab, active, nativeAccountKey, accountMana
       persist: async result => { const response = await axiosForBackend.post('/api/platform/accounts/desktop', { platform: result.platform, connectorSessionId: result.sessionId, nickname: result.nickname, avatarUrl: result.avatarUrl || undefined, nativeAccountKey:result.ownIdentity?.key, pageUrl: result.pageUrl, groupId: tab.bindingGroupId }); if (!response.data?.data?.id) throw Error('账号保存结果不完整'); return response.data.data; },
       detected: result => { setBindingStatus(`已识别：${result.nickname}`); setError(''); },
       saved: (result, account) => { const userId = getUser()?.id; if (userId) recordAccountObservation(userId, account, { state: 'normal', reason: '已完成稳定的本人官方登录识别并保存绑定', checkedAt: Date.now() }); callbacks.current.update(tab.id, { nickname: result.nickname, binding: false, accountId: account.id }); window.dispatchEvent(new Event('matrix:accounts-updated')); toast.success(`已绑定视频号 ${result.nickname}`); },
-      failed: setError, saving: setBusy, waiting: setBindingStatus,
-      returnToLogin: async () => { const result = await desktop.controlEdgeGuest({ guestId, accessToken, command: 'navigate', url: tab.url }); if (result.error) throw Error(result.error); },
-    });
+      failed: setError, saving: setBusy, waiting: setBindingStatus,    });
     runner.current = binding; void binding.run();
     const timer = window.setInterval(() => void binding.run(), 1000);
     return () => { binding.dispose(); window.clearInterval(timer); runner.current = undefined; };

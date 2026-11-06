@@ -3,7 +3,7 @@
 // independently rechecked before executing trusted imported adapter scripts.
 const {idlePageProbeScript}=require('./vendor/hengyuan-interactions/src/idle-page.cjs');
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
-const ops=new Set(['scan','prepare','send','commit','receipt','probe','probeComposer','activateFirst','activateFollow','activateProfileTarget','scrollProfileTargets','selectThread','switchInbox','refreshOpen','refreshSort','idlePageProbe','prepare-recipient','profile-identity','recipient-entry','recipient-navigation','recipient-cleanup','inspect-welcome']);
+const ops=new Set(['scan','prepare','send','commit','receipt','probe','probeComposer','activateFirst','activateFollow','activateProfileTarget','scrollProfileTargets','selectThread','switchInbox','refreshOpen','refreshSort','idlePageProbe','prepare-recipient','profile-identity','recipient-entry','recipient-navigation','recipient-cleanup','inspect-welcome','own-fan-follow','own-fan-follow-status']);
 function allowedUrl(platform,value,creation=false){
  try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.port||u.href!==value||value.length>2048)return false;
   if(platform==='douyin'){
@@ -33,6 +33,10 @@ function createBrowserHost({createWindow,getAccount,verifyOwner,verifyIntent,get
   page.win.hide();if(page.uncertain){page.retained='unknown';return false;}
   let timer;try{
    const wc=page.win.webContents,url=wc.getURL();if(wc.isLoadingMainFrame()||!allowedUrl(page.platform,url)){page.retained='loading-or-unverified';return false;}
+   if(page.followFinalized&&page.followDocument===page.documentId&&!page.win.isVisible()){
+    const frame=wc.mainFrame,clean=await wc.executeJavaScript('('+require('./own-fan-follow.cjs').discardFollowPage.toString()+')()',false);
+    if(clean===true&&!page.uncertain&&!page.win.isVisible()&&wc.mainFrame===frame&&wc.getURL()===url&&page.followDocument===page.documentId){page.releasing=true;page.win.destroy();return true;}
+   }
    const before=wc.mainFrame,probe=await Promise.race([wc.executeJavaScript(idlePageProbeScript({platform:page.platform,url}),false),new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1500);timer.unref?.();})]);
    if(page.uncertain||page.win.isDestroyed()||page.win.isVisible()||wc.getURL()!==url||wc.mainFrame!==before||probe?.ok!==true||probe.safeToClose!==true){page.retained='draft-or-unverified';return false;}
    page.releasing=true;page.win.destroy();page.retained=null;return true;
@@ -63,7 +67,7 @@ function createBrowserHost({createWindow,getAccount,verifyOwner,verifyIntent,get
    if(pagePool.size>=maxWindows)throw fail('账号运营后台页面达到资源上限；请处理保留页面后继续','MATRIX_PAGE_CAPACITY');
    const identity=await getExpectedIdentity(a,verified);checkDeadline(request);if(typeof identity!=='string'||!(a.platform==='douyin'?/^[1-9]\d{0,63}$/:/^[a-f0-9]{24}$/i).test(identity))throw fail('缺少与当前绑定对应的本人身份，未打开页面','MATRIX_BINDING_CHANGED');
    await owner(null,request);if(pages.has(request.windowId)||pagePool.size>=maxWindows)throw fail('后台页面或资源名额已变化，请稍后继续','MATRIX_PAGE_CAPACITY');const win=createWindow({account:verified,platform:a.platform,background:payload.background});
-   page={id:request.windowId,accountId:a.id,platform:a.platform,binding:a.binding,win,identity,documentId:0,seq:0,lastUrl:payload.url,uncertain:false,retained:null,busy:false,blocked:false};pages.set(page.id,page);pagePool.add(page);handlers(page);
+   page={id:request.windowId,accountId:a.id,platform:a.platform,channel:payload.channel,binding:a.binding,win,identity,documentId:0,seq:0,lastUrl:payload.url,uncertain:false,retained:null,busy:false,blocked:false};pages.set(page.id,page);pagePool.add(page);handlers(page);
    if(!payload.background)win.show();void win.loadURL(payload.url).catch(()=>emit(page,'did-fail-load',[-1,'官方页面载入未完成',payload.url,true]));return{value:true,state:snapshot(page)};
   }
   if(!page||page.accountId!==request.accountId)throw fail('页面不属于当前账号');
@@ -77,7 +81,7 @@ function createBrowserHost({createWindow,getAccount,verifyOwner,verifyIntent,get
   if(request.action==='finalize'){
    const context=request.context;if(!context||!page.intent||context.claimId!==page.intent.claimId||context.replyId!==page.intent.replyId||context.outreachId!==page.intent.outreachId)throw fail('页面完成回执与持久任务不一致');
    const proof=await verifyIntent({...context,accountId:page.accountId,operation:'finalize',write:false});await owner(page,request);
-   if(proof?.settled===true){page.uncertain=false;page.retained=null;page.intent=null;}
+   if(proof?.settled===true){page.uncertain=false;page.retained=null;page.intent=null;if(proof.followSettled===true){page.followFinalized=true;page.followDocument=page.documentId;}}
    return{value:!page.uncertain,state:snapshot(page)};
   }
   if(request.action==='show'||request.action==='focus'){if(request.action==='show')page.win.show();else page.win.focus();return{value:true,state:snapshot(page)};}
@@ -87,7 +91,8 @@ function createBrowserHost({createWindow,getAccount,verifyOwner,verifyIntent,get
   }
   if(request.action!=='execute'||!request.context||!ops.has(payload.operation)||payload.operation!==request.context.operation||request.context.accountId&&request.context.accountId!==page.accountId||typeof payload.code!=='string'||!payload.code||Buffer.byteLength(payload.code)>512*1024)throw fail('页面操作范围或脚本无效');
   if(page.busy)throw fail('同一账号运营页面正在执行其他操作','MATRIX_PAGE_BUSY');
-  const write=['send','commit'].includes(payload.operation),context=request.context;
+  const write=['send','commit','own-fan-follow'].includes(payload.operation),context=request.context;
+  if(['own-fan-follow','own-fan-follow-status'].includes(payload.operation)&&(page.channel!=='fan-profile'||!uuid(context.outreachId)||!uuid(context.claimId)))throw fail('普通关注必须使用已领取的专用粉丝主页');
   if(write&&(!uuid(context.replyId)&&!uuid(context.outreachId)||!uuid(context.claimId)))throw fail('页面写入缺少持久任务及领取凭据');
   if(write&&(!Number.isSafeInteger(context.intentExpiresAt)||context.intentExpiresAt<=now()||context.intentExpiresAt-now()>60000))throw fail('本条发送确认已过期，未执行页面写入','PAGE_OPERATION_TIMEOUT');
   if(write&&page.uncertain&&page.intent?.claimId!==context.claimId)throw fail('此页面有未知发送结果，需先人工核对，未处理下一条消息');
@@ -100,7 +105,7 @@ function createBrowserHost({createWindow,getAccount,verifyOwner,verifyIntent,get
    if(payload.frame&&(!frame||frame.processId!==payload.frame.processId||frame.routingId!==payload.frame.routingId||frame.url!==payload.frame.url||page.documentId!==payload.frame.documentId))throw fail('页面执行上下文已变化，旧操作未执行','MATRIX_FRAME_CHANGED');
    checkDeadline(request);
    if(write&&context.intentExpiresAt!==undefined&&context.intentExpiresAt<=now())throw fail('本条发送确认已过期，未提交','PAGE_OPERATION_TIMEOUT');
-   if(payload.operation==='commit'){page.uncertain=true;page.retained='unknown';page.intent={replyId:context.replyId,outreachId:context.outreachId,claimId:context.claimId};}
+   if(['commit','own-fan-follow','own-fan-follow-status'].includes(payload.operation)){if(payload.operation!=='own-fan-follow-status'){page.uncertain=true;page.retained='unknown';}page.intent={replyId:context.replyId,outreachId:context.outreachId,claimId:context.claimId};}
    const value=await (payload.frame?frame:wc).executeJavaScript(payload.code,false);await owner(page,request);
    if(value?.identity&&value.identity!==page.identity)throw fail('官网本人身份与绑定不一致，已停止当前操作','MATRIX_BINDING_CHANGED');
    return{value,state:snapshot(page)};

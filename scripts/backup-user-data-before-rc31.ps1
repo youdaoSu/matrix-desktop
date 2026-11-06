@@ -11,7 +11,7 @@ if ([IO.Path]::GetFullPath($matrixBackup).StartsWith($matrixBackupRoot+'\',[Stri
 if (Test-Path -LiteralPath (Join-Path $matrixData 'database\postmaster.pid')) { throw 'Close the application and database before backup' }
 # Inspect only Matrix processes. A full WMI/CIM enumeration can stall when the
 # system WMI service is busy; backup must not depend on that service responding.
-$matrixProcesses=@(Get-Process -Name '* Matrix' -ErrorAction SilentlyContinue)
+$matrixProcesses=@(Get-Process -Name '* Matrix',([string][char]0x8fdc+[char]0x6548),'YuanXiaoEdgeHost','MatrixEdgeHost' -ErrorAction SilentlyContinue)
 if ($matrixProcesses.Count -gt 0) { throw 'Matrix is still running; close it before a cold user-data backup' }
 if(Test-Path -LiteralPath $matrixBackupRoot){
   if((Get-Item -LiteralPath $matrixBackupRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Backup root must not be a link'}

@@ -302,7 +302,7 @@ export function OfficialWorkspaceProvider({ children }: { children: ReactNode })
     }, hide: () => { if (scope) setPanels(current => ({ ...current, [scope]: { activeId: scope === '/accounts' ? null : activeId, visible: scope === '/accounts' } })); },
     select, selectAccount: id => select(rememberedPages.current.get(id) || id), openPage, openAccountSite, openDouyinProfile, openAccountWork, close,
     update: (id, patch) => setTabs(current => current.map(tab => tab.id === id ? { ...tab, ...patch } : tab.parentId === id && patch.accountId ? { ...tab, accountId: patch.accountId, nickname: patch.nickname || tab.nickname } : tab)),
-  }}><DouyinInboxProvider accounts={accounts}><DouyinCommentMonitorProvider><DouyinFollowerSessions accounts={accounts} blocked={jobsLocked}><AccountOperationsRuntime accounts={accounts}/>{children}<StartupInitialization onList={setAccounts} onAccount={startupAccount} paused={jobsLocked}/><BackgroundPublishPages /><AdditionalPlatformWorkspaces bindCore={bindAccount} /></DouyinFollowerSessions></DouyinCommentMonitorProvider></DouyinInboxProvider></Context.Provider>;
+  }}><DouyinInboxProvider accounts={accounts}><DouyinCommentMonitorProvider><DouyinFollowerSessions accounts={accounts} blocked={jobsLocked}><AccountOperationsRuntime accounts={accounts}/>{children}<StartupInitialization onList={setAccounts} onAccount={startupAccount} paused={jobsLocked||tabs.some(tab=>tab.binding)}/><BackgroundPublishPages /><AdditionalPlatformWorkspaces bindCore={bindAccount} /></DouyinFollowerSessions></DouyinCommentMonitorProvider></DouyinInboxProvider></Context.Provider>;
 }
 
 // Keep guests mounted and laid out even when the user visits another module (including docs).
@@ -491,6 +491,9 @@ function ElectronOfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: b
   const [zoom, setZoom] = useState(100);
   const [detectedAccount, setDetectedAccount] = useState('');
   const [bindingStatus, setBindingStatus] = useState('');
+  const [bindingPause, setBindingPause] = useState<{ retryAt: number; error: string }>();
+  const [bindingClock, setBindingClock] = useState(Date.now());
+  const bindingLocked = Boolean(tab.binding && bindingPause && bindingPause.retryAt > bindingClock);
   const [domReady, setDomReady] = useState(false);
   const publisherOpened = useRef(false);
   useAccountInspection({ enabled: active && !tab.background && !tab.binding && !tab.parentId && tab.intent === 'manage' && accountSiteForUrl(tab.platform, url) === 'manage' && domReady && !loading,
@@ -540,12 +543,22 @@ function ElectronOfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: b
       workspaceRef.current.openPage(tab.id, event.url);
     } catch { /* A closing guest cannot open another tab. */ }
   }), [tab.id]);
+  useEffect(() => window.matrixDesktop?.onPlatformBindingPaused?.(event => {
+    if (!tab.binding) return;
+    try { if (view.current?.getWebContentsId() !== event.webContentsId) return; } catch { return; }
+    setBindingPause(event); setBindingClock(Date.now()); setLoading(false); setDetectedAccount('');
+  }), [tab.id, tab.binding]);
+  useEffect(() => {
+    if (!bindingPause) return;
+    const timer = window.setInterval(() => setBindingClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [bindingPause]);
   useEffect(() => {
     if (!tab.binding || !window.matrixDesktop) return;
     const ownerToken = getAuthToken();
     const runner = createAutoBinding<PlatformAccount>({
       isCurrent: () => Boolean(ownerToken && getAuthToken() === ownerToken),
-      detect: async () => { const owner = getUser()?.id, checkedAt = Date.now(); const result = await window.matrixDesktop!.completePlatformLogin({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId() }); if (owner && tab.accountId) recordLoginObservation(owner, { id: tab.accountId, connectorSessionId: tab.sessionId, platform: tab.platform, nickname: tab.nickname }, result, checkedAt); return result; },
+      detect: async () => { const owner = getUser()?.id, checkedAt = Date.now(); const result = await window.matrixDesktop!.completePlatformLogin({ platform: tab.platform, sessionId: tab.sessionId, webContentsId: view.current.getWebContentsId(), binding: true }); if ('error' in result && result.rateLimited) { setBindingPause({ retryAt: result.retryAt || Date.now() + 3600000, error: result.error }); setBindingClock(Date.now()); } if (owner && tab.accountId) recordLoginObservation(owner, { id: tab.accountId, connectorSessionId: tab.sessionId, platform: tab.platform, nickname: tab.nickname }, result, checkedAt); return result; },
       persist: async result => {
         const response = await axiosForBackend.post('/api/platform/accounts/desktop', { platform: result.platform, connectorSessionId: result.sessionId, nickname: result.nickname, avatarUrl: result.avatarUrl || undefined, nativeAccountKey:result.ownIdentity?.key, pageUrl: result.pageUrl, groupId: tab.bindingGroupId });
         if (!response.data?.data?.id) throw new Error('账号保存结果不完整，请重试绑定');
@@ -560,11 +573,12 @@ function ElectronOfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: b
       },
       failed: message => setError(message),
       waiting: setBindingStatus,
-      saving: setBusy,
-      returnToLogin: async () => { await view.current.loadURL(tab.url); },
-    });
+      saving: setBusy,    });
     bindingRunner.current = runner;
-    return () => { runner.dispose(); bindingRunner.current = null; };
+    return () => {
+      runner.dispose(); bindingRunner.current = null;
+      try { const webContentsId = view.current?.getWebContentsId(); if (webContentsId) void window.matrixDesktop?.endPlatformBinding?.({ platform: tab.platform, sessionId: tab.sessionId, webContentsId }); } catch { /* A destroyed guest has already released its observer. */ }
+    };
   }, [tab.id, tab.binding, tab.platform, tab.sessionId, tab.bindingGroupId]);
   const [slowLoad, setSlowLoad] = useState(false);
   useEffect(() => {
@@ -610,9 +624,16 @@ function ElectronOfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: b
     };
   }, []);
   const operate = async (action: () => void | Promise<unknown>) => {
+    if (tab.binding && bindingPause && bindingPause.retryAt > Date.now()) return;
     try { setError(''); await action(); }
     catch (e) { setError(e instanceof Error ? e.message : '页面尚未准备好，请稍后重试'); }
   };
+  const reloadOfficialPage = () => operate(async () => {
+    if (tab.binding && bindingPause) {
+      await view.current.loadURL(tab.url);
+      setBindingPause(undefined);
+    } else await view.current.reload();
+  });
   const changeZoom = (next: number) => operate(() => {
     const percent = Math.max(50, Math.min(150, next));
     view.current.setZoomFactor(percent / 100);
@@ -620,14 +641,15 @@ function ElectronOfficialBrowser({ tab, active }: { tab: WorkspaceTab; active: b
   });
   const bind = () => bindingRunner.current?.run(false);
   return <div className="matrix-official-browser" hidden={!active}>
-    <div className="matrix-browser-toolbar"><button title="后退" aria-label="后退" disabled={!back} onClick={() => operate(() => view.current.goBack())}><ArrowLeft size={16} /></button><button title="前进" aria-label="前进" disabled={!forward} onClick={() => operate(() => view.current.goForward())}><ArrowRight size={16} /></button><button title="刷新官方页面" aria-label="刷新官方页面" onClick={() => operate(() => view.current.reload())}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button><button title="平台首页" aria-label="平台首页" onClick={() => operate(() => view.current.loadURL(tab.url))}><Home size={16} /></button><div className="matrix-address"><Globe2 size={14} /><span>{url}</span></div><div className="matrix-zoom-controls"><button aria-label="缩小官方页面" onClick={() => changeZoom(zoom - 10)}>−</button><button aria-label="重置页面缩放" onClick={() => changeZoom(100)}>{zoom}%</button><button aria-label="放大官方页面" onClick={() => changeZoom(zoom + 10)}>+</button></div><button className={helperOpen ? 'is-active' : ''} onClick={() => setHelperOpen(!helperOpen)}><Copy size={15} />文案辅助</button></div>
+    <div className="matrix-browser-toolbar"><button title="后退" aria-label="后退" disabled={!back || bindingLocked} onClick={() => operate(() => view.current.goBack())}><ArrowLeft size={16} /></button><button title="前进" aria-label="前进" disabled={!forward || bindingLocked} onClick={() => operate(() => view.current.goForward())}><ArrowRight size={16} /></button><button title="刷新官方页面" aria-label="刷新官方页面" disabled={bindingLocked} onClick={() => void reloadOfficialPage()}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button><button title="平台首页" aria-label="平台首页" disabled={bindingLocked} onClick={() => operate(() => view.current.loadURL(tab.url))}><Home size={16} /></button><div className="matrix-address"><Globe2 size={14} /><span>{url}</span></div><div className="matrix-zoom-controls"><button aria-label="缩小官方页面" onClick={() => changeZoom(zoom - 10)}>−</button><button aria-label="重置页面缩放" onClick={() => changeZoom(100)}>{zoom}%</button><button aria-label="放大官方页面" onClick={() => changeZoom(zoom + 10)}>+</button></div><button className={helperOpen ? 'is-active' : ''} onClick={() => setHelperOpen(!helperOpen)}><Copy size={15} />文案辅助</button></div>
     {tab.scope === '/accounts' && !tab.binding && !tab.background ? <AccountSiteNavigation platform={tab.platform} url={url} nickname={`${platformLabels[tab.platform]} · ${tab.nickname}`} open={site => workspace.openAccountSite(tab.id, site)} /> : <div className="matrix-intent-bar"><div><span className="is-active">{tab.binding ? '账号绑定' : intentInfo[tab.intent].label}</span></div><span>{tab.binding ? '请先完成官方登录' : `${platformLabels[tab.platform]} · ${tab.nickname}`}</span></div>}
     {active&&tab.scope==='/accounts'&&tab.platform==='douyin'&&tab.accountId&&!tab.binding&&!tab.background&&/^https:\/\/www\.douyin\.com\/(?:jingxuan\/?|user\/self\/?)?(?:[?#]|$)/.test(url)&&<div className="matrix-browser-hint"><Button variant="outline" size="sm" disabled={loading||readingFollowers||autoFollowers} onClick={()=>void readOpenFollowers()}>{readingFollowers?'正在同步已加载成员…':'同步已打开粉丝面板'}</Button>{autoFollowers?<Button variant="outline" size="sm" onClick={()=>{stopFollowers.current=true;setFollowerNote('正在暂停，将在当前页保存后停止…');}}>暂停自动同步</Button>:<><Button variant="outline" size="sm" disabled={loading||readingFollowers} onClick={()=>void syncAllFollowers()}>{followerCursor?'继续自动同步':'自动同步全部粉丝'}</Button>{followerCursor&&<Button variant="ghost" size="sm" disabled={loading||readingFollowers} onClick={()=>void syncAllFollowers(true)}>从顶部重新核验</Button>}</>}<span role="status">{followerNote||'先打开官网本人粉丝列表；自动同步会滚动此面板，可暂停。不会点击关注或移除，也不以粉丝指数代替名单人数。'}</span></div>}
-    {tab.binding ? <div className={"matrix-binding-banner " + (detectedAccount ? "is-ready" : "")}><div><strong>{detectedAccount ? `已检测到登录：${detectedAccount}` : tab.platform === "xiaohongshu" ? "小红书官方登录" : `用${tab.platform === "wechat" ? "微信" : platformLabels[tab.platform]} APP 扫描下方官方二维码`}</strong><small>{detectedAccount ? "正在进行稳定身份检查，随后自动保存；无需点击识别绑定。" : tab.platform === "xiaohongshu" ? "在下方官方页面扫码或使用其提供的登录方式；登录成功后会自动识别并绑定，无需再次点击确认。" : "手机确认登录后自动识别并绑定；二维码过期请刷新。此处是官方网页登录，不是开放平台 API 授权。"}</small></div><div><Button variant="outline" size="sm" disabled={busy} onClick={() => operate(() => view.current.reload())}><RefreshCw size={14} />刷新登录页</Button>{error && <Button size="sm" disabled={loading || busy} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? "正在绑定" : "重试自动识别"}</Button>}<button className="matrix-cancel-binding" onClick={() => workspace.close(tab.id)}>取消绑定</button></div></div> : <div className="matrix-browser-hint"><span>{operation.instruction}</span><Button variant="outline" size="sm" disabled={loading || busy} onClick={() => void openOperation()}>打开{intentInfo[tab.intent].label}页面</Button>{tab.intent !== 'manage' && <Button variant="outline" size="sm" onClick={() => setHelperOpen(true)}>文案与提交</Button>}</div>}
+    {tab.binding ? <div className={"matrix-binding-banner " + (detectedAccount ? "is-ready" : "")}><div><strong>{detectedAccount ? `已检测到登录：${detectedAccount}` : tab.platform === "xiaohongshu" ? "小红书官方登录" : `用${tab.platform === "wechat" ? "微信" : platformLabels[tab.platform]} APP 扫描下方官方二维码`}</strong><small>{detectedAccount ? "正在进行稳定身份检查，随后自动保存；无需点击识别绑定。" : tab.platform === "xiaohongshu" ? "在下方官方页面扫码或使用其提供的登录方式；登录成功后会自动识别并绑定，无需再次点击确认。" : "手机确认登录后自动识别并绑定；二维码过期请刷新。此处是官方网页登录，不是开放平台 API 授权。"}</small></div><div><Button variant="outline" size="sm" disabled={busy || bindingLocked} onClick={() => void reloadOfficialPage()}><RefreshCw size={14} />刷新登录页</Button>{error && <Button size="sm" disabled={loading || busy || bindingLocked} onClick={() => void bind()}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{busy ? "正在绑定" : "重试自动识别"}</Button>}<button className="matrix-cancel-binding" onClick={() => workspace.close(tab.id)}>取消绑定</button></div></div> : <div className="matrix-browser-hint"><span>{operation.instruction}</span><Button variant="outline" size="sm" disabled={loading || busy} onClick={() => void openOperation()}>打开{intentInfo[tab.intent].label}页面</Button>{tab.intent !== 'manage' && <Button variant="outline" size="sm" onClick={() => setHelperOpen(true)}>文案与提交</Button>}</div>}
     {tab.binding && bindingStatus && !error && <div role="status" className="matrix-browser-hint">{bindingStatus}</div>}
-    {error && <div role="alert" className="matrix-browser-error">{error}<button onClick={() => operate(() => view.current.reload())}>重试</button></div>}
+    {error && !bindingPause && <div role="alert" className="matrix-browser-error">{error}<button disabled={bindingLocked} onClick={() => void reloadOfficialPage()}>重试</button></div>}
     <div className="matrix-browser-body">{createElement('webview', { ref: view, src: tab.initialUrl || tab.url, partition: tab.partition, allowpopups: 'true', className: 'matrix-official-webview', style: { display: 'flex', width: '100%', height: '100%' } })}
-      {loading && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" onClick={() => operate(() => view.current.reload())}>重新加载</Button>}</div>}
+      {tab.binding && bindingPause && <div className="matrix-login-loading" role="status"><strong>官方登录已暂停</strong><p>检测到官网频繁访问提示，已停止这张页面的二维码轮询，登录资料保留。</p><p>{bindingLocked ? '软件保护至 ' + new Date(bindingPause.retryAt).toLocaleTimeString() + '，官网实际恢复时间以平台为准。' : '软件保护间隔已结束，可手动重新打开官方登录页。'}</p><Button variant="outline" disabled={bindingLocked} onClick={() => void reloadOfficialPage()}>重新打开官方登录页</Button></div>}
+      {loading && !bindingPause && <div className="matrix-login-loading" role="status"><Loader2 size={28} className="animate-spin" /><strong>{slowLoad ? "官方页面加载较慢" : "正在加载官方登录页…"}</strong><p>{slowLoad ? "请检查网络，或点击刷新登录页重新获取二维码。" : "正在获取官方登录入口，请稍候。"}</p>{slowLoad && <Button variant="outline" disabled={bindingLocked} onClick={() => void reloadOfficialPage()}>重新加载</Button>}</div>}
       {helperOpen && <aside className="matrix-draft-helper">
         <div><strong>文案与提交</strong><button aria-label="关闭文案辅助" onClick={() => setHelperOpen(false)}><X size={16} /></button></div>
         <p>点击官方页面的输入框，再填入文案。</p>

@@ -41,7 +41,7 @@ function registerDesktopSettings({app,ipcMain,shell,Notification,getWindow,getAp
         if(app.getLoginItemSettings().openAtLogin!==input.enabled)throw Error('Windows 未确认开机启动设置，请检查系统启动应用权限');
         return info();
       }
-      if(input.command==='releases') {await shell.openExternal('https://github.com/youdaoSu/matrix-desktop/releases');return {opened:true};}
+      if(input.command==='releases') {await shell.openExternal('https://github.com/youdaoSu/yuanxiao/releases');return {opened:true};}
       if(input.command==='notify') {
         if(!Notification.isSupported())throw Error('当前系统不支持桌面通知');
         const labels={test:['远效通知测试','桌面通知已提交给 Windows；若未显示，请检查系统通知权限与勿扰模式。'],publish:['远效发布任务更新','发布任务有新的处理结果，请在任务记录中查看。'],reminder:['远效到期待办','有待处理的个人任务，请在远效中查看。']};

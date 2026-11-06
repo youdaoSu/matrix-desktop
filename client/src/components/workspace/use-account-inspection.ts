@@ -19,6 +19,7 @@ export function useAccountInspection(input: { enabled: boolean; accountId?: stri
       pending = true; const checkedAt = Date.now(); nextCheck = checkedAt + 10000;
       try {
         const result = await boundedAccountCheck(()=>reader.current(),8000,'官方账号资料读取超时，已结束等待'); if (!current()) return;
+        if ('error' in result && result.rateLimited) { nextCheck = Math.max(Date.now() + 60 * 60000, result.retryAt || 0); recordAccountObservation(owner, identity, { checkedAt, state: 'unknown', reason: result.error }); return; }
         if ('error' in result && result.pendingProfile) { nextCheck = Date.now() + 1000; return; }
         if(!('error' in result)&&result.platform===input.platform&&result.sessionId===input.sessionId){
           const key=result.ownIdentity?.source==='official_own_homepage'?result.ownIdentity.key:undefined,sameId=Boolean(key&&key===input.nativeAccountKey);

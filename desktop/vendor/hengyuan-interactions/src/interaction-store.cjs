@@ -110,7 +110,8 @@ function externalAttempt(input) {
 }
 function linkedFollowupAttempt(child, parent) {
   const sourceFields = ['platform', 'primaryAccountId', 'channel', 'recipientId', 'sourceExternalId', 'sourceMessageId', 'sourceKind', 'sourceFanId', 'sourceChannel', 'sourceFanObservedAt', 'sourceOwnerProfileUrl', 'profileUrl', 'recipientIdAlias','nativeDirectoryProof'];
-  return child.origin === 'primary-followup' && child.followupOf === parent.id && parent.origin === undefined && parent.failure?.outcome === 'not-sent' && child.followupSourceDigest === parent.taskDigest && sourceFields.every(field => JSON.stringify(child[field]) === JSON.stringify(parent[field])) && JSON.stringify(child.followupFailure) === JSON.stringify(parent.failure);
+  const own=child.origin==='own-fan'&&parent.origin==='own-fan'&&!parent.followupOf&&child.accountId===parent.accountId;
+  return (own||child.origin === 'primary-followup'&&parent.origin===undefined) && child.followupOf === parent.id && parent.failure?.outcome === 'not-sent' && child.followupSourceDigest === parent.taskDigest && sourceFields.every(field => JSON.stringify(child[field]) === JSON.stringify(parent[field])) && JSON.stringify(child.followupFailure) === JSON.stringify(parent.failure);
 }
 function messageProfileUrl(message) {
   const url = validateProfileUrl(message.platform, message.profileUrl);
@@ -601,7 +602,7 @@ class InteractionStore {
   getExternalAttempts() { return this.#select(state => state.externalAttempts); }
   hasExternalTarget(targetKey) { return this.#select(state => state.externalAttempts.some(item => item.targetKey === targetKey)); }
   _followupExclusion(state, task, followupSource, recipientIdAlias) {
-    if (task.origin !== 'primary-followup') return null;
+    if (task.origin !== 'primary-followup'&&!(task.origin==='own-fan'&&task.followupOf)) return null;
     validatePrimaryFollowup(task, followupSource);
     const attempt = state.externalAttempts.find(item => item.id === task.followupOf);
     if (followupSource.claimedAt) {

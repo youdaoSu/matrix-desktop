@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
     ipcRenderer.on('matrix:official-page-open', handler);
     return () => ipcRenderer.removeListener('matrix:official-page-open', handler);
   },
+  onPlatformBindingPaused: listener => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on('matrix:platform-binding-paused', handler);
+    return () => ipcRenderer.removeListener('matrix:platform-binding-paused', handler);
+  },
   insertDraft: (input) => ipcRenderer.invoke('matrix:insert-draft', input),
   uploadMedia: (input) => ipcRenderer.invoke('matrix:upload-media', input),
   chooseMedia: (mediaType) => ipcRenderer.invoke('matrix:choose-media', { mediaType }),
@@ -82,6 +87,7 @@ contextBridge.exposeInMainWorld('matrixDesktop', Object.freeze({
   preparePlatformLogin: (platform, sessionId) =>
     ipcRenderer.invoke('matrix:prepare-platform-login', { platform, sessionId }),
   completePlatformLogin: (input) => ipcRenderer.invoke('matrix:complete-platform-login', input),
+  endPlatformBinding: input => ipcRenderer.invoke('matrix:end-platform-binding', input),
   checkPlatformSession: (platform, sessionId) =>
     ipcRenderer.invoke('matrix:check-platform-session', { platform, sessionId }),
   createDatabaseBackup: () => ipcRenderer.invoke('matrix:create-database-backup'),

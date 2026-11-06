@@ -11,7 +11,7 @@ process.chdir(root);
 const output = process.argv[2] || 'release';
 if (!['release', 'release-preview', 'release-next'].includes(output)) throw new Error('Unexpected package output directory');
 const packageRoot = path.join(root, output, 'win-unpacked');
-const executable = path.join(packageRoot, '矩效 Matrix.exe');
+const executable = path.join(packageRoot, '远效.exe');
 if (!fs.existsSync(executable)) throw new Error('Build the desktop package first');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-packaged-qa-'));
 const debugPort = 9392;

@@ -7,9 +7,13 @@ const {OutreachBatchController}=require('./vendor/hengyuan-interactions/src/outr
 const {FanFollowupStore}=require('./vendor/hengyuan-interactions/src/fan-followup.cjs');
 const {OperationsDirectory}=require('./account-operations-directory.cjs');
 const {OwnFanBatchPlan}=require('./own-fan-batch-plan.cjs');
+const {OwnFanWelcomeLedger,recoverable}=require('./own-fan-welcome-ledger.cjs');
+const {followScript}=require('./own-fan-follow.cjs');
 function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,reserve,release,canRun,canWrite,beforeClaim=()=>{},onObserved=()=>{},authorizeAutomatic=()=>false,verifyAutomaticSource=async()=>{throw Error('自动规则来源核验尚未接通');},now=Date.now}){
  let closed=false,tasks,followup,previewEpoch=0,pendingPreviewAccounts=null;const fail=message=>{throw Error(message);};
  const binding=id=>{studio.getAccount(id);return dom.manager.control.bindings[id]||null;};
+ const welcomeFile=path.join(directory,'own-fan-welcome.json');
+ const welcome=new OwnFanWelcomeLedger({load:()=>read(welcomeFile,true),save:value=>write(welcomeFile,value),now});
  const fans=new OperationsDirectory({studio,getBinding:binding});
  followup=new FanFollowupStore({dataDir:directory,fans,getHistory:()=>({studio:studio.snapshot(),interaction:{...store.snapshot(),externalAttempts:store.getExternalAttempts()}}),now});
  tasks=new OutreachStore({studio,interactions:store,fans,getFollowup:options=>followup.snapshot(options),getBinding:binding,now});
@@ -43,32 +47,88 @@ function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,rese
  const file=path.join(directory,'outreach-batch.json'),saved=read(file,true);
  const batch=new OutreachBatchController({tasks,manager,now,authorizeAutomatic,wait:ms=>new Promise(resolve=>setTimeout(resolve,Math.max(ms,4500))),reserve:(id,ids)=>reserve(id,ids),release:id=>release(id),cancelReservation:id=>dom.manager.cancelExternalBatch(id),loadState:()=>saved?.state??null,saveState:state=>write(file,{version:1,state})});manager.batchController=batch;
  const planFile=path.join(directory,'own-fan-plan.json');
+ const rosterFile=id=>{if(typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id))fail('粉丝名单存档编号无效');return path.join(directory,'own-fan-roster-'+id+'.json');};
  const fanPlan=new OwnFanBatchPlan({load:()=>read(planFile,true),save:value=>write(planFile,value),now,
+  saveRoster:value=>{const file=rosterFile(value.id),old=read(file,true);if(old){if(JSON.stringify(old)!==JSON.stringify(value))fail('原固定粉丝名单不允许改写');return;}write(file,value);},loadRoster:id=>read(rosterFile(id)),
   canRun:()=>!closed&&canRun()&&!batch.active&&!batch.hasPendingPreview&&!store.getPolicy().paused,
   scan:async input=>{
    const primary=studio.getAccount(input.accountId);if(primary.platform!=='douyin'||primary.role!=='primary')fail('请选择已设置为主账号的抖音账号');
-   const records=new Set(followup.snapshot().records.map(r=>r.fanId)),recipients=[];let scanned=0,excluded=0,unknown=0,total=0,fixed;
-   for(let offset=input.offset;scanned<input.scanLimit;){
-    if(closed||!canRun())fail('核对已暂停');
-    const page=await refreshFor({primaryAccountId:primary.id,accountId:primary.id,offset,limit:Math.min(50,input.scanLimit-scanned),ownFanHistory:true});sync(page);
+   const records=new Set(followup.snapshot().records.map(r=>r.fanId)),recipients=[],seen=new Set();let scanned=0,excluded=0,unknown=0,total=0,fixed,capturedAt,sourceComplete=false;
+   const maximum=input.scanAll===true?50000:input.scanLimit;
+   for(let offset=input.offset;scanned<maximum;){
+    if(closed||!canRun()||input.isCurrent&&!input.isCurrent())fail('核对已暂停');
+    const page=await refreshFor({primaryAccountId:primary.id,accountId:primary.id,offset,limit:Math.min(50,maximum-scanned),ownFanHistory:true});sync(page);
+    if(scanned&&(total!==page.total||capturedAt!==page.capturedAt))fail('核对期间粉丝名单已变化，请重新核对，未拼接两份名单');
+    if(input.scanAll===true&&page.complete!==true)fail('粉丝名单尚未完整同步，请先在账号管理完成全部粉丝同步；未把部分缓存当作所有粉丝');
+    capturedAt=page.capturedAt;sourceComplete=page.complete===true;
     const b=JSON.stringify(binding(primary.id));if(fixed&&fixed!==b)fail('核对期间账号绑定发生变化');fixed=b;total=page.total;
     if(!page.items.length)break;
-    for(const fan of page.items){const proof=page.contactHistory?.items.find(r=>r.id===fan.id&&r.uid===fan.uid);if(records.has(fan.id)||proof?.status==='contacted')excluded++;else if(proof?.status==='eligible')recipients.push(fan);else unknown++;}
+    for(const fan of page.items){if(seen.has(fan.id))fail('粉丝名单分页重复，未继续');seen.add(fan.id);const proof=page.contactHistory?.items.find(r=>r.id===fan.id&&r.uid===fan.uid);if(records.has(fan.id)||welcome.get({binding:fixed},fan)||proof?.status==='contacted')excluded++;else if(proof?.status==='eligible')recipients.push(fan);else unknown++;}
     scanned+=page.items.length;offset+=page.items.length;if(offset>=total)break;
    }
-   return{binding:fixed,recipients,scanned,excluded,unknown,nextOffset:input.offset+scanned,sourceTotal:total};
+   if(input.scanAll===true&&scanned!==total)fail('完整粉丝名单尚未核对完，未建立部分队列');
+   return{binding:fixed,recipients,scanned,excluded,unknown,nextOffset:input.offset+scanned,sourceTotal:total,sourceComplete};
   },
   check:async(plan,fan)=>{
    if(JSON.stringify(binding(plan.accountId))!==plan.binding)fail('原账号登录绑定已变化，请结束原计划后重新核对');
    const page=await refreshFor({primaryAccountId:plan.accountId,accountId:plan.accountId,ids:[fan.id],ownFanHistory:true});sync(page);
    if(JSON.stringify(binding(plan.accountId))!==plan.binding||page.items[0]?.uid!==fan.uid)fail('当前粉丝或账号身份已变化');
-   if(followup.snapshot({excludeTaskId:plan.taskId||undefined}).records.some(r=>r.fanId===fan.id))return 'contacted';
+   const task=plan.taskId?tasks.get(plan.taskId):null,mark=welcome.get(plan,fan);
+   if(mark&&!(task?.followupOf===mark.taskId&&mark.state==='followed'))return 'contacted';
+   if(followup.snapshot({excludeTaskId:plan.taskId||undefined,...(task?.followupOf?{excludeTaskIds:[task.followupOf]}:{})}).records.some(r=>r.fanId===fan.id))return 'contacted';
    return page.contactHistory?.items.find(r=>r.id===fan.id&&r.uid===fan.uid)?.status||'unknown';
   },
   createTask:(plan,fan)=>tasks.create({primaryAccountId:plan.accountId,senderAccountIds:[plan.accountId],sourceKind:'fan-directory',fanIds:[fan.id],channel:'dm',text:plan.text},{ownFans:true})[0],
+  recordSent:(plan,fan,task)=>welcome.sent(plan,fan,task),
+  recoverTask:async(plan,fan,task,isCurrent)=>{
+   if(!recoverable(task)||JSON.stringify(binding(plan.accountId))!==plan.binding)fail('原任务没有可关注后补发的明确未发送证据');
+   let record=welcome.get(plan,fan);
+   if(record?.state==='friend-required'&&record.taskId===task.id)return{state:'friend-required'};
+   if(record?.state!=='followed'){
+    record=welcome.claim(plan,fan,task);
+    let result;
+    try{
+     result=await followRecipient(plan,fan,task,record,isCurrent);
+     record=welcome.result(plan,fan,task.id,result);
+     try{await dom.proxy.finalizeIntent({accountId:task.accountId,outreachId:task.id,claimId:record.claimId});}catch{/* Keep the helper if finalization is uncertain. */}
+    }catch(error){if(welcome.get(plan,fan)?.state==='follow-claimed')welcome.result(plan,fan,task.id,{state:'unknown'});throw error;}
+    finally{result?.helper?.destroy();}
+    if(record.state==='friend-required')return {state:'friend-required'};
+   }
+   if(record.state!=='followed')fail('普通关注没有取得确定结果，不会重复关注或发送');
+   if(!isCurrent())return null;
+   const page=await refreshFor({primaryAccountId:plan.accountId,accountId:plan.accountId,ids:[fan.id],ownFanHistory:true});sync(page);
+   if(page.contactHistory?.items.find(f=>f.id===fan.id&&f.uid===fan.uid)?.status!=='eligible')fail('关注后私信历史已变化或不完整，未补发');
+   const retry=tasks.snapshot().find(t=>t.followupOf===task.id)||tasks.createOwnFanFollowup(task.id);
+   return {state:'retry-ready',task:retry};
+  },
   getTask:id=>tasks.get(id),cancelTask:id=>tasks.cancel(id),stopTask:()=>{const id=fanPlan.plan?.taskId;if(id&&batch.snapshot()?.taskIds.includes(id))batch.stop('本人粉丝计划暂停，未继续发送');},
   sendTask:async id=>{const preview=batch.preview({ids:[id]});if(preview.readyCount!==1)fail(preview.blocked[0]?.detail||'当前任务不能发送');batch.start({token:preview.token});await batch.idle();}
  });
+ async function followRecipient(plan,fan,task,claim,isCurrent){
+  const a=studio.getAccount(task.accountId),win=dom.proxy.createWindow(a,'fan-profile',task.profileUrl,{background:true});
+  const deadline=now()+30000;
+  const assert=()=>{if(closed||!isCurrent()||now()>=deadline||JSON.stringify(binding(a.id))!==plan.binding)fail('关注准备已暂停、过期或账号变化，未继续');};
+  const run=(action,operation)=>dom.proxy.withOperation(operation,async()=>{assert();const frame=win.webContents.mainFrame;if(!frame||frame.url!==task.profileUrl)fail('普通关注的当前主页文档已变化');return frame.executeJavaScript(followScript(task,fan,action),false);},{accountId:a.id,outreachId:task.id,claimId:claim.claimId,intentExpiresAt:deadline,recipientId:fan.uid});
+  const done=result=>({...result,helper:win});
+  try{
+   if(await win.ready!==true)throw win.fatal||Error('普通关注的专用主页未能建立');
+   while(win.webContents.getURL()!==task.profileUrl||win.webContents.mainFrame?.url!==task.profileUrl){assert();await new Promise(r=>setTimeout(r,100));}
+   let result=await run('inspect','own-fan-follow-status');
+   for(let attempt=0;result?.state==='identity-unverified'&&attempt<20;attempt++){await new Promise(r=>setTimeout(r,350));result=await run('inspect','own-fan-follow-status');}
+   if(result?.state==='friend-required')return done(result);
+   if(result?.state!=='can-follow')return done({state:'unknown'});
+   result=await run('follow','own-fan-follow');if(result?.state==='friend-required')return done(result);
+   if(result?.state!=='dispatched')return done({state:'unknown'});
+   for(let attempt=0;attempt<8;attempt++){await new Promise(r=>setTimeout(r,350));result=await run('inspect','own-fan-follow-status');if(result?.state==='friend-required')return done(result);if(result?.state==='following')return done({state:'followed',changed:true});if(!['can-follow'].includes(result?.state))break;}
+   return done({state:'unknown'});
+  }catch(error){win.destroy();throw error;}
+ }
+ function followClaim(context){
+  const p=fanPlan.plan,fan=p?.recipients[p.cursor],task=tasks.get(context.outreachId);
+  if(!p||!fan||task.accountId!==p.accountId||task.recipientId!==fan.id)return null;
+  const mark=welcome.get(p,fan);return mark?.taskId===task.id?mark:null;
+ }
  function invalidatePreview(){previewEpoch++;pendingPreviewAccounts=null;batch.invalidatePreview();}
  async function preparePreview(ids,finish){
   invalidatePreview();const epoch=previewEpoch;
@@ -84,9 +144,16 @@ function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,rese
  if(saved?.state&&!batch.snapshot())fail('协作批次摘要损坏，原文件保留；没有自动恢复发送');
  dom.attachOutreach({
   busyWindowIds:()=>[...manager.pages.values()].filter(p=>manager.accountOperations.has(p.accountId)||manager.busyAccounts.has(p.accountId)).map(p=>p.win.id),
-  intent(context){const task=tasks.get(context.outreachId);if(task.accountId!==context.accountId)fail('协作页面账号与冻结任务不一致');return{outreachId:task.id,...(store.getExternalAttempt(task.id)?{claimId:task.id}:{})};},
+  intent(context){const task=tasks.get(context.outreachId);if(task.accountId!==context.accountId)fail('协作页面账号与冻结任务不一致');if(['own-fan-follow','own-fan-follow-status'].includes(context.operation)){const mark=followClaim(context);if(!mark)fail('普通关注缺少持久领取记录');return {outreachId:task.id,claimId:mark.claimId};}return{outreachId:task.id,...(store.getExternalAttempt(task.id)?{claimId:task.id}:{})};},
   async canOperation(context){
-   if(closed)fail('协作服务已停止');const task=tasks.get(context.outreachId);studio.getAccount(task.accountId);if(task.accountId!==context.accountId||context.claimId&&context.claimId!==task.id)fail('协作原账号、任务或领取凭据已变化');
+   if(closed)fail('协作服务已停止');const task=tasks.get(context.outreachId);studio.getAccount(task.accountId);if(task.accountId!==context.accountId)fail('协作原账号、任务或领取凭据已变化');
+   const mark=followClaim(context);
+   if(context.operation==='finalize'&&mark?.claimId===context.claimId)return {settled:['followed','friend-required'].includes(mark.state),followSettled:true};
+   if(['own-fan-follow','own-fan-follow-status'].includes(context.operation)){
+    const assert=()=>{if(!mark||mark.claimId!==context.claimId||mark.state!=='follow-claimed'||!recoverable(task)||fanPlan.plan?.followOnFailure!==true||fanPlan.plan.taskId!==task.id||!['running','waiting'].includes(fanPlan.plan.status)||!canWrite(task.id)||store.getPolicy().paused||JSON.stringify(binding(task.accountId))!==fanPlan.plan.binding||!Number.isSafeInteger(context.intentExpiresAt)||context.intentExpiresAt<=now())fail('普通关注授权已停止、变化或过期');};
+    assert();if(context.write){await refreshTask(task);assert();}return {allowed:true};
+   }
+   if(context.claimId&&context.claimId!==task.id)fail('协作发送领取凭据已变化');
    const attempt=store.getExternalAttempt(task.id);if(context.operation==='finalize'){const receipt=task.receipt;return{settled:Boolean(attempt)&&(task.status==='sent'&&(typeof receipt==='string'&&/^platform:\S+$/.test(receipt)||Boolean(task.resolvedAt))||task.status==='failed'&&(task.failure?.outcome==='not-sent'&&['commit','receipt'].includes(task.failure.stage)||Boolean(task.resolvedAt)))};}
    if(context.operation==='receipt'&&!context.write&&['sending','unknown'].includes(task.status)&&context.claimId===task.id&&attempt)return{allowed:true};
    if(!['review','sending'].includes(task.status)||store.getPolicy().paused||!canWrite(task.id))fail('协作任务已结束、暂停或批次已停止，未继续操作');
@@ -98,7 +165,7 @@ function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,rese
   if(name.startsWith('own-fan-')){if(closed)fail('互动已关闭');
    if(name==='own-fan-pause')return fanPlan.pause();if(name==='own-fan-cancel')return fanPlan.cancel();
    if(!canRun())fail('互动暂不可用');
-   if(name==='own-fan-preview')return fanPlan.preview(args);if(name==='own-fan-start')return fanPlan.start(args);if(name==='own-fan-resume')return fanPlan.resume();
+   if(name==='own-fan-preview')return fanPlan.preview(args);if(name==='own-fan-preview-page')return fanPlan.previewPage(args);if(name==='own-fan-start')return fanPlan.start(args);if(name==='own-fan-resume')return fanPlan.resume();
    fail('不支持的粉丝计划操作');
   }
   if(name==='outreach-stop')fanPlan.pause();
@@ -139,6 +206,6 @@ function createOutreachRuntime({directory,studio,store,dom,refreshDirectory,rese
   for(const failure of batch.snapshot()?.failures||[])if(failure.outcome==='unknown')batch.reconcileObservedTask(failure.taskId);
   if(fanPlan.plan?.taskId)fanPlan.reconcileObservedTask(fanPlan.plan.taskId);
  }
- return{fanPlan,command,sync,tasks,followup,fans,batch,manager,closeAccount,close,idle:()=>batch.idle(),get active(){return batch.active;},snapshot:query=>{reconcileSummaries();return{...studio.outreachPage(query),batch:batch.snapshot()};}};
+ return{fanPlan,welcome,command,sync,tasks,followup,fans,batch,manager,closeAccount,close,idle:()=>batch.idle(),get active(){return batch.active;},snapshot:query=>{reconcileSummaries();return{...studio.outreachPage(query),batch:batch.snapshot()};}};
 }
 module.exports={createOutreachRuntime};

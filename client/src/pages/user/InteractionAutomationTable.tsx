@@ -43,6 +43,7 @@ export function InteractionAutomationTable({ section, data, busy, error, refresh
       <Input aria-label="搜索执行账号" placeholder="账号昵称 / ID" value={account} onChange={e=>changeFilter(setAccount,e.target.value)}/>
       <span className="matrix-toolbar-spacer"/>{batch&&<Button disabled={busy||!data} onClick={()=>edit()}>新建自动化计划</Button>}
       <Button variant="outline" disabled={busy} onClick={refresh}><RefreshCw size={15}/>刷新</Button>
+      {section==='dm'&&<Button variant="outline" disabled={busy||!data} onClick={()=>open('own-fans')}>未私信粉丝欢迎语</Button>}
       <Button disabled={busy||!data} onClick={()=>batch?open('reply'):edit()}><Plus size={15}/>{batch?'新建任务':'新建计划'}</Button>
     </div>
     <div className="matrix-interaction-actionbar">

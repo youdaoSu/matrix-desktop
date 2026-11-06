@@ -23,7 +23,7 @@ async function wait(fn, description) {
 }
 async function launch(output) {
   assert.ok(['release', 'release-next'].includes(output));
-  const executable = path.join(root, output, 'win-unpacked', '矩效 Matrix.exe');
+  const executable = path.join(root, output, 'win-unpacked', '远效.exe');
   assert.ok(fs.existsSync(executable));
   const child = spawn(executable, [`--matrix-user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'], { cwd: root, windowsHide: true, stdio: 'ignore' });
   children.push(child);

@@ -39,7 +39,8 @@ export function StartupInitialization({onList,onAccount,paused=false}:{onList(ac
             state=health.state||'unknown';recordAccountObservation(owner,account,{state,reason:health.message||'检查已结束',checkedAt:health.checkedAt||Date.now()});
           }catch(error){if(current())recordAccountObservation(owner,account,{state:'unknown',reason:(error as Error).message.slice(0,200),checkedAt:Date.now()});}
           finally{if(current()&&initialCycle)setProgress(value=>({...value,done:value.done+1,normal:value.normal+Number(verified),metrics:value.metrics+Number(followersRead),errors:value.errors+Number(!verified)}));}
-          return health?.verificationRequired?{state,minimumDelayMs:15*60000}:state;
+          if(health?.rateLimited)return {state,minimumDelayMs:Math.max(60*60000,(health.retryAt||0)-Date.now())};
+          return health?.verificationRequired?{state,minimumDelayMs:60*60000}:state;
       },
       onFinish:(initial,error)=>{if(current()&&initial)setProgress(value=>({...value,busy:false,message:error?`初始化检查未完成：${(error as Error).message.slice(0,160)}；保留原数据，稍后自动重试`:'启动检查完成；后续自动后台刷新，未读状态和发布任务未改动'}));},
     });

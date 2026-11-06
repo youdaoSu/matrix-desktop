@@ -93,7 +93,9 @@ function validateOutreachFailure(input) {
   return failure;
 }
 function ownFanOrigin(input) {
-  if(input.origin!=='own-fan'||input.platform!=='douyin'||input.channel!=='dm'||input.sourceKind!=='fan-directory'||input.accountId!==input.primaryAccountId||['followupOf','followupSourceDigest','followupFailure'].some(k=>Object.hasOwn(input,k)))throw Error('本人粉丝任务的账号或来源无效');
+  if(input.origin!=='own-fan'||input.platform!=='douyin'||input.channel!=='dm'||input.sourceKind!=='fan-directory'||input.accountId!==input.primaryAccountId)throw Error('本人粉丝任务的账号或来源无效');
+  if(input.followupOf!==undefined)return {...validateFollowupOrigin({...input,origin:'primary-followup'}),origin:'own-fan'};
+  if(['followupSourceDigest','followupFailure'].some(k=>Object.hasOwn(input,k)))throw Error('本人粉丝补发缺少原任务');
   return {origin:'own-fan'};
 }
 function validateFollowupOrigin(input) {
@@ -105,7 +107,9 @@ function validateFollowupOrigin(input) {
 }
 function validatePrimaryFollowup(input, sourceInput) {
   const task = validateOutreachTask(input), source = validateOutreachTask(sourceInput);
-  if (task.origin !== 'primary-followup' || source.origin !== undefined || source.id !== task.followupOf || source.status !== 'failed' || source.failure?.outcome !== 'not-sent' || source.accountId === source.primaryAccountId || task.followupSourceDigest !== outreachDigest(source) || JSON.stringify(task.followupFailure) !== JSON.stringify(source.failure)) throw new Error('主账号补发的原任务或明确未发送证据已变化。');
+  const own=task.origin==='own-fan';
+  if (own ? !require('../../../own-fan-welcome-ledger.cjs').recoverable(source)||source.accountId!==task.accountId : task.origin !== 'primary-followup' || source.origin !== undefined || source.accountId === source.primaryAccountId)throw Error('补发的原任务或发送账号不一致');
+  if (source.id !== task.followupOf || source.status !== 'failed' || source.failure?.outcome !== 'not-sent' || task.followupSourceDigest !== outreachDigest(source) || JSON.stringify(task.followupFailure) !== JSON.stringify(source.failure)) throw new Error('主账号补发的原任务或明确未发送证据已变化。');
   const fixed = ['primaryAccountId', 'platform', 'channel', 'sourceMessageId', 'sourceExternalId', 'sourceChannel', 'recipientId', 'recipientName', 'profileUrl', 'replyText', 'workUrl', 'primaryBinding', ...DIRECTORY_FIELDS];
   if (fixed.some(field => JSON.stringify(task[field]) !== JSON.stringify(source[field])) || task.createdAt < source.failure.recordedAt) throw new Error('主账号补发不能更换原任务的目标、来源、账号身份或文案。');
   return true;
@@ -191,7 +195,7 @@ function validateOutreachRelations(studio, interactionData, fanData) {
     }
   }
   const followed = new Set();
-  for (const task of taskMap.values()) if (task.origin === 'primary-followup') {
+  for (const task of taskMap.values()) if (task.origin === 'primary-followup'||task.origin==='own-fan'&&task.followupOf) {
     if (followed.has(task.followupOf)) throw new Error('同一原任务不能建立多次主账号补发。');
     followed.add(task.followupOf); validatePrimaryFollowup(task, taskMap.get(task.followupOf));
   }
@@ -200,7 +204,7 @@ function validateOutreachRelations(studio, interactionData, fanData) {
     const task = taskMap.get(id(attempt.id)), key = outreachKey(attempt);
     if (!task || attemptMap.has(attempt.id)) throw new Error('共享发送账本存在缺失或重复的协作任务。');
     const prior = targetKeys.get(key);
-    if (prior && !((task.origin === 'primary-followup' && task.followupOf === prior.id && validatePrimaryFollowup(task, prior)) || (prior.origin === 'primary-followup' && prior.followupOf === task.id && validatePrimaryFollowup(prior, task)))) throw new Error('共享发送账本存在重复的协作目标。');
+    if (prior && !((['primary-followup','own-fan'].includes(task.origin) && task.followupOf === prior.id && validatePrimaryFollowup(task, prior)) || (['primary-followup','own-fan'].includes(prior.origin) && prior.followupOf === task.id && validatePrimaryFollowup(prior, task)))) throw new Error('共享发送账本存在重复的协作目标。');
     const sourceFields = task.sourceKind === 'fan-directory' ? [...DIRECTORY_FIELDS, 'sourceChannel', 'profileUrl'] : [];
     if (['accountId', 'primaryAccountId', 'platform', 'channel', 'sourceMessageId', 'sourceExternalId', 'recipientId', ...sourceFields].some(field => JSON.stringify(task[field]) !== JSON.stringify(attempt[field])) || attempt.taskDigest !== outreachDigest(task) || (attempt.targetKey !== undefined && attempt.targetKey !== key)) throw new Error('共享发送账本与协作任务的固定来源、目标或内容不一致。');
     const pendingResolution = ['unknown', 'failed'].includes(task.status) && attempt.failure?.code === 'manually-confirmed-not-sent' && attempt.failure.evidence === `manual-not-sent:${task.id}` && JSON.stringify(task.failure) === JSON.stringify(attempt.priorFailure);
@@ -324,9 +328,18 @@ class OutreachStore {
     return clone(created);
   }
   followupOptions(task) {
-    if (task.origin !== 'primary-followup') return {};
+    if (task.origin !== 'primary-followup'&&!(task.origin==='own-fan'&&task.followupOf)) return {};
     const followupSource = this.get(task.followupOf); validatePrimaryFollowup(task, followupSource);
     return { followupSource };
+  }
+  createOwnFanFollowup(sourceId){
+    const source=this.get(id(sourceId)),existing=this.snapshot();
+    if(!require('../../../own-fan-welcome-ledger.cjs').recoverable(source)||existing.some(t=>t.followupOf===source.id))throw Error('此粉丝任务没有可补发的明确失败，或已经补发过');
+    if(existing.some(t=>t.id!==source.id&&sameTarget(t,source)&&(t.status!=='cancelled'||t.claimedAt)))throw Error('此粉丝存在其他任务，未建立重复补发');
+    const {claimedAt,reason,receipt,resolvedAt,failure,priorFailure,preflightHistory,...base}=source,at=this.date();
+    const task=validateOutreachTask({...base,id:randomUUID(),followupOf:source.id,followupSourceDigest:outreachDigest(source),followupFailure:failure,status:'review',createdAt:at,updatedAt:at});
+    validatePrimaryFollowup(task,source);this.recheck(task);this.interactions.checkExternalPolicy(task,{...this.followupOptions(task),limits:false,schedule:false});
+    this.studio.mutateOutreach(tasks=>tasks.unshift(task));return clone(task);
   }
   createPrimaryFollowups({ ids } = {}) {
     if (!Array.isArray(ids) || !ids.length || ids.length > 50 || new Set(ids).size !== ids.length) throw new Error('请选择 1 至 50 条不同的明确未发送任务。');
